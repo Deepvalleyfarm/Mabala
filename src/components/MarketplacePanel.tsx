@@ -147,6 +147,8 @@ export default function MarketplacePanel({
   const [onboardDistance, setOnboardDistance] = useState<number>(15);
   const [onboardPhone, setOnboardPhone] = useState("");
   const [onboardPkg, setOnboardPkg] = useState<string>("Premium Seller");
+  const [onboardLogoUrl, setOnboardLogoUrl] = useState<string>("");
+  const [isDraggingLogo, setIsDraggingLogo] = useState(false);
   
   // Own catalog editing states
   const [newProdName, setNewProdName] = useState("");
@@ -155,6 +157,19 @@ export default function MarketplacePanel({
   const [newProdStock, setNewProdStock] = useState<number>(50);
   const [newProdDescription, setNewProdDescription] = useState("");
   const [newProdEmoji, setNewProdEmoji] = useState("🌾");
+  
+  const [newProdUnitOfMeasure, setNewProdUnitOfMeasure] = useState("kg"); // kg, litre, bag, bundle, each, tonne, crate, etc.
+  const [newProdVatApplicable, setNewProdVatApplicable] = useState(false);
+  const [newProdProductLocation, setNewProdProductLocation] = useState(""); // Default to vendor's location
+  const [newProdProductImages, setNewProdProductImages] = useState<string[]>([]);
+  const [newProdIsActive, setNewProdIsActive] = useState(true);
+  const [newProdLowStockThreshold, setNewProdLowStockThreshold] = useState<number>(5);
+  const [isDraggingProdImg, setIsDraggingProdImg] = useState(false);
+
+  const [editingProduct, setEditingProduct] = useState<MarketplaceProduct | null>(null);
+  const [simulatedEmails, setSimulatedEmails] = useState<any[]>([]);
+  const [showEmailsInbox, setShowEmailsInbox] = useState(false);
+  const [selectedSubscribedEmail, setSelectedSubscribedEmail] = useState<any | null>(null);
 
   // Admin logs & states
   const [adminCommissionInput, setAdminCommissionInput] = useState<number>(commissionPercent);
@@ -167,6 +182,13 @@ export default function MarketplacePanel({
 
   // Derive counts & values
   const activeVendorRecord = vendors.find(v => v.email === userEmail || v.id === registeredVendorId);
+
+  // Sync category inheritance from vendor profile to add-product form field
+  React.useEffect(() => {
+    if (activeVendorRecord) {
+      setNewProdCategory(activeVendorRecord.category);
+    }
+  }, [activeVendorRecord]);
 
   // Calculations for active checkout
   const checkoutSubtotal = selectedProduct ? selectedProduct.price * purchaseQuantity : 0;
@@ -197,7 +219,8 @@ export default function MarketplacePanel({
                           p.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           p.vendorName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCat = selectedCategory === "All" || p.category === selectedCategory;
-    return matchesSearch && matchesCat;
+    const isPubliclyAvailable = p.isActive !== false && p.stock > 0;
+    return matchesSearch && matchesCat && isPubliclyAvailable;
   });
 
   // Handle self enrollment as vendor
@@ -224,20 +247,67 @@ export default function MarketplacePanel({
       phone: onboardPhone,
       email: userEmail,
       subscriptionPackage: onboardPkg,
-      status: "Pending",
+      status: "Active",
       joinedDate: new Date("2026-06-05").toISOString().split("T")[0],
       expiryDate: "2026-07-05", // 30 days starting from today June 5
       credits: creditsValue,
       logoColor: randomColor,
-      tempPassword: `Mabala_${Math.floor(1000 + Math.random() * 9000)}!`,
-      forcesPasswordReset: true,
-      customResetCompleted: false
+      logoUrl: onboardLogoUrl || undefined,
+      forcesPasswordReset: false,
+      customResetCompleted: true
     };
 
     setVendors(prev => [...prev, newVendor]);
     setIsSelfRegistered(true);
     setRegisteredVendorId(newVendorId);
-    alert(`Registration Logged: "${newVendor.name}" has been registered successfully as "Pending". Please switch to the "Admin Control" tab to approve and activate your seller portal credentials.`);
+    setActiveSubTab("vendor-portal");
+    alert(`🚀 Congratulations! "${newVendor.name}" has been successfully onboarded and activated. You have been directed straight to your Live Merchant Storefront Portal!`);
+  };
+
+  // Handle product images uploading with dimensions validation
+  const handleProductImageUpload = (files: FileList | null) => {
+    if (!files) return;
+    const fileList = Array.from(files);
+    
+    // Check total count constraint
+    if (newProdProductImages.length + fileList.length > 6) {
+      alert("⚠️ Catalogue Policy Warning: You can upload a maximum of 6 product images.");
+      return;
+    }
+
+    fileList.forEach(file => {
+      if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
+        alert(`❌ Invalid Format: "${file.name}" is not a supported file. Mabala only accepts JPG, PNG, or WebP.`);
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const resultUrl = event.target?.result as string;
+        
+        // Dimensions check using transient image element
+        const tempImg = new Image();
+        tempImg.src = resultUrl;
+        tempImg.onload = () => {
+          if (tempImg.width < 600 || tempImg.height < 600) {
+            alert(`⚠️ Dimension Verification Failed for "${file.name}": Image is ${tempImg.width}x${tempImg.height}px. Mabala directories enforce a strict MINIMUM of 600x600px to maintain crisp catalog styling.`);
+          } else {
+            setNewProdProductImages(prev => [...prev, resultUrl]);
+          }
+        };
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLoadDemoProductImages = () => {
+    const demoPics = [
+      "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?auto=format&fit=crop&w=800&q=80", // Barley / Wheat seeds
+      "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=800&q=80", // Agro spray
+      "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&w=800&q=80"  // Fertilizers
+    ];
+    setNewProdProductImages(demoPics);
+    alert("💡 Premium Presets: Added 3 pre-validated high-resolution agricultural catalogue photos (800x800px)!");
   };
 
   // Handle adding product
@@ -251,6 +321,14 @@ export default function MarketplacePanel({
       alert("No active vendor profile matches your account.");
       return;
     }
+    if (newProdProductImages.length < 2) {
+      alert("⚠️ Catalogue Policy Violation: At least 2 high-resolution product images are required to publish this product. Please select or drag at least 2 images.");
+      return;
+    }
+    if (newProdProductImages.length > 6) {
+      alert("⚠️ Catalogue Policy Violation: Maximum 6 images are allowed.");
+      return;
+    }
 
     const newProduct: MarketplaceProduct = {
       id: `prod-custom-${Date.now()}`,
@@ -261,15 +339,34 @@ export default function MarketplacePanel({
       price: Number(newProdPrice || 10),
       stock: Number(newProdStock || 1),
       description: newProdDescription || `${newProdName} catalog release.`,
-      iconEmoji: newProdEmoji
+      iconEmoji: newProdEmoji,
+      unitOfMeasure: newProdUnitOfMeasure,
+      vatApplicable: newProdVatApplicable,
+      productLocation: newProdProductLocation.trim() || activeVendorRecord.location,
+      productImages: newProdProductImages,
+      isActive: newProdIsActive,
+      lowStockThreshold: Number(newProdLowStockThreshold || 5)
     };
 
-    setProducts(prev => [newProduct, ...prev]);
+    setProducts(prev => {
+      const updated = [newProduct, ...prev];
+      localStorage.setItem("mabala_marketplace_products", JSON.stringify(updated));
+      return updated;
+    });
+
     // reset form fields
     setNewProdName("");
     setNewProdPrice(100);
     setNewProdStock(50);
     setNewProdDescription("");
+    setNewProdEmoji("🌾");
+    setNewProdUnitOfMeasure("kg");
+    setNewProdVatApplicable(false);
+    setNewProdProductLocation("");
+    setNewProdProductImages([]);
+    setNewProdIsActive(true);
+    setNewProdLowStockThreshold(5);
+
     alert(`"${newProduct.name}" added to your live catalog store!`);
   };
 
@@ -429,16 +526,149 @@ export default function MarketplacePanel({
 
     setOrders(prev => [newOrder, ...prev]);
 
-    // 2. Decrement corresponding product stock
-    setProducts(prev => prev.map(p => {
-      if (p.id === selectedProduct.id) {
-        return {
-          ...p,
-          stock: Math.max(0, p.stock - purchaseQuantity)
-        };
-      }
-      return p;
-    }));
+    // 2. Decrement corresponding product stock & calculate notifications
+    setProducts(prev => {
+      const updated = prev.map(p => {
+        if (p.id === selectedProduct.id) {
+          const nextStock = Math.max(0, p.stock - purchaseQuantity);
+          return {
+            ...p,
+            stock: nextStock
+          };
+        }
+        return p;
+      });
+      localStorage.setItem("mabala_marketplace_products", JSON.stringify(updated));
+      return updated;
+    });
+
+    // Generate simulated transactional and alerts notifications
+    const targetVendor = vendors.find(v => v.id === selectedProduct.vendorId);
+    const vendorEmail = targetVendor?.email || "vendor@mabala.com";
+    const netPayable = newOrder.subtotal - newOrder.commissionAmount;
+
+    // A. Purchase Notification email template
+    const orderEmailHtml = `
+      <div style="font-family: sans-serif; padding: 25px; color: #1e293b; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+        <div style="background-color: #10b981; color: white; padding: 20px; border-radius: 12px; text-align: center;">
+          <h2 style="margin: 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1.5px;">Mabala Sourcing Order Notification</h2>
+          <p style="margin: 5px 0 0 0; font-size: 11px; letter-spacing: 1px; font-weight: bold; opacity: 0.9;">INSTANT CLEARING DIRECTIVE</p>
+        </div>
+        <p style="font-size: 13px; font-weight: bold; margin-top: 20px; color: #0f172a;">Salutations, ${targetVendor?.name || "Merchant Owner"}</p>
+        <p style="font-size: 12px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
+          Your directory storefront node has registered a validated checkout settlement, cleared via MTN MoMo and vetted routing endpoints. Please pack goods for instant biker pick up.
+        </p>
+        <h4 style="text-transform: uppercase; font-size: 10px; color: #64748b; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 5px;">Dispatch Metrics Header</h4>
+        
+        <table style="width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 20px;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Order Serial:</td>
+            <td style="padding: 6px 0; font-weight: bold; font-family: monospace; text-align: right; color: #0f172a;">${newOrder.id}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Buyer Identity:</td>
+            <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #0f172a;">${newOrder.recipientName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Buyer Hub Area:</td>
+            <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #047857;">${newOrder.deliveryAddress}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Quantity/Attributes:</td>
+            <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #0f172a;">${newOrder.quantity}x ${newOrder.productName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Logistics Operator:</td>
+            <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #4f46e5;">Rider ${newOrder.riderName} (Est: ${newOrder.distanceKm} KM)</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;">Transaction Time:</td>
+            <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #0f172a;">${new Date().toLocaleString()}</td>
+          </tr>
+        </table>
+        
+        <div style="background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px dashed #cbd5e1; font-size: 12px; margin-bottom: 20px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px 0; color: #64748b;">Gross Sale Amount:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: bold; font-family: monospace;">${newOrder.subtotal.toFixed(2)} ZMW</td>
+            </tr>
+            <tr style="color: #e11d48;">
+              <td style="padding: 4px 0;">Mabala Commission Percentage Deducted (${commissionPercent}%):</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: bold; font-family: monospace;">- ${newOrder.commissionAmount.toFixed(2)} ZMW</td>
+            </tr>
+            <tr style="font-weight: bold; color: #0d9488; font-size: 13.5px;">
+              <td style="padding: 8px 0 0 0; border-top: 1px solid #cbd5e1;">NET PAYABLE TO VENDOR:</td>
+              <td style="padding: 8px 0 0 0; text-align: right; border-top: 1px solid #cbd5e1; font-family: monospace;">${netPayable.toFixed(2)} ZMW</td>
+            </tr>
+          </table>
+        </div>
+        <p style="font-size: 10px; color: #94a3b8; text-align: center; margin-top: 20px; line-height: 1.4;">
+          This message serves as a formal payment clearance report generated dynamically on Mabala network servers. Secured by Lipila core.
+        </p>
+      </div>
+    `;
+
+    const newTxEmail = {
+      id: `mail-${Date.now()}-tx`,
+      recipient: vendorEmail,
+      subject: `📧 Mabala Order Dispatch Notification - Ref [${newOrder.id}]`,
+      body: orderEmailHtml,
+      date: new Date().toLocaleTimeString(),
+      type: "order"
+    };
+
+    setSimulatedEmails(prev => [newTxEmail, ...prev]);
+
+    // B. Check Low stock alert notification criteria
+    const threshold = selectedProduct.lowStockThreshold !== undefined ? selectedProduct.lowStockThreshold : 5;
+    const previousStock = selectedProduct.stock;
+    const nextStock = Math.max(0, previousStock - purchaseQuantity);
+
+    if (nextStock <= threshold) {
+      const lowStockEmailHtml = `
+        <div style="font-family: sans-serif; padding: 25px; color: #1e293b; max-width: 600px; margin: auto; border: 1px solid #fecdd3; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+          <div style="background-color: #e11d48; color: white; padding: 20px; border-radius: 12px; text-align: center;">
+            <h2 style="margin: 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">⚠️ Mabala Low Stock Warning Alert</h2>
+            <p style="margin: 5px 0 0 0; font-size: 11px; letter-spacing: 1px; font-weight: bold; opacity: 0.9;">CATALOG EXPIRY MITIGATION</p>
+          </div>
+          <p style="font-size: 13px; font-weight: bold; margin-top: 20px; color: #0f172a;">Attention Store Owner, ${targetVendor?.name || "Merchant Owner"}</p>
+          <p style="font-size: 12.5px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
+            This security service warning logs that available stock for <strong style="color: #e11d48;">"${selectedProduct.name}"</strong> has slipped past your adjusted threshold of <strong>${threshold} ${selectedProduct.unitOfMeasure || "units"}</strong>.
+          </p>
+          
+          <div style="background-color: #fff1f2; border: 1px solid #fecdd3; padding: 18px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
+            <span style="font-size: 10px; text-transform: uppercase; display: block; color: #94a3b8; font-weight: bold; letter-spacing: 1px;">Current Balanced Ledger</span>
+            <strong style="font-size: 38px; color: #e11d48; display: block; font-family: monospace; font-weight: bold; margin: 5px 0;">
+              ${nextStock} ${selectedProduct.unitOfMeasure || "units"}
+            </strong>
+            <span style="font-size: 11px; color: #b91c1c; font-weight: bold;">⚠️ ACTION REQUIRED TO PRESERVE VISIBILITY</span>
+          </div>
+
+          <p style="font-size: 12px; line-height: 1.6; color: #475569; margin-bottom: 15px;">
+            To ensure single-tenant catalogue sheets remain active on customer dashboards, please log in to your Mabala seller portal immediately, access your product list, and update stock numbers above zero.
+          </p>
+          <p style="font-size: 11px; font-style: italic; color: #64748b;">
+            💡 Restocking above the low-limit notification clears this exception flag. When stock lands at 0, your item is auto-hidden from index directory views programmatically.
+          </p>
+          <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+          <p style="font-size: 10px; color: #94a3b8; text-align: center; line-height: 1.4;">
+            Do not reply directly to this automated server report system. Form parameters conform to national co-ops requirements.
+          </p>
+        </div>
+      `;
+
+      const lowStockEmail = {
+        id: `mail-${Date.now()}-stock`,
+        recipient: vendorEmail,
+        subject: `⚠️ Low Stock Warning: "${selectedProduct.name}" dropped below limit!`,
+        body: lowStockEmailHtml,
+        date: new Date().toLocaleTimeString(),
+        type: "low_stock"
+      };
+
+      setSimulatedEmails(prev => [lowStockEmail, ...prev]);
+    }
 
     // 3. Inject standard transaction row in active Mabala general ledger module
     const ledgerRow: ExpenseRow = {
@@ -464,6 +694,81 @@ export default function MarketplacePanel({
     };
 
     onAddTransaction(expenseTx);
+  };
+
+  // Generate beautiful subscription receipt PDF
+  const downloadSubscriptionReceiptPdf = (vendorName: string, planName: string, price: number) => {
+    try {
+      const doc = new jsPDF();
+      
+      // Header branding
+      doc.setFillColor(16, 185, 129); // Emerald-500
+      doc.rect(0, 0, 210, 35, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(22);
+      doc.text("MABALAagro", 15, 24);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("LIPILA DIGITAL TRANSACTION CLEARANCE ARTIFACT", 110, 23);
+      
+      // Content layout
+      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.setFontSize(14);
+      doc.setFont("Helvetica", "bold");
+      doc.text("Mabala Merchant Subscription Bill", 15, 50);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+      const invoiceId = `MBS-${Date.now().toString().slice(-6)}`;
+      const dateStr = new Date().toISOString().split("T")[0];
+      doc.text(`Receipt Serial: ${invoiceId}`, 15, 57);
+      doc.text(`Billing Period: Monthly Recurring`, 15, 63);
+      doc.text(`Clearing Time: ${dateStr}`, 15, 69);
+      doc.text(`Settlement Engine: LIPILA CORE API`, 15, 75);
+      
+      // Billing Info
+      doc.setFillColor(241, 245, 249); // Slate-100
+      doc.rect(15, 83, 180, 45, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.text("SUBSCRIBER LOGS", 20, 91);
+      doc.setFont("Helvetica", "normal");
+      doc.text(`Merchant Name: ${vendorName || "Mabala Self-Merchant"}`, 20, 99);
+      doc.text(`Enrolled Package Tier: ${planName}`, 20, 107);
+      doc.text(`Cleared Payment: ${price} ZMW (Mobile Money Settlement)`, 20, 115);
+      doc.text(`Account Status: ACTIVE / ENROLLED`, 20, 121);
+      
+      // Terms / Agreement
+      doc.setFont("Helvetica", "bold");
+      doc.text("MABALA MERCHANT SERVICE REGULATION MANDATE", 15, 142);
+      doc.setFont("Helvetica", "normal");
+      const terms = [
+        "1. Merchant directory access remains active for 30 days starting from the date of the Lipila transaction.",
+        "2. The merchant agrees to comply with the standard Zambian National Co-ops Trade Regulations.",
+        "3. Products must contain accurate descriptions, real available inventory, and specify physical area holdings.",
+        "4. Standard Mabala ecosystem commission deductions check against every aggregate delivery dispatch.",
+        "5. Transactions processed via the Lipila clearance pipes incur standard single-tenant processing fees."
+      ];
+      let offset = 150;
+      terms.forEach(line => {
+        doc.text(line, 15, offset);
+        offset += 8;
+      });
+      
+      // Footer
+      doc.setFillColor(15, 23, 42); // Dark slate
+      doc.rect(0, 270, 210, 27, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.text("Secured with Lipila Instant Settlement Protocol © Mabala Multi-Tenant Agro-ERP.", 45, 280);
+      
+      doc.save(`receipt-${invoiceId}.pdf`);
+    } catch(err) {
+      console.error("PDF Generate Error", err);
+      alert("Failed to download PDF receipt.");
+    }
   };
 
   // Generate beautiful receipt PDF
@@ -755,7 +1060,23 @@ export default function MarketplacePanel({
                           <span className="text-3xl p-1 bg-slate-50 rounded-lg">{product.iconEmoji}</span>
                           <div>
                             <h3 className="font-bold text-slate-800 text-xs lines-clamp-1">{product.name}</h3>
-                            <span className="text-[10px] font-bold text-emerald-600 block">Vendor: {product.vendorName}</span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {(() => {
+                                const mVen = vendors.find(v => v.id === product.vendorId);
+                                if (mVen?.logoUrl) {
+                                  return (
+                                    <img
+                                      src={mVen.logoUrl}
+                                      alt=""
+                                      className="w-3.5 h-3.5 rounded-full object-cover border border-slate-200 shrink-0"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  );
+                                }
+                                return <span className="text-[10px]">🏪</span>;
+                              })()}
+                              <span className="text-[10px] font-bold text-emerald-600 block leading-tight">Vendor: {product.vendorName}</span>
+                            </div>
                           </div>
                         </div>
                         
@@ -1203,7 +1524,55 @@ export default function MarketplacePanel({
                   </div>
                 )}
 
-                <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
+                <div className="pt-2 border-t border-slate-800 flex justify-between items-center gap-2">
+                  {lipilaFlowType === "subscription" ? (
+                    <button
+                      type="button"
+                      onClick={() => downloadSubscriptionReceiptPdf(
+                        activeVendorRecord?.name || "Mabala Self-Merchant",
+                        renewSelectedPlan?.name || "Mabala Package Layer",
+                        renewSelectedPlan?.price || 150
+                      )}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                    >
+                      <span>📥 Download Printable Receipt</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tempOrder: MarketplaceOrder = {
+                          id: `ORD-MKT-${Date.now().toString().slice(-4)}`,
+                          vendorId: selectedProduct?.vendorId || "vend-1",
+                          vendorName: selectedProduct?.vendorName || "Seed Co",
+                          buyerEmail: userEmail || "buyer@test.com",
+                          productId: selectedProduct?.id || "prod-1",
+                          productName: selectedProduct?.name || "Inputs",
+                          quantity: purchaseQuantity,
+                          priceAtPurchase: selectedProduct?.price || 100,
+                          subtotal: checkoutSubtotal,
+                          deliveryFee: checkoutDeliveryFee,
+                          commissionAmount: checkoutCommission,
+                          totalAmount: checkoutTotal,
+                          recipientName: recipientName || "Buyer Customer",
+                          recipientPhone: recipientPhone || "+260 970000000",
+                          deliveryAddress: deliveryAddress || "Farm Gateway HQ",
+                          riderId: selectedRiderId || "rider-1",
+                          riderName: riders.find(r => r.id === selectedRiderId)?.name || "Rider Cargo",
+                          distanceKm: distanceKm,
+                          date: new Date().toISOString().split("T")[0],
+                          status: "Processing",
+                          paymentProvider: "MTN MoMo",
+                          paymentPhone: paymentPhone || "+260 960000000"
+                        };
+                        downloadReceiptPdf(tempOrder);
+                      }}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                    >
+                      <span>📥 Download Printable Receipt</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1211,7 +1580,7 @@ export default function MarketplacePanel({
                       setLipilaState("idle");
                       setSelectedProduct(null);
                     }}
-                    className="px-4 py-2 bg-white text-slate-950 font-black rounded-lg text-xs tracking-wide uppercase cursor-pointer"
+                    className="px-4 py-1.5 bg-white text-slate-950 font-black rounded-lg text-[11px] tracking-wide uppercase cursor-pointer"
                   >
                     Finish System Checkout
                   </button>
@@ -1338,6 +1707,68 @@ export default function MarketplacePanel({
                       placeholder="+260 97x xxxxxx dispatch line"
                       className="w-full text-xs p-2.5 mt-1 border rounded bg-slate-50 focus:bg-white"
                     />
+                  </div>
+
+                  <div className="md:col-span-2 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Corporate & Brand Logo</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOnboardLogoUrl("https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?auto=format&fit=crop&w=120&q=80");
+                        }}
+                        className="text-[9px] text-emerald-600 hover:underline font-extrabold cursor-pointer"
+                      >
+                        ✨ Set Sample Agribusiness Badge Logo
+                      </button>
+                    </div>
+
+                    <div 
+                      onDragOver={e => { e.preventDefault(); setIsDraggingLogo(true); }}
+                      onDragLeave={() => setIsDraggingLogo(false)}
+                      onDrop={e => {
+                        e.preventDefault();
+                        setIsDraggingLogo(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                          const file = e.dataTransfer.files[0];
+                          if (["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setOnboardLogoUrl(ev.target?.result as string);
+                            reader.readAsDataURL(file);
+                          } else {
+                            alert("❌ Invalid logo format. Please provide PNG, JPG, or WebP.");
+                          }
+                        }
+                      }}
+                      className={`p-4 border border-dashed rounded-xl text-center transition-all ${isDraggingLogo ? "border-emerald-500 bg-emerald-50/50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"}`}
+                    >
+                      <input 
+                        type="file" 
+                        id="onboard_logo_file" 
+                        accept=".png,.jpg,.jpeg,.webp"
+                        className="hidden" 
+                        onChange={e => {
+                          if (e.target.files && e.target.files[0]) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setOnboardLogoUrl(ev.target?.result as string);
+                            reader.readAsDataURL(e.target.files[0]);
+                          }
+                        }}
+                      />
+                      <label htmlFor="onboard_logo_file" className="cursor-pointer space-y-1.5 block">
+                        {onboardLogoUrl ? (
+                          <div className="flex flex-col items-center space-y-1.5">
+                            <img src={onboardLogoUrl} alt="Store Logo Preview" className="w-12 h-12 rounded-full object-cover border border-slate-200 shadow-sm" referrerPolicy="no-referrer" />
+                            <span className="text-[10px] text-slate-500 font-bold">Logo Uploaded Successfully! Click to replace.</span>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-xs text-slate-700 block">Drag & drop your store logo image or <strong className="text-emerald-600 hover:underline">browse file</strong></span>
+                            <span className="text-[9px] text-slate-400 block leading-normal font-medium">PNG, JPG, WebP formats accepted</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
                   </div>
 
                   <div className="md:col-span-2 pt-3">
@@ -1649,58 +2080,203 @@ export default function MarketplacePanel({
                 </div>
 
                 <div className="flex justify-between items-center border-b pb-3 flex-wrap gap-4 pt-4">
-                  <div>
-                    <span className="text-[10px] bg-slate-150 text-slate-600 font-extrabold px-2 py-0.5 rounded uppercase font-mono">
-                      STORE NODE: {activeVendorRecord?.id}
-                    </span>
-                    <h3 className="text-base font-bold text-slate-800 mt-2">{activeVendorRecord?.name}</h3>
-                    <p className="text-xs text-slate-400 font-medium leading-none mt-1">
-                      Niche: {activeVendorRecord?.category} | Location: {activeVendorRecord?.location}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    {activeVendorRecord?.logoUrl ? (
+                      <img 
+                        src={activeVendorRecord.logoUrl} 
+                        alt="Vendor Logo" 
+                        referrerPolicy="no-referrer"
+                        className="w-12 h-12 rounded-full object-cover border border-slate-200 shadow-sm shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold border border-emerald-100 text-lg shrink-0">
+                        🏪
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[10px] bg-slate-150 text-slate-600 font-extrabold px-2 py-0.5 rounded uppercase font-mono">
+                        STORE NODE: {activeVendorRecord?.id}
+                      </span>
+                      <h3 className="text-base font-bold text-slate-800 mt-1">{activeVendorRecord?.name}</h3>
+                      <p className="text-xs text-slate-400 font-medium leading-none mt-1">
+                        Niche: {activeVendorRecord?.category} | Location: {activeVendorRecord?.location}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-slate-700 text-center">
-                    <span className="text-[9px] text-slate-400 font-black block uppercase tracking-wider">Plan Billing Tier</span>
-                    <span className="font-bold text-emerald-800">{activeVendorRecord?.subscriptionPackage} Package</span>
+                  <div className="flex gap-2 shrink-0">
+                    {/* Simulated Mailbox Trigger Button with unread counts badge */}
+                    <button
+                      type="button"
+                      onClick={() => setShowEmailsInbox(!showEmailsInbox)}
+                      className={`p-2.5 rounded-xl border text-xs text-center transition-all cursor-pointer ${showEmailsInbox ? "bg-amber-500 text-white border-amber-600" : "bg-indigo-50 border-indigo-150 text-indigo-700 hover:bg-indigo-100"}`}
+                    >
+                      <span className="text-[9px] text-indigo-400 font-extrabold block uppercase tracking-wider">SMS & Mail gateway</span>
+                      <strong className="flex items-center justify-center gap-1.5 mt-0.5">
+                        📬 {simulatedEmails.length} Alerts
+                        {simulatedEmails.length > 0 && (
+                          <span className="w-2 h-2 bg-rose-600 rounded-full animate-pulse inline-block" />
+                        )}
+                      </strong>
+                    </button>
+
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-slate-700 text-center">
+                      <span className="text-[9px] text-slate-400 font-black block uppercase tracking-wider">Plan Billing Tier</span>
+                      <span className="font-bold text-emerald-800">{activeVendorRecord?.subscriptionPackage} Package</span>
+                    </div>
                   </div>
                 </div>
+
+                {/* SIMULATED VENDOR MAILBOX EXPANSION TRAY */}
+                {showEmailsInbox && (
+                  <div className="p-5 rounded-3xl bg-slate-900 text-slate-100 border border-slate-800 shadow-xl space-y-4 animate-fade-in relative">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+                      <div>
+                        <h4 className="text-xs font-black text-amber-400 uppercase tracking-widest">📧 Simulated SMS & Email Notifications Gateway</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Automated diagnostic check of transactional receipts and low stock alerts.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowEmailsInbox(false)}
+                        className="text-[10px] uppercase font-black text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                      >
+                        Minimize Inbox
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      {/* Left list pane */}
+                      <div className="md:col-span-5 h-[280px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                        {simulatedEmails.map(mail => (
+                          <div
+                            key={mail.id}
+                            onClick={() => setSelectedSubscribedEmail(mail)}
+                            className={`p-2.5 rounded-xl border cursor-pointer text-[10.5px] transition-all text-left ${selectedSubscribedEmail?.id === mail.id ? "bg-amber-500/10 border-amber-500 text-white" : "bg-slate-950/50 border-slate-800 text-slate-300 hover:border-slate-700"}`}
+                          >
+                            <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono mb-1">
+                              <span className="truncate max-w-[150px]">{mail.recipient}</span>
+                              <span>{mail.date}</span>
+                            </div>
+                            <strong className="block text-slate-100 truncate">{mail.subject}</strong>
+                            <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${mail.type === "low_stock" ? "bg-rose-500/25 text-rose-300" : "bg-emerald-500/25 text-emerald-300"}`}>
+                              {mail.type === "low_stock" ? "Low Stock Warning" : "Delivery Order Receipt"}
+                            </span>
+                          </div>
+                        ))}
+
+                        {simulatedEmails.length === 0 && (
+                          <div className="h-[220px] flex flex-col items-center justify-center text-slate-400 text-center space-y-2">
+                            <span className="text-3xl">📭</span>
+                            <p className="text-[10.5px] font-bold">Inbox is currently empty</p>
+                            <p className="text-[9.5px] text-slate-500 max-w-xs leading-normal">
+                              Purchase items at checkout or deplete stock past safety thresholds to dispatch instant warnings.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right viewer pane */}
+                      <div className="md:col-span-7 bg-white rounded-2xl p-4 border border-slate-800 h-[280px] overflow-y-auto text-slate-800 text-xs shadow-inner">
+                        {selectedSubscribedEmail ? (
+                          <div dangerouslySetInnerHTML={{ __html: selectedSubscribedEmail.body }} />
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4">
+                            <span className="text-2xl mb-1 mt-6">📄</span>
+                            <p className="font-bold text-[11px] text-slate-300">No Alert Selected</p>
+                            <p className="text-[9.5px] text-slate-500 max-w-[200px]">Click any message logs on the sidebar to view full compiled metrics.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* List own products catalog */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Your Live Store Inventory</h4>
                   
                   <div className="divide-y border rounded-2xl overflow-hidden bg-slate-50">
-                    {products.filter(p => p.vendorId === activeVendorRecord?.id).map(prod => (
-                      <div key={prod.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white">
-                        <div className="flex gap-3 items-center">
-                          <span className="text-3xl p-1 bg-slate-100 rounded-lg">{prod.iconEmoji}</span>
-                          <div>
-                            <span className="text-[9px] uppercase font-mono font-bold text-slate-400 block tracking-widest">{prod.category}</span>
-                            <h5 className="font-bold text-xs text-slate-800">{prod.name}</h5>
-                            <p className="text-[10.5px] text-slate-400 max-w-sm font-semibold truncate block">{prod.description}</p>
+                    {products.filter(p => p.vendorId === activeVendorRecord?.id).map(prod => {
+                      const isLowStock = prod.stock <= (prod.lowStockThreshold || 5);
+                      return (
+                        <div key={prod.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white border-b">
+                          <div className="flex gap-3 items-center">
+                            {prod.productImages && prod.productImages.length > 0 ? (
+                              <img 
+                                src={prod.productImages[0]} 
+                                alt=""
+                                className="w-12 h-12 rounded-lg object-cover border shrink-0" 
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="text-3xl p-1 bg-slate-100 rounded-lg shrink-0">{prod.iconEmoji}</span>
+                            )}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] uppercase font-mono font-bold text-slate-400 tracking-widest">{prod.category}</span>
+                                <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded font-mono ${prod.isActive !== false ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                                  {prod.isActive !== false ? "Active" : "Inactive"}
+                                </span>
+                              </div>
+                              <h5 className="font-bold text-xs text-slate-800">{prod.name}</h5>
+                              <p className="text-[10.5px] text-slate-400 font-semibold leading-relaxed max-w-sm shrink-0">
+                                {prod.description || `${prod.name} catalogue release`}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1 text-[9.5px] font-mono text-slate-400 font-bold">
+                                <span>📍 Location: <b className="text-slate-600">{prod.productLocation || activeVendorRecord?.location}</b></span>
+                                <span>• ⚖️ Unit: <b className="text-slate-600">{prod.unitOfMeasure || "kg"}</b></span>
+                                <span>• ⚙️ VAT: <b className="text-[#10b981]">{prod.vatApplicable ? "Yes (16%)" : "Exempt"}</b></span>
+                                {prod.productImages && <span>• 📸 Images: <b className="text-slate-600">{prod.productImages.length}</b></span>}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto text-xs shrink-0">
+                            <div className="text-right">
+                              <span className="text-[9px] text-slate-400 block font-bold leading-none uppercase">Item Cost</span>
+                              <span className="font-mono font-bold text-slate-950">{prod.price} ZMW</span>
+                              <span className="text-[9.5px] text-slate-400 block font-bold leading-none uppercase mt-1">Stock Level</span>
+                              <span className={`font-mono font-bold block ${isLowStock ? "text-rose-600 font-extrabold animate-pulse" : "text-slate-700"}`}>
+                                {prod.stock} / Alert at {prod.lowStockThreshold || 5}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProducts(prev => {
+                                    const updated = prev.map(p => p.id === prod.id ? { ...p, isActive: p.isActive === false } : p);
+                                    localStorage.setItem("mabala_marketplace_products", JSON.stringify(updated));
+                                    return updated;
+                                  });
+                                  alert(`"${prod.name}" status updated successfully!`);
+                                }}
+                                title="Click to instant toggle publish status"
+                                className={`p-1.5 px-2 font-black uppercase text-[9px] rounded-lg cursor-pointer transition ${prod.isActive !== false ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                              >
+                                {prod.isActive !== false ? "Deactivate" : "Activate"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setEditingProduct(prod)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer font-bold uppercase text-[9px]"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteProduct(prod.id)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Trash className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-4 text-xs">
-                          <div className="text-right">
-                            <span className="text-[9.5px] text-slate-400 block font-bold leading-none uppercase">Item Cost</span>
-                            <span className="font-mono font-bold text-slate-900">{prod.price} ZMW</span>
-                          </div>
-                          
-                          <div className="text-right">
-                            <span className="text-[9.5px] text-slate-400 block font-bold leading-none uppercase">Assigned Stock</span>
-                            <span className="font-mono font-bold text-slate-600">{prod.stock} Units</span>
-                          </div>
-
-                          <button
-                            onClick={() => handleDeleteProduct(prod.id)}
-                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded transition-colors cursor-pointer"
-                          >
-                            <Trash className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {products.filter(p => p.vendorId === activeVendorRecord?.id).length === 0 && (
                       <div className="p-8 text-center text-xs text-slate-400 bg-white">
@@ -1709,11 +2285,12 @@ export default function MarketplacePanel({
                     )}
                   </div>
                 </div>
+
               </div>
 
-              {/* Right Column: Catalogue Publisher Form */}
+              {/* Right Column: Vendor Catalogue Publisher Form & Store Clearings */}
               <div className="lg:col-span-4 space-y-6">
-                
+
                 {/* Onboard Catalog Form */}
                 <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
                   <div>
@@ -1721,9 +2298,9 @@ export default function MarketplacePanel({
                     <p className="text-[10.5px] text-slate-400 leading-normal">Publish products immediately visible on buyer directory pages.</p>
                   </div>
 
-                  <form onSubmit={handleAddProduct} className="space-y-3 text-xs font-semibold">
+                  <form onSubmit={handleAddProduct} className="space-y-3 px-0.5 text-xs font-semibold">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Product Public Name</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-450">Product Public Name</label>
                       <input
                         type="text"
                         required
@@ -1736,7 +2313,7 @@ export default function MarketplacePanel({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400">Retail price (ZMW)</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Retail price (ZMW)</label>
                         <input
                           type="number"
                           required
@@ -1746,7 +2323,7 @@ export default function MarketplacePanel({
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400">In-Stock Qty</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-450">In-Stock Qty</label>
                         <input
                           type="number"
                           required
@@ -1759,20 +2336,48 @@ export default function MarketplacePanel({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400">Niche Category</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Unit of measure</label>
                         <select
-                          value={newProdCategory}
-                          onChange={e => setNewProdCategory(e.target.value as any)}
+                          value={newProdUnitOfMeasure}
+                          onChange={e => setNewProdUnitOfMeasure(e.target.value)}
                           className="w-full mt-1 p-2 border bg-slate-50 rounded"
                         >
-                          <option value="Seeds & Agronomy">Seeds & Agronomy</option>
-                          <option value="Veterinary & Health">Veterinary & Health</option>
-                          <option value="Equipment & Tech">Equipment & Tech</option>
-                          <option value="Feeds & Formulations">Feeds & Formulations</option>
+                          <option value="kg">kg (Kilogram)</option>
+                          <option value="litre">litre (Litre)</option>
+                          <option value="bag">bag (Bag)</option>
+                          <option value="bundle">bundle (Bundle)</option>
+                          <option value="each">each (Each)</option>
+                          <option value="tonne">tonne (Tonne)</option>
+                          <option value="crate">crate (Crate)</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400">Illustration / Emoji</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Low Stock Alert Limit</label>
+                        <input
+                          type="number"
+                          required
+                          value={newProdLowStockThreshold}
+                          onChange={e => setNewProdLowStockThreshold(Number(e.target.value))}
+                          className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-[#1e293b]">Category / Niche</label>
+                        <input
+                          type="text"
+                          required
+                          value={newProdCategory}
+                          onChange={e => setNewProdCategory(e.target.value)}
+                          placeholder={activeVendorRecord?.category || "Seeds & Agronomy"}
+                          className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded text-xs"
+                        />
+                        <span className="text-[9px] text-slate-450 block leading-normal font-medium mt-0.5">Inherited from store niche, feel free to refine or make more specific.</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Illustration / Emoji</label>
                         <select
                           value={newProdEmoji}
                           onChange={e => setNewProdEmoji(e.target.value)}
@@ -1791,12 +2396,105 @@ export default function MarketplacePanel({
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-450 block mb-1">VAT Status</label>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setNewProdVatApplicable(true)}
+                            className={`flex-1 py-1.5 rounded-lg border font-bold text-[10px] uppercase cursor-pointer ${newProdVatApplicable ? "bg-[#10b981]/15 text-[#10b981] border-[#10b981]" : "bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-500"}`}
+                          >
+                            VAT (16%)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewProdVatApplicable(false)}
+                            className={`flex-1 py-1.5 rounded-lg border font-bold text-[10px] uppercase cursor-pointer ${!newProdVatApplicable ? "bg-slate-800 text-slate-200 border-slate-700" : "bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-500"}`}
+                          >
+                            Exempt
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-455">Custom Location</label>
+                        <input
+                          type="text"
+                          value={newProdProductLocation}
+                          onChange={e => setNewProdProductLocation(e.target.value)}
+                          placeholder={activeVendorRecord?.location || "Lusaka, ZM"}
+                          className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Drag and Drop Product Images */}
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Technical Descriptive Scope</label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] uppercase font-black text-slate-450">Product Images (Min 2, Max 6)</label>
+                        <button
+                          type="button"
+                          onClick={handleLoadDemoProductImages}
+                          className="text-[9px] text-emerald-600 hover:underline font-extrabold inline-flex items-center"
+                        >
+                          ✨ Load Demo Agricultural Images
+                        </button>
+                      </div>
+                      
+                      <div 
+                        onDragOver={e => { e.preventDefault(); setIsDraggingProdImg(true); }}
+                        onDragLeave={() => setIsDraggingProdImg(false)}
+                        onDrop={e => {
+                          e.preventDefault();
+                          setIsDraggingProdImg(false);
+                          handleProductImageUpload(e.dataTransfer.files);
+                        }}
+                        className={`mt-1.5 p-3.5 border border-dashed rounded-xl text-center transition-all ${isDraggingProdImg ? "border-[#10b981] bg-[#10b981]/5" : "border-slate-200 hover:border-slate-350 bg-slate-50"}`}
+                      >
+                        <input 
+                          type="file" 
+                          id="product_img_files" 
+                          multiple 
+                          accept=".png,.jpg,.jpeg,.webp"
+                          className="hidden" 
+                          onChange={e => handleProductImageUpload(e.target.files)}
+                        />
+                        <label htmlFor="product_img_files" className="cursor-pointer space-y-1 block">
+                          <span className="text-[11px] text-slate-700 block">Drag & drop or <strong className="text-[#10b981] hover:underline">browse files</strong></span>
+                          <span className="text-[9px] text-slate-400 block leading-normal font-medium">Accepted: PNG, JPG, WebP (Strict min 600x600px size threshold)</span>
+                        </label>
+                      </div>
+
+                      {/* Render preview gallery */}
+                      {newProdProductImages.length > 0 && (
+                        <div className="mt-2 grid grid-cols-6 gap-1.5 bg-slate-100 p-2 rounded-xl border border-slate-200">
+                          {newProdProductImages.map((img, i) => (
+                            <div key={i} className="relative group aspect-square rounded-lg border overflow-hidden bg-white">
+                              <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <button
+                                type="button"
+                                onClick={() => setNewProdProductImages(prev => prev.filter((_, idx) => idx !== i))}
+                                className="absolute top-0.5 right-0.5 p-0.5 bg-black/65 hover:bg-black text-white text-[8px] rounded cursor-pointer font-bold leading-none"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Descriptive Scope (Max 500 chars)</label>
+                        <span className="text-[9.5px] text-slate-400 font-mono">{(newProdDescription || "").length}/500</span>
+                      </div>
                       <textarea
                         value={newProdDescription}
-                        onChange={e => setNewProdDescription(e.target.value)}
-                        rows={3}
+                        onChange={e => setNewProdDescription(e.target.value.slice(0, 500))}
+                        rows={2.5}
+                        maxLength={500}
                         placeholder="Detail certified properties, bag measurements etc."
                         className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded resize-none"
                       />
@@ -1804,7 +2502,7 @@ export default function MarketplacePanel({
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs tracking-wider uppercase shadow cursor-pointer text-center"
+                      className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 text-white font-black rounded-lg text-xs tracking-wider uppercase shadow cursor-pointer text-center"
                     >
                       Publish Item to Catalogue Shelf
                     </button>
@@ -2382,7 +3080,13 @@ export default function MarketplacePanel({
                       description: adminUploadDescription || "Admin sponsored/uploaded merchant listing.",
                       iconEmoji: adminUploadIcon,
                       isAdminUploaded: true,
-                      expiryDate: adminUploadExpiry
+                      expiryDate: adminUploadExpiry,
+                      unitOfMeasure: "each",
+                      vatApplicable: false,
+                      productLocation: targetVendor.location,
+                      productImages: ["🌾", "🌾"], // fallback
+                      isActive: true,
+                      lowStockThreshold: 5
                     };
 
                     setProducts(prev => [newAdminProduct, ...prev]);
@@ -2748,6 +3452,179 @@ export default function MarketplacePanel({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PRODUCT MODAL */}
+      {editingProduct && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 border w-full max-w-lg shadow-xl space-y-4 text-xs font-semibold text-slate-800">
+            {/* Header */}
+            <div className="flex justify-between items-center pb-2 border-b">
+              <div>
+                <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">🛠️ Edit Product Details</h4>
+                <p className="text-[10px] text-slate-400 capitalize font-medium">Modify properties for directory listings and stock alarms.</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setEditingProduct(null)}
+                className="p-1 hover:bg-slate-100 rounded text-slate-500 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Inputs Form */}
+            <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1 text-left">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400">Product Name</label>
+                <input
+                  type="text"
+                  className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded text-xs"
+                  value={editingProduct.name}
+                  onChange={e => setEditingProduct({...editingProduct, name: e.target.value})}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 font-semibold">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Retail price (ZMW)</label>
+                  <input
+                    type="number"
+                    className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded font-mono text-xs"
+                    value={editingProduct.price}
+                    onChange={e => setEditingProduct({...editingProduct, price: Number(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">In-Stock Quantity</label>
+                  <input
+                    type="number"
+                    className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded font-mono text-xs"
+                    value={editingProduct.stock}
+                    onChange={e => setEditingProduct({...editingProduct, stock: Number(e.target.value)})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Unit of measure</label>
+                  <select
+                    className="w-full mt-1 p-2 border bg-slate-50 rounded text-xs"
+                    value={editingProduct.unitOfMeasure || "kg"}
+                    onChange={e => setEditingProduct({...editingProduct, unitOfMeasure: e.target.value})}
+                  >
+                    <option value="kg">kg (Kilogram)</option>
+                    <option value="litre">litre (Litre)</option>
+                    <option value="bag">bag (Bag)</option>
+                    <option value="bundle">bundle (Bundle)</option>
+                    <option value="each">each (Each)</option>
+                    <option value="tonne">tonne (Tonne)</option>
+                    <option value="crate">crate (Crate)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Low Stock Alert Threshold</label>
+                  <input
+                    type="number"
+                    className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded font-mono text-xs"
+                    value={editingProduct.lowStockThreshold || 5}
+                    onChange={e => setEditingProduct({...editingProduct, lowStockThreshold: Number(e.target.value)})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 font-bold">Product Category / Niche</label>
+                <input
+                  type="text"
+                  className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded text-xs"
+                  value={editingProduct.category}
+                  onChange={e => setEditingProduct({...editingProduct, category: e.target.value})}
+                  placeholder="e.g. Specialty Hybrid Seeds"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">VAT Status</label>
+                  <select
+                    className="w-full mt-1 p-2 border bg-slate-50 rounded text-xs"
+                    value={editingProduct.vatApplicable ? "yes" : "no"}
+                    onChange={e => setEditingProduct({...editingProduct, vatApplicable: e.target.value === "yes"})}
+                  >
+                    <option value="no">Exempt / No VAT</option>
+                    <option value="yes">Standard VAT Applicable (16%)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Operational Location</label>
+                  <input
+                    type="text"
+                    className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded text-xs"
+                    placeholder={activeVendorRecord?.location}
+                    value={editingProduct.productLocation || ""}
+                    onChange={e => setEditingProduct({...editingProduct, productLocation: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400">Description (Max 500 chars)</label>
+                <textarea
+                  className="w-full mt-1 p-2 border bg-slate-50 focus:bg-white rounded resize-none text-xs"
+                  rows={3}
+                  maxLength={500}
+                  value={editingProduct.description || ""}
+                  onChange={e => setEditingProduct({...editingProduct, description: e.target.value.slice(0, 500)})}
+                />
+                <div className="text-[9.5px] text-right text-slate-400 mt-0.5 font-mono">
+                  {(editingProduct.description || "").length}/500 Characters
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border">
+                <input
+                  type="checkbox"
+                  id="editIsActive"
+                  className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer text-left"
+                  checked={editingProduct.isActive !== false}
+                  onChange={e => setEditingProduct({...editingProduct, isActive: e.target.checked})}
+                />
+                <label htmlFor="editIsActive" className="text-slate-700 uppercase font-bold text-[10px] tracking-wide cursor-pointer select-none text-left">
+                  Listing active on directory shelves (Out-of-stock items also need valid stock qty to display)
+                </label>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-2 border-t flex justify-end gap-2 text-xs font-bold uppercase">
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!editingProduct.name.trim()) return;
+                  setProducts(prev => {
+                    const up = prev.map(p => p.id === editingProduct.id ? editingProduct : p);
+                    localStorage.setItem("mabala_marketplace_products", JSON.stringify(up));
+                    return up;
+                  });
+                  setEditingProduct(null);
+                  alert("Product details updated successfully!");
+                }}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg cursor-pointer"
+              >
+                Save updates
+              </button>
+            </div>
           </div>
         </div>
       )}

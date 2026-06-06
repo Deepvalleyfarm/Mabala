@@ -12,6 +12,7 @@ export interface Vendor {
   expiryDate?: string;
   credits?: number;
   logoColor: string;
+  logoUrl?: string;
 }
 
 export interface MarketplaceProduct {
@@ -19,7 +20,7 @@ export interface MarketplaceProduct {
   vendorId: string;
   vendorName: string;
   name: string;
-  category: "Seeds & Agronomy" | "Veterinary & Health" | "Equipment & Tech" | "Feeds & Formulations";
+  category: "Seeds & Agronomy" | "Veterinary & Health" | "Equipment & Tech" | "Feeds & Formulations" | string;
   price: number;
   stock: number;
   description: string;
@@ -27,6 +28,12 @@ export interface MarketplaceProduct {
   iconEmoji: string;
   isAdminUploaded?: boolean;
   expiryDate?: string;
+  unitOfMeasure: string; // kg, litre, bag, bundle, each, tonne, crate, etc.
+  vatApplicable: boolean;
+  productLocation: string;
+  productImages?: string[]; // min 2, max 6
+  isActive: boolean;
+  lowStockThreshold?: number; // default: 5
 }
 
 export interface BikeRider {

@@ -77,6 +77,7 @@ interface ProfilesPlatformPanelProps {
     twitter: string;
     facebook: string;
     linkedin: string;
+    whatsapp: string;
   };
   setContactDetails?: React.Dispatch<React.SetStateAction<{
     email: string;
@@ -85,6 +86,7 @@ interface ProfilesPlatformPanelProps {
     twitter: string;
     facebook: string;
     linkedin: string;
+    whatsapp: string;
   }>>;
   activeAds?: any[];
   setActiveAds?: React.Dispatch<React.SetStateAction<any[]>>;
@@ -131,7 +133,8 @@ export default function ProfilesPlatformPanel({
     address: "Block G, Great East Road, Lusaka, Zambia",
     twitter: "https://twitter.com/mabala_saas",
     facebook: "https://facebook.com/mabala_saas",
-    linkedin: "https://linkedin.com/company/mabala_saas"
+    linkedin: "https://linkedin.com/company/mabala_saas",
+    whatsapp: "260977112233"
   },
   setContactDetails = () => {},
   activeAds = [],
@@ -2334,6 +2337,17 @@ export default function ProfilesPlatformPanel({
                         type="text" 
                         value={contactDetails.phone} 
                         onChange={e => setContactDetails(prev => ({ ...prev, phone: e.target.value }))}
+                        className="w-full text-xs mt-1 p-2 bg-slate-50 hover:bg-slate-100/55 rounded border outline-none focus:bg-white focus:border-emerald-500 font-semibold text-slate-800" 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Support WhatsApp Number (e.g. 260971234567)</label>
+                      <input 
+                        type="text" 
+                        value={contactDetails.whatsapp} 
+                        onChange={e => setContactDetails(prev => ({ ...prev, whatsapp: e.target.value }))}
+                        placeholder="260971234567"
                         className="w-full text-xs mt-1 p-2 bg-slate-50 hover:bg-slate-100/55 rounded border outline-none focus:bg-white focus:border-emerald-500 font-semibold text-slate-800" 
                       />
                     </div>

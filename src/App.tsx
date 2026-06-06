@@ -272,10 +272,34 @@ export default function App() {
   const [credits, setCredits] = useState<number>(300); // base subscription package size
 
   // Marketplace core states
-  const [marketplaceVendors, setMarketplaceVendors] = useState<MarketVendor[]>(INITIAL_VENDORS);
-  const [marketplaceProducts, setMarketplaceProducts] = useState<MarketplaceProduct[]>(INITIAL_PRODUCTS);
-  const [marketplaceRiders, setMarketplaceRiders] = useState<BikeRider[]>(INITIAL_RIDERS);
-  const [marketplaceOrders, setMarketplaceOrders] = useState<MarketplaceOrder[]>(INITIAL_ORDERS);
+  const [marketplaceVendors, setMarketplaceVendors] = useState<MarketVendor[]>(() => {
+    const saved = localStorage.getItem("mabala_marketplace_vendors");
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return INITIAL_VENDORS;
+  });
+  const [marketplaceProducts, setMarketplaceProducts] = useState<MarketplaceProduct[]>(() => {
+    const saved = localStorage.getItem("mabala_marketplace_products");
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return INITIAL_PRODUCTS;
+  });
+  const [marketplaceRiders, setMarketplaceRiders] = useState<BikeRider[]>(() => {
+    const saved = localStorage.getItem("mabala_marketplace_riders");
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return INITIAL_RIDERS;
+  });
+  const [marketplaceOrders, setMarketplaceOrders] = useState<MarketplaceOrder[]>(() => {
+    const saved = localStorage.getItem("mabala_marketplace_orders");
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return INITIAL_ORDERS;
+  });
   const [marketplaceCommission, setMarketplaceCommission] = useState<number>(10);
   const [marketplaceDeliveryFeePerKm, setMarketplaceDeliveryFeePerKm] = useState<number>(5.0);
 
@@ -300,7 +324,8 @@ export default function App() {
       address: "Block G, Great East Road, Lusaka, Zambia",
       twitter: "https://twitter.com/mabala_saas",
       facebook: "https://facebook.com/mabala_saas",
-      linkedin: "https://linkedin.com/company/mabala_saas"
+      linkedin: "https://linkedin.com/company/mabala_saas",
+      whatsapp: "260977112233"
     };
   });
 
@@ -340,6 +365,22 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("mabala_active_ads", JSON.stringify(activeAds));
   }, [activeAds]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_marketplace_vendors", JSON.stringify(marketplaceVendors));
+  }, [marketplaceVendors]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_marketplace_products", JSON.stringify(marketplaceProducts));
+  }, [marketplaceProducts]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_marketplace_riders", JSON.stringify(marketplaceRiders));
+  }, [marketplaceRiders]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_marketplace_orders", JSON.stringify(marketplaceOrders));
+  }, [marketplaceOrders]);
 
   // Firebase auth state observer
   useEffect(() => {
@@ -624,6 +665,79 @@ export default function App() {
         setActiveTab("dashboard");
       }
 
+    } else if (checkoutObj.type === "vendor-subscription") {
+      setSubscriptionTier(checkoutObj.name);
+      setCredits(awardedCredits);
+      
+      if (checkoutObj.registrationData) {
+        const r = checkoutObj.registrationData;
+        const randomColors = ["bg-emerald-600", "bg-indigo-600", "bg-sky-600", "bg-amber-600", "bg-purple-600"];
+        const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+        const newVendor: MarketVendor = {
+          id: `vend-custom-${Date.now()}`,
+          name: r.storeName,
+          category: r.category,
+          location: r.location,
+          distanceKm: Number(r.distanceKm || 15),
+          phone: r.phone,
+          email: r.email,
+          subscriptionPackage: checkoutObj.name,
+          status: "Active", // Land straight on store front
+          joinedDate: new Date().toISOString().split("T")[0],
+          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          credits: awardedCredits,
+          logoColor: randomColor,
+          logoUrl: r.logoUrl
+        };
+
+        setMarketplaceVendors(prev => {
+          const updated = [...prev, newVendor];
+          localStorage.setItem("mabala_marketplace_vendors", JSON.stringify(updated));
+          return updated;
+        });
+
+        setUserProfile({
+          name: r.storeName,
+          email: r.email,
+          phone: r.phone
+        });
+
+        // Setup mock farms & accounting modules for valid farmer session reference bindings
+        setFarms([
+          {
+            id: "farm-1",
+            name: r.storeName + " Farm Workspace",
+            tpin: "100431290",
+            address: r.location,
+            phone: r.phone,
+            email: r.email,
+            financialYearStart: "2026-01-01",
+            financialYearEnd: "2026-12-31",
+            currency: "ZMK",
+            currencySymbol: "ZK",
+            taxSystem: "VAT"
+          }
+        ]);
+        setSuppliers([]);
+        setCustomers([]);
+        setExpenses([]);
+        setInvoices([]);
+        setQuotations([]);
+        setCrops([]);
+        setEmployees([]);
+        setPoultry([]);
+        setFish([]);
+        setInventory([]);
+        setLoans([]);
+        setInvestments([]);
+        setCashSales([]);
+        setLivestock([]);
+        setAccounts(INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
+
+        setIsAuthenticated(true);
+        setActiveTab("marketplace"); // Navigate merchant directly into the marketplace workspace
+      }
     } else {
       setCredits(prev => prev + awardedCredits);
 
@@ -836,10 +950,10 @@ export default function App() {
   const [statusChangeLogs, setStatusChangeLogs] = useState<any[]>([]);
   const [creditTransactions, setCreditTransactions] = useState<any[]>([]);
   const [platformPackages, setPlatformPackages] = useState<any[]>([
-    { id: "pkg-1", name: "Smallholder Standard Pack", duration: "1 Month", credits: 1000, price: 500, priceUSD: 25, currency: "ZMW", features: "Crop cycles monitoring, 3 basic users", isActive: true },
-    { id: "pkg-2", name: "Commercial Growth Layer", duration: "3 Months", credits: 5000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Livestock Tracking, Multi-User, Standard Payroll, IFRS Reports", isActive: true },
-    { id: "pkg-3", name: "Agro-Enterprise Premium", duration: "12 Months", credits: 25000, price: 8000, priceUSD: 399, currency: "ZMW", features: "Unlimited multi-tenant nodes, Advanced automatic double-entry, complete statutory Localizer, AI diagnostics", isActive: true },
-    { id: "pkg-4", name: "Premium Seller", duration: "1 Month", credits: 300, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited listings, homepage featured slot, priority support, advanced analytics", isActive: true }
+    { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 100, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
+    { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
+    { id: "pkg-3", name: "Enterprise Suite", duration: "1 Month", credits: 25000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Multi-farm nodes, 10 team users, advanced analytics, dedicated account manager, API access", isActive: true },
+    { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true }
   ]);
 
   const activeFarm = farms[activeFarmIndex] || farms[0];
@@ -954,6 +1068,47 @@ export default function App() {
       creditsToAward: matchedPkg.credits,
       description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
       registrationData: data // pass key data to provision once paid successfully
+    });
+  };
+
+  const handleRegisterVendor = async (data: {
+    storeName: string;
+    category: "Seeds & Agronomy" | "Veterinary & Health" | "Equipment & Tech" | "Feeds & Formulations";
+    location: string;
+    distanceKm: number;
+    phone: string;
+    email: string;
+    subscriptionPackage: string;
+    password?: string;
+    logoUrl?: string;
+  }) => {
+    // Save to Firebase Auth if email and password provided, and Firebase is configured
+    if (isConfigured && data.email && data.password) {
+      try {
+        await createUserWithEmailAndPassword(auth, data.email, data.password);
+      } catch (err: any) {
+        if (err.code !== "auth/email-already-in-use") {
+          throw err;
+        }
+      }
+    }
+
+    // Mapping package details
+    const pkgs = [
+      { id: "Basic", name: "Mabala Basic Merchant", price: 150, credits: 300, desc: "Publish up to 5 items inside farm catalogs directories." },
+      { id: "Elite", name: "Mabala Elite Vendor", price: 350, credits: 5000, desc: "Publish 25 items, prioritize results directories, analytics." },
+      { id: "Cooperative Pro", name: "Cooperative Pro", price: 600, credits: 25000, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders." }
+    ];
+    const matched = pkgs.find(p => p.id === data.subscriptionPackage || p.name === data.subscriptionPackage) || pkgs[0];
+
+    // Launch Lipila Mobile Money terminal for Vendor plan
+    setLipilaCheckout({
+      type: "vendor-subscription",
+      name: matched.name,
+      price: matched.price,
+      creditsToAward: matched.credits,
+      description: matched.desc,
+      registrationData: { ...data, isVendor: true }
     });
   };
 
@@ -2070,6 +2225,7 @@ export default function App() {
           key={welcomeKey}
           onStartDemo={handleStartDemo} 
           onRegister={handleRegister} 
+          onRegisterVendor={handleRegisterVendor}
           onLogin={handleLogin} 
           platformPackages={platformPackages}
           contactDetails={contactDetails}

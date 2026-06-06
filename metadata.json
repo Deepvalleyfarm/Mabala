@@ -1,6 +1,6 @@
 {
-  "name": "Mabala Farm Management",
-  "description": "Multi-tenant farm management and agricultural accounting platform localized for African countries.",
+  "name": "Mabala — Farm Management Platform",
+  "description": "Mabala is Zambia's all-in-one farm management platform. Track crops, poultry, and livestock. Buy inputs from verified suppliers. Built for African farmers — works on any phone.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

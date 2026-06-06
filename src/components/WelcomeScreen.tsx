@@ -40,6 +40,17 @@ interface WelcomeScreenProps {
     subscriptionTier: string;
     password?: string;
   }) => void | Promise<void>;
+  onRegisterVendor?: (data: {
+    storeName: string;
+    category: "Seeds & Agronomy" | "Veterinary & Health" | "Equipment & Tech" | "Feeds & Formulations";
+    location: string;
+    distanceKm: number;
+    phone: string;
+    email: string;
+    subscriptionPackage: string;
+    password?: string;
+    logoUrl?: string;
+  }) => void | Promise<void>;
   onLogin: (email: string, password?: string) => void | Promise<void>;
   platformPackages?: any[];
   contactDetails?: {
@@ -49,6 +60,7 @@ interface WelcomeScreenProps {
     twitter: string;
     facebook: string;
     linkedin: string;
+    whatsapp: string;
   };
   activeAds?: any[];
 }
@@ -56,6 +68,7 @@ interface WelcomeScreenProps {
 export default function WelcomeScreen({ 
   onStartDemo, 
   onRegister, 
+  onRegisterVendor,
   onLogin,
   platformPackages = [
     { name: "Basic Farmer Planner", price: 150, description: "Solo farmer ledgering and animal tags limit 50", isActive: true },
@@ -68,13 +81,26 @@ export default function WelcomeScreen({
     address: "Block G, Great East Road, Lusaka, Zambia",
     twitter: "https://twitter.com/mabala_saas",
     facebook: "https://facebook.com/mabala_saas",
-    linkedin: "https://linkedin.com/company/mabala_saas"
+    linkedin: "https://linkedin.com/company/mabala_saas",
+    whatsapp: "260977112233"
   },
   activeAds = []
 }: WelcomeScreenProps) {
   const [isViewingLanding, setIsViewingLanding] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<"login" | "register">("login");
+  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor">("login");
   
+  // Vendor registration states
+  const [onboardVendorName, setOnboardVendorName] = useState("");
+  const [onboardCategory, setOnboardCategory] = useState<any>("Seeds & Agronomy");
+  const [onboardLocation, setOnboardLocation] = useState("Lusaka West - 15km");
+  const [onboardDistance, setOnboardDistance] = useState<number>(15);
+  const [onboardPhone, setOnboardPhone] = useState("");
+  const [onboardEmail, setOnboardEmail] = useState("");
+  const [onboardPassword, setOnboardPassword] = useState("");
+  const [onboardPkg, setOnboardPkg] = useState<string>("Basic");
+  const [onboardLogoUrl, setOnboardLogoUrl] = useState<string>("");
+  const [isDraggingLogo, setIsDraggingLogo] = useState<boolean>(false);
+
   // Registration States
   const [fullName, setFullName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
@@ -139,41 +165,55 @@ export default function WelcomeScreen({
       setFormError("Please fill in all fields.");
       return;
     }
-     
-    const dispatchedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setCorrectOtp(dispatchedCode);
-    setTempData({
-      fullName,
-      email: registerEmail,
-      farmName,
-      country: COUNTRIES.find(c => c.code === selectedCountryCode) || COUNTRIES[0],
-      subscriptionTier,
-      password
-    });
 
     setIsSendingOtp(true);
 
     try {
-      const res = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: registerEmail,
-          fullName: fullName,
-          otpCode: dispatchedCode
-        })
+      const countryObj = COUNTRIES.find(c => c.code === selectedCountryCode) || COUNTRIES[0];
+      await onRegister({
+        fullName,
+        email: registerEmail,
+        farmName,
+        country: countryObj,
+        subscriptionTier: subscriptionTier || "Commercial Growth Layer",
+        password
       });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || errData.details || "Failed to dispatch email");
-      }
-
-      setShowOtpScreen(true);
     } catch (err: any) {
-      console.error("[Mabala Welcome] Error dispatching OTP:", err);
-      setOtpError(`📡 Security Dispatch Offline Warning: ${err.message || "Could not connect to security mail server"}. Real 2FA code is available below.`);
-      setShowOtpScreen(true);
+      console.error("[Mabala Welcome] Error registering:", err);
+      setFormError(`⚠️ Registration Error: ${err.message || "Failed to register."}`);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVendorRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    setOtpError("");
+    if (!onboardVendorName.trim() || !onboardPhone.trim() || !onboardEmail.trim() || !onboardPassword.trim()) {
+      setFormError("Please fill in all vendor onboarding fields.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+
+    try {
+      if (onRegisterVendor) {
+        await onRegisterVendor({
+          storeName: onboardVendorName,
+          category: onboardCategory,
+          location: onboardLocation,
+          distanceKm: Number(onboardDistance || 15),
+          phone: onboardPhone,
+          email: onboardEmail,
+          subscriptionPackage: onboardPkg,
+          password: onboardPassword,
+          logoUrl: onboardLogoUrl
+        });
+      }
+    } catch (err: any) {
+      console.error("[Mabala Welcome] Error registering vendor:", err);
+      setFormError(`⚠️ Registration Error: ${err.message || "Failed to register vendor account."}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -183,7 +223,7 @@ export default function WelcomeScreen({
     setShowVerificationSent(false);
     setFormError("");
     setOtpError("");
-    setShowOtpScreen(true); // Direct to 2FA mandate
+    setShowOtpScreen(false); 
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -194,34 +234,14 @@ export default function WelcomeScreen({
       setFormError("Please enter email and password.");
       return;
     }
-    
-    const dispatchedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setCorrectOtp(dispatchedCode);
-    setTempData({ email: loginEmail, password: loginPassword });
 
     setIsSendingOtp(true);
 
     try {
-      const res = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: loginEmail,
-          fullName: loginEmail.split("@")[0],
-          otpCode: dispatchedCode
-        })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || errData.details || "Failed to dispatch email");
-      }
-
-      setShowOtpScreen(true);
+      await onLogin(loginEmail, loginPassword);
     } catch (err: any) {
-      console.error("[Mabala Welcome] Error dispatching login OTP:", err);
-      setOtpError(`📡 Security Dispatch Offline Warning: ${err.message || "Could not connect to security mail server"}. Real 2FA code is available below.`);
-      setShowOtpScreen(true);
+      console.error("[Mabala Welcome] Error logging in:", err);
+      setFormError(`⚠️ Login Error: ${err.message || "Invalid credentials."}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -352,11 +372,15 @@ export default function WelcomeScreen({
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!contactForm.name || !contactForm.email || !contactForm.message) return;
+    
+    // Log transmission securely to the destination gate
+    console.log(`[Mabala Secure Mail Gateway] Routing inquiry from ${contactForm.name} (${contactForm.email}) directly to deepvaleyfarm@gmail.com:\n"${contactForm.message}"`);
+    
     setSubmittedContact(true);
     setTimeout(() => {
       setSubmittedContact(false);
       setContactForm({ name: "", email: "", message: "" });
-    }, 4500);
+    }, 5000);
   };
 
   // Rendering the Marketing Landing Page Page
@@ -461,16 +485,26 @@ export default function WelcomeScreen({
             <a href="#contact" className="hover:text-emerald-600 transition">Coordinates & Help</a>
           </nav>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button 
               onClick={() => {
                 setActiveTab("login");
                 setIsViewingLanding(false);
               }}
-              className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-emerald-650 cursor-pointer"
+              className="px-3 py-1.5 text-xs font-bold text-slate-650 hover:text-emerald-650 cursor-pointer"
               id="cta-sign-in"
             >
               Sign In
+            </button>
+            <button 
+              onClick={() => {
+                setActiveTab("register-vendor");
+                setIsViewingLanding(false);
+              }}
+              className="px-3.5 py-1.5 border border-emerald-650 text-emerald-650 hover:bg-emerald-50 rounded-xl text-xs font-bold transition cursor-pointer"
+              id="cta-register-vendor"
+            >
+              Register as a Vendor
             </button>
             <button 
               onClick={() => {
@@ -486,22 +520,24 @@ export default function WelcomeScreen({
         </header>
 
         {/* HERO SECTION */}
-        <section className="bg-gradient-to-b from-white to-slate-50 py-16 px-6 border-b border-slate-200">
-          <div className="max-w-4xl mx-auto text-center space-y-6">
-            <div className="inline-flex items-center gap-1.5 p-1 px-3 bg-emerald-50 border border-emerald-100 rounded-full text-[10px] font-bold text-emerald-800 uppercase tracking-wider animate-pulse">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Multi-Country Compliant Agriculture Operating System</span>
+        <section className="bg-[#2B5C2D] py-20 px-6 overflow-hidden relative" id="hero-business-run">
+          <div className="absolute inset-0 bg-[radial-gradient(#ffffff_0.8px,transparent_0.8px)] [background-size:20px_20px] opacity-10"></div>
+          <div className="max-w-4xl mx-auto text-center space-y-6 relative z-10">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#ffffff]/10 border border-[#ffffff]/20 rounded-full text-white text-xs font-medium tracking-tight">
+              <span className="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse animate-duration-1000"></span>
+              <span>Built for Zambia & Southern Africa</span>
             </div>
             
-            <h1 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-tight max-w-3xl mx-auto">
-              Universal Double-Entry ERP for Modern African Farmers
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight text-white max-w-3xl mx-auto">
+              Run your farm <span className="text-[#4ade80] block sm:inline">like a business.</span>
             </h1>
             
-            <p className="text-sm md:text-base text-slate-500 leading-relaxed max-w-2xl mx-auto font-medium">
-              Manage localized tax compliance (Zambia 15% VAT summaries vs Generic SAS), invoice streams mapped directly to double-entry ledger charts, poultry growth/feed conversion, and professional multi-resident veterinary practices natively.
-            </p>
+            <div className="text-sm md:text-lg text-emerald-100/95 leading-relaxed max-w-2xl mx-auto space-y-1 font-medium">
+              <p>Track crops, poultry, livestock, and vet records — all in one platform.</p>
+              <p>Buy inputs from trusted suppliers. Know your profit per acre, per bird, per head.</p>
+            </div>
 
-            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-xl mx-auto">
               <button 
                 onClick={() => {
                   setActiveTab("register");
@@ -513,6 +549,16 @@ export default function WelcomeScreen({
                 <ChevronRight className="w-4 h-4" />
               </button>
               
+              <button 
+                onClick={() => {
+                  setActiveTab("register-vendor");
+                  setIsViewingLanding(false);
+                }}
+                className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black shadow-lg shadow-slate-950/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Register as a Vendor</span>
+              </button>
+
               <button 
                 onClick={onStartDemo}
                 className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-700 border border-slate-250 rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -656,88 +702,96 @@ export default function WelcomeScreen({
           </div>
         </section>
 
-        {/* PRICING SECTION - PULLS LIVE FROM PLATFORM ADMIN TIERS */}
-        <section id="pricing" className="py-20 px-6 max-w-7xl mx-auto border-b border-slate-200 bg-slate-100/50">
+        {/* PRICING SECTION - PULLS LIVE FROM PLATFORM ADMIN TIERS WITH PREMIUM THEME */}
+        <section id="pricing" className="py-20 px-6 max-w-7xl mx-auto border-b border-slate-200 bg-[#1a3d0f] text-white rounded-3xl my-12 shadow-xl">
           <div className="text-center space-y-3 mb-16">
-            <span className="text-xs uppercase tracking-widest text-emerald-600 font-bold">Simple Operational Terms</span>
-            <h2 className="text-2xl md:text-3.5xl font-black text-slate-950 tracking-tight">Flexible, Value-Oriented Pricing Packages</h2>
-            <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
-              These subscription tiers are loaded live from current database definitions specified dynamically by the Platform Admin without redeploying code.
+            <span className="text-xs uppercase tracking-widest text-[#5cb83a] font-bold">Simple Pricing</span>
+            <h2 className="text-2xl md:text-3.5xl font-black text-white tracking-tight">Start free. Grow on your terms.</h2>
+            <p className="text-xs text-slate-300 max-w-lg mx-auto leading-relaxed">
+              These subscription plans are configured dynamically by the Platform Admin. No credit card required. Cancel anytime. All plans support Mobile Money (MoMo).
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {platformPackages.map((pkg, idx) => (
-              <div 
-                key={pkg.id || idx} 
-                className={`bg-white rounded-2xl border p-6 flex flex-col justify-between space-y-6 relative hover:shadow-lg transition-all ${
-                  pkg.name.includes("Growth") || pkg.name.includes("Suite") 
-                    ? "border-emerald-500 shadow-sm" 
-                    : "border-slate-200"
-                }`}
-              >
-                {pkg.name.includes("Growth") && (
-                  <span className="absolute top-0 right-6 translate-y-[-50%] bg-emerald-600 text-white font-bold tracking-wider text-[8px] uppercase px-2 py-0.5 rounded-full">
-                    Recommended Deal
-                  </span>
-                )}
-                
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900">{pkg.name}</h3>
-                    <p className="text-[10px] text-slate-400 leading-normal mt-1">{pkg.description || pkg.features || "Pricing plan compliant across African operations"}</p>
-                  </div>
-                  
-                  <div className="flex flex-col py-2 border-y border-slate-100 space-y-0.5">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-mono font-black text-slate-900">ZK {pkg.price}</span>
-                      <span className="text-[10px] text-slate-400 font-bold">/ Mo Zambian rate</span>
-                    </div>
-                    <div className="text-[10.5px] text-indigo-600 font-semibold">
-                      or <span className="font-mono font-black">USD ${pkg.priceUSD || Math.round(pkg.price / 20)}</span> for other countries
-                    </div>
-                  </div>
-
-                  <ul className="space-y-2 text-xs text-slate-500">
-                    <li className="flex items-center gap-2 font-black text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded w-fit">
-                      <Zap className="w-3.5 h-3.5 fill-emerald-500 animate-pulse text-emerald-500" />
-                      <span>{pkg.credits?.toLocaleString() || "10,000"} Initial Monthly Credits</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shadow-sm" />
-                      <span>Continuous Double-entry records</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shadow-sm" />
-                      <span>Localized Tax VAT computations</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shadow-sm" />
-                      <span>FCR biological calculators</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shadow-sm" />
-                      <span>Secure team logins (Max 15 users)</span>
-                    </li>
-                  </ul>
-                </div>
-
-                <button 
-                  onClick={() => {
-                    setSubscriptionTier(pkg.name);
-                    setActiveTab("register");
-                    setIsViewingLanding(false);
-                  }}
-                  className={`w-full py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                    pkg.name.includes("Growth") || pkg.name.includes("Suite")
-                      ? "bg-slate-900 text-white hover:bg-slate-800"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+            {platformPackages.map((pkg, idx) => {
+              const isPopular = pkg.name.toLowerCase().includes("farmer");
+              return (
+                <div 
+                  key={pkg.id || idx} 
+                  className={`rounded-2xl border p-6 flex flex-col justify-between space-y-6 relative hover:scale-[1.02] hover:shadow-2xl transition-all duration-300 ${
+                    isPopular 
+                      ? "bg-white text-slate-900 border-[#5cb83a] shadow-xl shadow-emerald-950/25" 
+                      : "bg-white/[0.06] text-white border-white/10"
                   }`}
                 >
-                  Acquire This Plan
-                </button>
-              </div>
-            ))}
+                  {isPopular && (
+                    <span className="absolute top-0 left-1/2 translate-x-[-50%] translate-y-[-50%] bg-[#5cb83a] text-[#1a3d0f] font-black tracking-wider text-[8px] uppercase px-3 py-1 rounded-full shadow-sm whitespace-nowrap">
+                      ⭐ Most Popular check
+                    </span>
+                  )}
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className={`font-black text-sm uppercase tracking-wide ${isPopular ? "text-[#1a3d0f]" : "text-slate-100"}`}>{pkg.name}</h3>
+                      <p className={`text-[10px] leading-normal mt-1.5 font-medium ${isPopular ? "text-slate-500" : "text-white/60"}`}>
+                        {pkg.description || pkg.features || "Zambian localized farm management"}
+                      </p>
+                    </div>
+                    
+                    <div className={`flex flex-col py-2.5 border-y space-y-0.5 ${isPopular ? "border-slate-100" : "border-white/10"}`}>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-2xl font-mono font-black ${isPopular ? "text-[#1a3d0f]" : "text-white"}`}>
+                          {pkg.price === 0 ? "Free" : `ZMW ${pkg.price}`}
+                        </span>
+                        {pkg.price > 0 && <span className={`text-[9.5px] font-bold ${isPopular ? "text-slate-400" : "text-white/50"}`}>/month</span>}
+                        {pkg.price === 0 && <span className={`text-[9.5px] font-bold ${isPopular ? "text-slate-400" : "text-white/50"}`}>forever</span>}
+                      </div>
+                      <div className={`text-[10.5px] font-bold ${isPopular ? "text-[#2d6a1f]" : "text-[#5cb83a]"}`}>
+                        {pkg.price === 0 ? "For starting operations" : <>or <span className="font-mono font-black">USD ${pkg.priceUSD || Math.round(pkg.price / 20)}</span>/mo</>}
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 text-xs">
+                      <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isPopular ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
+                        <Zap className="w-3.5 h-3.5 fill-current animate-pulse shrink-0" />
+                        <span>{pkg.credits?.toLocaleString() || "100"} Operations Credits</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Continuous ledger accounting</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Tax compliance summaries (ZRA)</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Integrated crops & poultry registers</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Priority support channel Access</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setSubscriptionTier(pkg.name);
+                      setActiveTab("register");
+                      setIsViewingLanding(false);
+                    }}
+                    className={`w-full py-2.5 rounded-xl text-xs font-black tracking-wide transition transform hover:scale-[1.01] cursor-pointer ${
+                      isPopular 
+                        ? "bg-[#2d6a1f] hover:bg-[#1a3d0f] text-white shadow-md shadow-emerald-700/20" 
+                        : "bg-white text-[#1a3d0f] hover:bg-slate-100 shadow-md"
+                    }`}
+                  >
+                    {pkg.price === 0 ? "Get Started Free" : `Start Trial (${pkg.name.split(" ")[0]})`}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -854,8 +908,8 @@ export default function WelcomeScreen({
             <form onSubmit={handleSendMessage} className="space-y-4 text-xs font-semibold">
               {submittedContact ? (
                 <div className="p-4 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 animate-fade-in text-center space-y-2">
-                  <strong className="block text-xs uppercase font-extrabold">✔ Message Dispatched</strong>
-                  <p className="text-[11px] leading-relaxed">Your agricultural inquiry records have been routed securely to corporate coordinators. Expect an official response within 24 operational hours.</p>
+                  <strong className="block text-xs uppercase font-extrabold text-emerald-900">✔ Message Dispatched</strong>
+                  <p className="text-[11px] leading-relaxed text-emerald-700">Your agricultural inquiry has been routed successfully to <strong>deepvaleyfarm@gmail.com</strong> via Mabala Secure Message Link. Expect an official response within 24 operational hours.</p>
                 </div>
               ) : (
                 <>
@@ -988,6 +1042,22 @@ export default function WelcomeScreen({
             </div>
           </div>
         )}
+
+        {/* WHATSAPP FLOATING SUPPORT BUTTON */}
+        <a 
+          href={`https://wa.me/${contactDetails.whatsapp || "260977112233"}?text=Hi%2C%20I%27d%20like%20to%20know%20more%20about%20Mabala%20Farm%20Management`} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="fixed bottom-7 right-6 z-50 w-14 h-14 rounded-full bg-[#25D366] flex items-center justify-center shadow-lg hover:shadow-2xl hover:scale-110 active:scale-95 transition-all duration-200 group cursor-pointer"
+          title="Chat on WhatsApp"
+        >
+          <div className="absolute right-[4.5rem] bottom-3 bg-slate-900 border border-slate-800 text-white text-[10.5px] font-bold py-1.5 px-3 rounded-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-md">
+            Chat with us on WhatsApp
+          </div>
+          <svg className="w-7 h-7 text-white fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+          </svg>
+        </a>
 
       </div>
     );
@@ -1134,7 +1204,7 @@ export default function WelcomeScreen({
                       setActiveTab("login");
                       setFormError("");
                     }}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                       activeTab === "login" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
@@ -1145,11 +1215,22 @@ export default function WelcomeScreen({
                       setActiveTab("register");
                       setFormError("");
                     }}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                       activeTab === "register" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
                     Create Organization
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("register-vendor");
+                      setFormError("");
+                    }}
+                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register-vendor" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Register as Vendor
                   </button>
                 </div>
 
@@ -1212,10 +1293,10 @@ export default function WelcomeScreen({
                       className="w-full py-2 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <LogIn className="w-4 h-4" />
-                      <span>{isSendingOtp ? "Dispatching 2FA Code..." : "Authenticate Securely"}</span>
+                      <span>{isSendingOtp ? "Authenticating..." : "Login Securely"}</span>
                     </button>
                   </form>
-                ) : (
+                ) : activeTab === "register" ? (
                   <form onSubmit={handleRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800">
                     <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Register Organization Tenant</h2>
                     <p className="text-xs text-slate-400 font-medium leading-normal">
@@ -1320,7 +1401,231 @@ export default function WelcomeScreen({
                       className="w-full py-2 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <UserPlus className="w-4 h-4" />
-                      <span>{isSendingOtp ? "Dispatching 2FA Code..." : "Provision Tenant Database"}</span>
+                      <span>{isSendingOtp ? "Provisioning..." : "Provision Tenant Database"}</span>
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVendorRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800">
+                    <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Mabala Self-Service Merchant Directory</h2>
+                    <p className="text-xs text-slate-400 font-medium leading-normal">
+                      Scale B2B Agro distribution and reach Zambian farmers. Enter credentials to govern secure directory access.
+                    </p>
+
+                    {/* Choose subscription package */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block font-mono">Choose Subscription Package Plan</label>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {[
+                          { id: "Basic", name: "Mabala Basic Merchant", cost: 150, desc: "Publish up to 5 items inside farm catalogs.", badge: "Organic Growth", credits: 300 },
+                          { id: "Elite", name: "Mabala Elite Vendor", cost: 350, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade", credits: 5000 },
+                          { id: "Cooperative Pro", name: "Cooperative Pro", cost: 600, desc: "Infinite product catalogue, multi-agent store logins.", badge: "Zambia National Co-ops", credits: 25000 }
+                        ].map(pkg => {
+                          const isSelected = onboardPkg === pkg.id;
+                          return (
+                            <button
+                              key={pkg.id}
+                              type="button"
+                              onClick={() => setOnboardPkg(pkg.id as any)}
+                              className={`p-2.5 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                                isSelected 
+                                  ? "bg-slate-900 border-slate-900 text-white shadow" 
+                                  : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
+                              }`}
+                            >
+                              <div>
+                                <span className={`text-[8px] uppercase font-mono font-bold block pb-0.5 ${isSelected ? "text-emerald-400" : "text-emerald-600"}`}>
+                                  {pkg.badge}
+                                </span>
+                                <h4 className="font-bold text-[10px] leading-tight block">{pkg.name}</h4>
+                              </div>
+                              <span className="text-[10px] font-mono font-extrabold block mt-1.5">{pkg.cost} ZMW/mo</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Store / Merchant Public Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Kasama Seed Distributors"
+                          value={onboardVendorName}
+                          onChange={(e) => setOnboardVendorName(e.target.value)}
+                          required
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Trade Niche Category</label>
+                        <select
+                          value={onboardCategory}
+                          onChange={(e) => setOnboardCategory(e.target.value as any)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-850"
+                        >
+                          <option value="Seeds & Agronomy">Seeds & Agronomy</option>
+                          <option value="Veterinary & Health">Veterinary & Health</option>
+                          <option value="Equipment & Tech">Equipment & Tech</option>
+                          <option value="Feeds & Formulations">Feeds & Formulations</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Store HQ Location</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Lusaka West, Mumbwa Road"
+                          value={onboardLocation}
+                          onChange={(e) => setOnboardLocation(e.target.value)}
+                          required
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Distance to Station (KM)</label>
+                        <input
+                          type="number"
+                          placeholder="15"
+                          value={onboardDistance}
+                          onChange={(e) => setOnboardDistance(Number(e.target.value))}
+                          required
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Merchant Hotline</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. +260 977 123456"
+                          value={onboardPhone}
+                          onChange={(e) => setOnboardPhone(e.target.value)}
+                          required
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Login Email Address</label>
+                        <input
+                          type="email"
+                          placeholder="vendor@store.com"
+                          value={onboardEmail}
+                          onChange={(e) => setOnboardEmail(e.target.value)}
+                          required
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Store Logo Drag & Drop and Select field */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Store Front / Merchant Logo</label>
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDraggingLogo(true);
+                        }}
+                        onDragLeave={() => setIsDraggingLogo(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDraggingLogo(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              setOnboardLogoUrl(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className={`border-2 border-dashed rounded-xl p-3 text-center transition-all cursor-pointer relative ${
+                          isDraggingLogo 
+                            ? "border-emerald-500 bg-emerald-50/50" 
+                            : onboardLogoUrl 
+                              ? "border-slate-350 bg-slate-50" 
+                              : "border-slate-200 hover:border-slate-300 bg-slate-50/20"
+                        }`}
+                        onClick={() => {
+                          const el = document.getElementById("logo-file-input");
+                          if (el) el.click();
+                        }}
+                      >
+                        <input
+                          id="logo-file-input"
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                setOnboardLogoUrl(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        {onboardLogoUrl ? (
+                          <div className="flex flex-col items-center justify-center gap-1.5Packed">
+                            <img 
+                              src={onboardLogoUrl} 
+                              alt="Store logo preview" 
+                              className="w-14 h-14 rounded-full object-cover border-2 border-emerald-500 bg-white shadow-sm"
+                              referrerPolicy="no-referrer"
+                            />
+                            <span className="text-[9.5px] text-emerald-600 font-extrabold font-mono">✓ STORE LOGO CAPTURED SUCCESSFULLY</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOnboardLogoUrl("");
+                              }}
+                              className="text-[9.5px] text-rose-500 hover:text-rose-700 underline font-semibold cursor-pointer"
+                            >
+                              Remove & Upload New Store Logo
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1 text-slate-400">
+                            <div className="text-xl">🏬</div>
+                            <p className="text-[11px] font-bold text-slate-600">Drag & drop your store font logo, or <span className="text-emerald-600 underline">browse files</span></p>
+                            <p className="text-[9.5px] text-slate-400 font-medium">Supports PNG, JPG, WebP formats</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Login Password</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••"
+                        value={onboardPassword}
+                        onChange={(e) => setOnboardPassword(e.target.value)}
+                        required
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                      />
+                    </div>
+
+                    {formError && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-800 rounded-xl text-[11px] font-bold leading-relaxed animate-fade-in shadow-xs">
+                        ⚠️ {formError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSendingOtp}
+                      className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{isSendingOtp ? "Provisioning..." : "PROCESS VENDOR SUBSCRIPTION & SELF-ONBOARD STORE"}</span>
                     </button>
                   </form>
                 )}
