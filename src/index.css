@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@media print {
+  /* Hide unnecessary layout wrapper elements, sidebars, top navigations, buttons, and chatbot widgets */
+  aside,
+  #ai-chatbot,
+  .no-print,
+  button,
+  nav,
+  header,
+  .top-navbar,
+  .sidebar-container,
+  .ai-chatbot-trigger,
+  .print-hidden,
+  .tab-selectors {
+    display: none !important;
+  }
+
+  /* Break the viewport and scrolling locks (height: 100vh / overflow: hidden) to allow full multi-page flow */
+  html, body, #root, .flex, main, section, .h-screen, .overflow-hidden, .overflow-y-auto {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Target the content element and expand to full width */
+  .printable-area {
+    background: white !important;
+    color: black !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Optimize print typography, table borders, and standard alignment */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 20px !important;
+    margin-bottom: 20px !important;
+  }
+
+  th, td {
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: bold !important;
+  }
+
+  /* Make sure color indicators and texts print clearly */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    text-shadow: none !important;
+  }
+
+  /* Avoid page breaks in the middle of lists or cards */
+  tr, .avoid-page-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Mabala Farm Management",
+  "description": "Multi-tenant farm management and agricultural accounting platform localized for African countries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
