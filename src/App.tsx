@@ -2277,21 +2277,21 @@ export default function App() {
                       <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block pb-1">
                         Enter Mobile Money Number ({lipilaCheckout.currency === "USD" ? "International" : "Zambia"})
                       </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-xs text-slate-500 font-bold font-mono">
+                      <div className="flex gap-2">
+                        <div className="flex items-center justify-center px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold font-mono text-slate-300">
                           {lipilaCheckout.currency === "USD" ? "+" : "+260"}
-                        </span>
+                        </div>
                         <input 
                           type="text" 
-                          placeholder={lipilaCheckout.currency === "USD" ? "2547... or 2609..." : "097... or 077... or 096..."}
+                          placeholder="97X XXX XXX"
                           value={lipilaPhone}
                           onChange={(e) => setLipilaPhone(e.target.value)}
                           disabled={lipilaPaymentStatus === "Submitting"}
-                          className={`w-full ${lipilaCheckout.currency === "USD" ? "pl-8" : "pl-14"} pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500`}
+                          className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500"
                         />
                       </div>
-                      <span className="text-[9.5px] text-slate-500 font-medium block mt-1 tracking-normal">
-                        {lipilaCheckout.currency === "USD" ? "Enter international standard format (e.g., 254...) for regional wallets." : "Accepts Airtel Money, MTN MoMo, and Zamtel wallets. Input 10 or 12 digit formats."}
+                      <span className="text-[9.5px] text-slate-400 font-medium block mt-1 tracking-normal">
+                        Airtel, MTN, or Zamtel generated from the Lipila api·
                       </span>
                     </div>
 
@@ -3485,21 +3485,21 @@ export default function App() {
                     <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block pb-1">
                       Enter Mobile Money Number ({lipilaCheckout.currency === "USD" ? "International" : "Zambia"})
                     </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-xs text-slate-500 font-bold font-mono">
+                    <div className="flex gap-2">
+                      <div className="flex items-center justify-center px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold font-mono text-slate-300">
                         {lipilaCheckout.currency === "USD" ? "+" : "+260"}
-                      </span>
+                      </div>
                       <input 
                         type="text" 
-                        placeholder={lipilaCheckout.currency === "USD" ? "2547... or 2609..." : "097... or 077... or 096..."}
+                        placeholder="97X XXX XXX"
                         value={lipilaPhone}
                         onChange={(e) => setLipilaPhone(e.target.value)}
                         disabled={lipilaPaymentStatus === "Submitting"}
-                        className={`w-full ${lipilaCheckout.currency === "USD" ? "pl-8" : "pl-14"} pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500`}
+                        className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-500"
                       />
                     </div>
-                    <span className="text-[9.5px] text-slate-500 font-medium block mt-1 tracking-normal">
-                      {lipilaCheckout.currency === "USD" ? "Enter international standard format (e.g., 254...) for regional wallets." : "Accepts Airtel Money, MTN MoMo, and Zamtel wallets. Input 10 or 12 digit formats."}
+                    <span className="text-[9.5px] text-slate-400 font-medium block mt-1 tracking-normal">
+                      Airtel, MTN, or Zamtel generated from the Lipila api·
                     </span>
                   </div>
 
