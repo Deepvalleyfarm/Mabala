@@ -422,7 +422,23 @@ export default function PayrollPanel({
   };
 
   return (
-    <div className="space-y-6" id="payroll-workspace-root">
+    <div className="space-y-6 relative" id="payroll-workspace-root">
+      {/* Demo Watermark for onscreen and printed output to prevent misuse */}
+      {activeFarm?.email === "mabalademo@mabala.cloud" && (
+        <>
+          {/* Print only watermark */}
+          <div className="hidden print:flex fixed inset-0 items-center justify-center pointer-events-none opacity-[0.06] z-[9999] select-none rotate-[-45deg] text-[120px] font-black tracking-widest text-black whitespace-nowrap">
+            MABALA DEMO
+          </div>
+          {/* Onscreen subtle watermark */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03] overflow-hidden select-none flex items-center justify-center z-[50]">
+            <div className="rotate-[-45deg] text-[90px] font-black tracking-wider text-slate-800 whitespace-nowrap">
+              MABALA DEMO
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Tab Menu Header */}
       <div className="flex justify-between items-center bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex-wrap gap-4">
         <div className="flex gap-2 bg-slate-100 p-0.5 rounded-lg text-xs font-bold border flex-wrap">

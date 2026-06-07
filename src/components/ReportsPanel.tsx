@@ -172,8 +172,9 @@ export default function ReportsPanel({
   const totalEquity = baseEquitySum + netEarnings + unadjustedSumDeficit;
   const equationBalance = totalAssets - totalLiabilities - totalEquity;
 
-  const formatAmt = (val: number) => {
-    return `${currencySymbol} ${val.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  const formatAmt = (val: any) => {
+    const num = typeof val === 'number' ? val : Number(val) || 0;
+    return `${currencySymbol} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
   };
 
   const handlePrintBackup = () => {
@@ -242,6 +243,15 @@ export default function ReportsPanel({
             console.error("Error drawing custom image logo on report PDF:", e);
           }
         }
+      }
+
+      // Draw watermark for demo workspace to avoid misuse
+      if (activeFarm?.email === "mabalademo@mabala.cloud") {
+        doc.setTextColor(240, 240, 240); // Exceptionally light gray
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(45);
+        doc.text("MABALA DEMO", 35, 140, { angle: 45 });
+        doc.text("MABALA DEMO", 35, 230, { angle: 45 });
       }
       
       // Footer text
@@ -795,7 +805,23 @@ export default function ReportsPanel({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Demo Watermark for onscreen and printed output to prevent misuse */}
+      {activeFarm?.email === "mabalademo@mabala.cloud" && (
+        <>
+          {/* Print only watermark */}
+          <div className="hidden print:flex fixed inset-0 items-center justify-center pointer-events-none opacity-[0.06] z-[9999] select-none rotate-[-45deg] text-[120px] font-black tracking-widest text-black whitespace-nowrap">
+            MABALA DEMO
+          </div>
+          {/* Onscreen subtle watermark */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03] overflow-hidden select-none flex items-center justify-center z-[50]">
+            <div className="rotate-[-45deg] text-[90px] font-black tracking-wider text-slate-800 whitespace-nowrap">
+              MABALA DEMO
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Report selectors */}
       <div className="flex bg-slate-100 p-1 rounded-xl w-fit text-xs font-bold shadow-sm gap-1 no-print">
         <button onClick={() => setActiveReport("pl")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "pl" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-700"}`}>
@@ -832,13 +858,13 @@ export default function ReportsPanel({
                 {revenues.map(a => (
                   <div key={a.code} className="py-2 flex justify-between">
                     <span>{a.name} ({a.code})</span>
-                    <span className="font-mono text-slate-900">{currencySymbol} {a.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="font-mono text-slate-900">{currencySymbol} {(a?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
                 ))}
               </div>
               <div className="flex justify-between py-2 border-t font-extrabold text-xs text-emerald-600 bg-emerald-500/5 px-2 rounded mt-1">
                 <span>TOTAL FARM GROUP REVENUES</span>
-                <span>{currencySymbol} {totalRev.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>{currencySymbol} {(totalRev ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
 
@@ -848,20 +874,20 @@ export default function ReportsPanel({
                 {expenseAccounts.map(a => (
                   <div key={a.code} className="py-2 flex justify-between font-medium">
                     <span className="text-slate-600">{a.name} ({a.code})</span>
-                    <span className="font-mono text-slate-900">{currencySymbol} {a.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="font-mono text-slate-900">{currencySymbol} {(a?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
                 ))}
               </div>
               <div className="flex justify-between py-2 border-t font-extrabold text-xs text-rose-500 bg-rose-500/5 px-2 rounded mt-1">
                 <span>TOTAL EXPENDITURES</span>
-                <span>{currencySymbol} {totalExp.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>{currencySymbol} {(totalExp ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
 
             <div className={`p-4 rounded-xl border flex justify-between items-center avoid-page-break ${netEarnings >= 0 ? "bg-emerald-50 border-emerald-100 text-emerald-800" : "bg-rose-50 border-rose-100 text-rose-800"}`}>
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-widest">NET FARMS OPERATING SURPLUS</span>
-                <span className="text-xl font-bold font-mono">{currencySymbol} {netEarnings.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-xl font-bold font-mono">{currencySymbol} {(netEarnings ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
               <span className="px-2.5 py-1 rounded bg-black/5 text-[10px] font-bold">IAS GENERATED</span>
             </div>

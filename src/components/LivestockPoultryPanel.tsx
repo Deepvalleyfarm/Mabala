@@ -533,6 +533,7 @@ interface LivestockPoultryPanelProps {
   onDeleteLivestockRecord?: (id: string) => void;
   onDeletePoultryBatch?: (id: string) => void;
   defaultVaccinationSchedule?: DefaultVaccineScheduleItem[];
+  activeFarm?: any;
 }
 
 export function getStandardWeightG(birdType: string, ageDays: number): number {
@@ -579,7 +580,8 @@ export default function LivestockPoultryPanel({
   onMarkPaid,
   onDeleteLivestockRecord,
   onDeletePoultryBatch,
-  defaultVaccinationSchedule
+  defaultVaccinationSchedule,
+  activeFarm
 }: LivestockPoultryPanelProps) {
   // General segment toggle
   const [segment, setSegment] = useState<"layers" | "formulation" | "livestock">("layers");
@@ -2525,7 +2527,23 @@ export default function LivestockPoultryPanel({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Demo Watermark for onscreen and printed output to prevent misuse */}
+      {activeFarm?.email === "mabalademo@mabala.cloud" && (
+        <>
+          {/* Print only watermark */}
+          <div className="hidden print:flex fixed inset-0 items-center justify-center pointer-events-none opacity-[0.06] z-[9999] select-none rotate-[-45deg] text-[120px] font-black tracking-widest text-black whitespace-nowrap">
+            MABALA DEMO
+          </div>
+          {/* Onscreen subtle watermark */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03] overflow-hidden select-none flex items-center justify-center z-[50]">
+            <div className="rotate-[-45deg] text-[90px] font-black tracking-wider text-slate-800 whitespace-nowrap">
+              MABALA DEMO
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Primary Navigation Toggle zwischen Poultry und Livestock & Vet */}
       <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full max-w-2xl text-xs font-bold shadow-sm select-none border border-slate-200">
         <button 

@@ -32,6 +32,7 @@ import {
 interface WelcomeScreenProps {
   key?: any;
   onStartDemo: () => void;
+  onInitDemoWorkspace?: (role: "Farmer" | "Vet Practitioner" | "Input Supplier") => void | Promise<void>;
   onRegister: (data: {
     fullName: string;
     email: string;
@@ -67,6 +68,7 @@ interface WelcomeScreenProps {
 
 export default function WelcomeScreen({ 
   onStartDemo, 
+  onInitDemoWorkspace,
   onRegister, 
   onRegisterVendor,
   onLogin,
@@ -87,6 +89,9 @@ export default function WelcomeScreen({
   activeAds = []
 }: WelcomeScreenProps) {
   const [isViewingLanding, setIsViewingLanding] = useState<boolean>(true);
+  const [showDemoRoleModal, setShowDemoRoleModal] = useState<boolean>(false);
+  const [selectedDemoRole, setSelectedDemoRole] = useState<"Farmer" | "Vet Practitioner" | "Input Supplier">("Farmer");
+  const [isLaunchingDemo, setIsLaunchingDemo] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor">("login");
   const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
   
@@ -172,6 +177,7 @@ export default function WelcomeScreen({
   // Login States
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [demoCredentialsPopulated, setDemoCredentialsPopulated] = useState(false);
   
   // Flow states
   const [showOtpScreen, setShowOtpScreen] = useState(false);
@@ -306,6 +312,13 @@ export default function WelcomeScreen({
       return;
     }
 
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    const cleanPassword = loginPassword.trim();
+    if (cleanEmail === "mabalademo@mabala.cloud" && (cleanPassword === "Mabala@2026" || cleanPassword === "Mabala@2026.")) {
+      setShowDemoRoleModal(true);
+      return;
+    }
+
     setIsSendingOtp(true);
 
     try {
@@ -315,6 +328,23 @@ export default function WelcomeScreen({
       setFormError(`⚠️ Login Error: ${err.message || "Invalid credentials."}`);
     } finally {
       setIsSendingOtp(false);
+    }
+  };
+
+  const handleLaunchDemoWorkspace = async () => {
+    if (onInitDemoWorkspace) {
+      setIsLaunchingDemo(true);
+      try {
+        await onInitDemoWorkspace(selectedDemoRole);
+        setShowDemoRoleModal(false);
+      } catch (err: any) {
+        console.error("Error launching demo workspace:", err);
+        setFormError(`⚠️ Demo Launch Error: ${err.message || "Unable to start"}`);
+      } finally {
+        setIsLaunchingDemo(false);
+      }
+    } else {
+      onStartDemo();
     }
   };
 
@@ -1638,6 +1668,18 @@ export default function WelcomeScreen({
                       />
                     </div>
 
+                    {demoCredentialsPopulated && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-semibold leading-relaxed animate-fade-in space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                          <span>Mabala Demo Credentials Loaded!</span>
+                        </div>
+                        <p className="text-slate-600 font-medium text-[11px]">
+                          Sandbox mode requires secure authentication. We have populated the official demo account credentials below (Email: <strong className="text-emerald-700">mabalademo@mabala.cloud</strong>, Password: <strong className="text-emerald-700">Mabala@2026</strong>) as requested. Please click <strong className="text-emerald-700">Login Securely</strong> below to enter the sandbox with preloaded data.
+                        </p>
+                      </div>
+                    )}
+
                     {formError && (
                       <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-905 rounded-xl text-[11px] font-bold leading-relaxed animate-fade-in">
                         ⚠️ {formError}
@@ -1842,30 +1884,17 @@ export default function WelcomeScreen({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">City / Town (Zambia)</label>
-                        <select
-                          value={onboardCity}
-                          onChange={(e) => setOnboardCity(e.target.value)}
-                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800 cursor-pointer"
-                        >
-                          {ZAMBIAN_CITIES.map((city) => (
-                            <option key={city} value={city}>{city}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Distance to Station (KM)</label>
-                        <input
-                          type="number"
-                          placeholder="15"
-                          value={onboardDistance}
-                          onChange={(e) => setOnboardDistance(Number(e.target.value))}
-                          required
-                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
-                        />
-                      </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">City / Town (Zambia)</label>
+                      <select
+                        value={onboardCity}
+                        onChange={(e) => setOnboardCity(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800 cursor-pointer"
+                      >
+                        {ZAMBIAN_CITIES.map((city) => (
+                          <option key={city} value={city}>{city}</option>
+                        ))}
+                      </select>
                     </div>
 
                     <div className="space-y-1">
@@ -2050,20 +2079,6 @@ export default function WelcomeScreen({
                   </form>
                 )}
               </div>
-
-              {/* Demo Mode Activation */}
-              <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-2">
-                <div className="text-center text-xs text-slate-400 font-semibold font-medium">Ready to launch your farm operations?</div>
-                <button
-                  type="button"
-                  onClick={onStartDemo}
-                  className="w-full py-2.5 px-4 bg-slate-50 hover:bg-emerald-50 text-slate-800 hover:text-emerald-700 hover:border-emerald-350 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-                  id="btn-demo-mode"
-                >
-                  <Zap className="w-4 h-4 text-emerald-500 animate-pulse" />
-                  <span>Initialize Blank Workspace (Completely Empty Database)</span>
-                </button>
-              </div>
             </div>
           )}
 
@@ -2198,6 +2213,126 @@ export default function WelcomeScreen({
                     </div>
                   </form>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* LIVE DEMO WORKSPACE SETUP MODAL */}
+          {showDemoRoleModal && (
+            <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-200">
+              <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 text-slate-100 shadow-2xl relative overflow-hidden">
+                
+                {/* Decorative glows */}
+                <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                <button 
+                  type="button"
+                  onClick={() => setShowDemoRoleModal(false)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-800 text-slate-400 transition cursor-pointer"
+                  id="demo-role-modal-close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-2.5 mb-2">
+                  <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-widest">Interactive Sandbox</span>
+                </div>
+
+                <h3 className="text-xl font-black text-white tracking-tight leading-none mb-1">Mabala Live Demo Sandbox</h3>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed mb-6">
+                  Initialize a complete, production-ready Zambian workspace pre-configured with active transactional records, payroll parameters, and compliance reports.
+                </p>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Select Demo Persona Role</label>
+                  
+                  {/* Farmers Selection option */}
+                  <div 
+                    onClick={() => setSelectedDemoRole("Farmer")}
+                    className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+                      selectedDemoRole === "Farmer" 
+                        ? "bg-slate-950/40 border-emerald-500 shadow-lg text-white" 
+                        : "bg-slate-950/20 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${selectedDemoRole === "Farmer" ? "bg-emerald-500" : "bg-slate-800"}`} />
+                        <span className="text-xs font-black sm:text-sm">Commercial Farmer / Manager</span>
+                      </div>
+                      <span className="px-1.5 py-0.5 bg-emerald-500/10 text-[9px] text-emerald-400 border border-emerald-500/20 font-black rounded uppercase">Standard Demo</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed pl-5">
+                      Explore multi-farm crop logs, pig/poultry feed formulation systems, payroll sheets with automatic NAPSA/ZRA tax calculations, and printable cash-flow reports.
+                    </p>
+                  </div>
+
+                  {/* Vet Practitioner Option */}
+                  <div 
+                    onClick={() => setSelectedDemoRole("Vet Practitioner")}
+                    className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+                      selectedDemoRole === "Vet Practitioner" 
+                        ? "bg-slate-950/40 border-amber-500 shadow-lg text-white" 
+                        : "bg-slate-950/20 border-slate-800 hover:border-slate-705 text-slate-300"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${selectedDemoRole === "Vet Practitioner" ? "bg-amber-500" : "bg-slate-800"}`} />
+                        <span className="text-xs font-black sm:text-sm">Licensed Veterinary Practitioner</span>
+                      </div>
+                      <span className="px-1.5 py-0.5 bg-amber-500/10 text-[9px] text-amber-400 border border-amber-500/20 font-black rounded uppercase">Clinical Ledger</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed pl-5">
+                      Test interactive consultations, vaccine logs, automated drug dosage indices, and print official Zoosanitary Clearance documents for export animals.
+                    </p>
+                  </div>
+
+                  {/* Input Supplier Option */}
+                  <div 
+                    onClick={() => setSelectedDemoRole("Input Supplier")}
+                    className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+                      selectedDemoRole === "Input Supplier" 
+                        ? "bg-slate-950/40 border-blue-500 shadow-lg text-white" 
+                        : "bg-slate-950/20 border-slate-800 hover:border-slate-705 text-slate-300"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${selectedDemoRole === "Input Supplier" ? "bg-blue-500" : "bg-slate-800"}`} />
+                        <span className="text-xs font-black sm:text-sm">Marketplace Input Supplier</span>
+                      </div>
+                      <span className="px-1.5 py-0.5 bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 font-black rounded uppercase font-sans">Trade Front</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed pl-5">
+                      Check interactive order dispatches, manage B2B catalogs, priority directory listings, and configure delivery distances with Zambian bike riders.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLaunchDemoWorkspace}
+                    disabled={isLaunchingDemo}
+                    className="w-full py-2 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-2"
+                  >
+                    <span>{isLaunchingDemo ? "Bootstrapping Sandbox..." : "Initialize & Launch Demo"}</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-950" />
+                  </button>
+
+                  <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center font-mono text-[9px] text-slate-500">
+                    <div>
+                      <span>UID: </span> <strong className="text-slate-200">mabalademo@mabala.cloud</strong>
+                    </div>
+                    <div>
+                      <span>PWD: </span> <strong className="text-slate-200">Mabala@2026</strong>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           )}

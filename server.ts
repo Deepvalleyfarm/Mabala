@@ -190,12 +190,21 @@ app.get("/api/payments/check-status", async (req, res) => {
 app.get("/api/payments/lookup", async (req, res) => {
   try {
     const { accountNumber, nameHint } = req.query;
+    console.log(`[Lipila Lookup API] Hit with accountNumber: "${accountNumber}", nameHint: "${nameHint}"`);
     if (!accountNumber) {
       res.status(400).json({ error: "accountNumber is required" });
       return;
     }
 
-    const phone = String(accountNumber).replace(/\D/g, "");
+    let phone = String(accountNumber).replace(/\D/g, "");
+    // Normalize format to 2609X...
+    if (phone.startsWith("0")) {
+      phone = "260" + phone.slice(1);
+    } else if (!phone.startsWith("260")) {
+      phone = "260" + phone;
+    }
+    
+    console.log(`[Lipila Lookup API] Normalized phone to query: "${phone}"`);
     let resolvedName = "";
     
     // 1. Try to match specific known registered system demo holders exactly
