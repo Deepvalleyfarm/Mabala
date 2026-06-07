@@ -88,6 +88,7 @@ export default function WelcomeScreen({
 }: WelcomeScreenProps) {
   const [isViewingLanding, setIsViewingLanding] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor">("login");
+  const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
   
   // Vendor registration states
   const [onboardVendorName, setOnboardVendorName] = useState("");
@@ -607,98 +608,384 @@ export default function WelcomeScreen({
           </div>
         </section>
 
-        {/* FEATURES OVERVIEW MODULE */}
+        {/* FEATURES OVERVIEW MODULE - INTERACTIVE ROLE CARDS GRID */}
         <section id="features" className="py-20 px-6 max-w-7xl mx-auto border-b border-slate-200">
-          <div className="text-center space-y-3 mb-16">
-            <span className="text-xs uppercase tracking-widest text-emerald-600 font-bold">Core Modules Suite</span>
-            <h2 className="text-2xl md:text-3.5xl font-black text-slate-950 tracking-tight">Enterprise Infrastructure for Local Farms</h2>
-            <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
-              Mabala includes critical operational engines that bridge the gap between biological production cycles and strict double-entry corporate accounts.
+          <div className="text-center space-y-3 mb-12">
+            <span className="text-xs uppercase tracking-widest text-[#2f7532] font-black tracking-wide block">Who is Mabala for?</span>
+            <h2 className="text-3xl md:text-5xl font-black text-slate-950 tracking-tight font-serif">Built for every player in agriculture</h2>
+            <p className="text-xs md:text-sm text-slate-500 max-w-lg mx-auto leading-relaxed font-semibold">
+              Select your role to see exactly how Mabala works for you.
             </p>
           </div>
 
+          {/* LAYER OF TABS / ROLES SELECTOR */}
+          <div className="flex flex-col md:flex-row justify-center items-stretch gap-4 max-w-4xl mx-auto mb-12">
+            {/* Farmer Tab */}
+            <button
+              onClick={() => setActiveWelcomeRoleTab("farmer")}
+              className={`flex-1 flex items-center gap-3.5 p-4 px-6 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+                activeWelcomeRoleTab === "farmer"
+                  ? "bg-[#f1fcf1] border-[#4ade80] shadow focus:outline-none ring-2 ring-[#4ade80]/20"
+                  : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+              }`}
+            >
+              <div className="text-3xl shrink-0">🌾</div>
+              <div>
+                <strong className="text-xs md:text-sm font-extrabold text-slate-900 block leading-tight">Farmer</strong>
+                <span className="text-[10px] text-slate-500 font-bold block mt-0.5">Crop · Poultry · Livestock</span>
+              </div>
+            </button>
+
+            {/* Vet Practitioner */}
+            <button
+              onClick={() => setActiveWelcomeRoleTab("vet")}
+              className={`flex-1 flex items-center gap-3.5 p-4 px-6 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+                activeWelcomeRoleTab === "vet"
+                  ? "bg-[#f4faff] border-blue-400 shadow focus:outline-none ring-2 ring-blue-400/20"
+                  : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+              }`}
+            >
+              <div className="text-3xl shrink-0">🩺</div>
+              <div>
+                <strong className="text-xs md:text-sm font-extrabold text-slate-900 block leading-tight">Vet Practitioner</strong>
+                <span className="text-[10px] text-slate-500 font-bold block mt-0.5">Clinics · Field vets</span>
+              </div>
+            </button>
+
+            {/* Input Supplier */}
+            <button
+              onClick={() => setActiveWelcomeRoleTab("supplier")}
+              className={`flex-1 flex items-center gap-3.5 p-4 px-6 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+                activeWelcomeRoleTab === "supplier"
+                  ? "bg-[#fdfbf7] border-amber-400 shadow focus:outline-none ring-2 ring-amber-400/20"
+                  : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+              }`}
+            >
+              <div className="text-3xl shrink-0">🏪</div>
+              <div>
+                <strong className="text-xs md:text-sm font-extrabold text-slate-900 block leading-tight">Input Supplier</strong>
+                <span className="text-[10px] text-slate-500 font-bold block mt-0.5">Seed · Feed · Equipment</span>
+              </div>
+            </button>
+          </div>
+
+          {/* DYNAMIC CARDS DISPLAYED ACCORDING TO ROLE */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* Feature 1 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm space-y-4 hover:border-emerald-300 transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-650 flex items-center justify-center shadow-inner">
-                  <Coins className="w-5 h-5" />
-                </div>
-                <h3 className="font-extrabold text-slate-900 group-hover:text-emerald-700 transition">Double-Entry Financial Ledger</h3>
-                <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                  Every expense invoice, supplier deposit, sales voucher, or employee payroll distribution maps into debit/credit charts securely, auto-reconciling with the 1010 Cash at Bank logs.
-                </p>
-              </div>
-              <ul className="text-[10px] text-slate-400 font-mono space-y-1 pt-3 border-t">
-                <li>• General Ledger Account matching</li>
-                <li>• Automatic expense mapping to 5xxx codes</li>
-                <li>• Zambia-specific tax and levy breakdowns</li>
-              </ul>
-            </div>
 
-            {/* Feature 2 */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm space-y-4 hover:border-emerald-300 transition-all flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-650 flex items-center justify-center shadow-inner">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <h3 className="font-extrabold text-slate-900 group-hover:text-emerald-700 transition">Tenant-Wide Team RBAC Controls</h3>
-                <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                  Isolate critical operational units dynamically. Securely register, invite, suspend, or delete members with pre-assigned permissions of Farm Admin, Manager, Accountant, or Viewer.
-                </p>
-              </div>
-              <ul className="text-[10px] text-slate-400 font-mono space-y-1 pt-3 border-t">
-                <li>• Farm Admin invitation emails</li>
-                <li>• Enforced OTP verification rules</li>
-                <li>• Secure user audit tracking logs</li>
-              </ul>
-            </div>
-
-            {/* Feature 3 SPECIAL COMBINED SIDEBAR AD / HIGHLIGHT BLOCK */}
-            <div className="lg:col-span-1 space-y-6">
-              
-              {/* Natural Feature Box */}
-              <div className="bg-white p-6 border border-slate-150 rounded-2xl shadow-sm space-y-4">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-650 flex items-center justify-center shadow-inner">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <h3 className="font-extrabold text-slate-900">Veterinary Doctor & Herd Portal</h3>
-                <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                  Onboard complex veterinary clinics and client portfolios with specialized billing modes, commission fee configurations, and real-time medical consultation logs.
-                </p>
-              </div>
-
-              {/* DYNAMIC SIDEBAR AD PLACEMENT FROM ADMIN CARD */}
-              {sidebarAds.length > 0 && (
-                <div className="bg-gradient-to-br from-indigo-900 via-slate-950 to-emerald-950 p-5 rounded-2xl shadow-lg border border-indigo-900 text-white relative flex flex-col justify-between min-h-[170px] animate-fade-in divide-y divide-slate-800">
-                  <div className="pb-3">
-                    <div className="flex justify-between items-center">
-                      <span className="p-1 px-2.5 bg-emerald-600 text-white font-mono font-bold text-[8px] uppercase rounded">
-                        Sponsor Highlight
-                      </span>
-                      <StarsBadge />
-                    </div>
-                    <h4 className="text-xs font-black tracking-tight block mt-2 text-slate-100">{sidebarAds[0].title}</h4>
-                    <p className="text-[10px] text-slate-400 mt-1 font-medium leading-relaxed">{sidebarAds[0].description}</p>
+            {activeWelcomeRoleTab === "farmer" && (
+              <>
+                {/* 1. Poultry Management */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🐔</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Poultry Management</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Track flock size, feed consumption, mortality, egg production, and revenue per batch. Know your profit per bird.
+                    </p>
                   </div>
-                  <div className="pt-3 flex items-center justify-between">
-                    <span className="text-[8px] text-indigo-300 font-sans tracking-wide">Sponsored via Mabala Platform</span>
-                    <a 
-                      href={sidebarAds[0].externalUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-900 rounded-lg text-[9px] font-bold shadow transition flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Checkout</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </a>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Broilers & Layers
+                    </span>
                   </div>
                 </div>
-              )}
 
-            </div>
+                {/* 2. Crop Tracking */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🌽</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Crop Tracking</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Log planting dates, inputs per plot, irrigation records, and yield per hectare. Profit/loss report per crop.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      All crop types
+                    </span>
+                  </div>
+                </div>
 
+                {/* 3. Livestock Records */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🐄</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Livestock Records</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Herd registers, weight tracking, breeding records, vaccination schedules, and sale records per animal.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Cattle · Pigs · Goats
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Farm Accounting */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">📊</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Farm Accounting</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Double-entry ledger, payroll (PAYE/NAPSA/NHIMA), expense tracking, and tax-ready financial reports.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      ZRA compliant
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5. Buy Inputs In-App */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🛒</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Buy Inputs In-App</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Shop verified fertiliser, seed, chemical, and equipment suppliers directly inside the platform. Pay via Airtel Money or MTN MoMo.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Marketplace
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Works on Any Phone */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm transition-all duration-300 border-t-4 border-t-emerald-600 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="text-3xl">📱</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Works on Any Phone</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Mobile-first design that works on 2G connections. No expensive hardware needed — just your phone.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Offline capable
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeWelcomeRoleTab === "vet" && (
+              <>
+                {/* 1. Clinic Portfolios */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🏥</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Clinic Management</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Onboard veterinary portfolios, organize client herds, schedule vaccines, and review clinical demographics seamlessly.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Prescription Hub
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Mobile Field Log */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">📝</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Field Visits Tracking</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Record consultations on-site, log tick-borne disease hotspots, and issue veterinary movement cards.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Offline Capable
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Double-Entry Billing */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🧾</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Professional Billing</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Automate client billing for surgeries, manage medication rates, and distribute shares transparently.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Instant receipts
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Disease Surveillance */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">📡</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Vector Outbreak Defense</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Gain structural insights into community veterinary outbreaks and report critical quarantine guidelines.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Zambia Outbreaks
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5. Specimen Pathology */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🔬</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Diagnostic Analytics</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Log specimen testing workflows, milk quality checks, parasite tracking, and treatment timelines safely.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Integrated tests
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Pharma Procurement */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-550 shadow-sm transition-all duration-300 border-t-4 border-t-blue-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🧪</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Vet Pharm Supply Store</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Access official veterinary medicine directories to restock certified vaccines, antibiotics, and tools.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Verified supply
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeWelcomeRoleTab === "supplier" && (
+              <>
+                {/* 1. Custom Store Profile */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🌟</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Merchant Storefront Profile</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Onboard and design your digital storefront with custom corporate brand logos, locations, and direct contact numbers.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Branded Storefront
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Catalog Inventory */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">📦</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Dynamic Inventory Manager</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Publish products with specialized unit of measures, minimum photo uploads, VAT toggles, and live stock trackers.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Active Catalog
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Flexible Lipila Checkout */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">💸</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Instant Mobile Money Receipts</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Accept customer mobile money payments instantly via Lipila with standard double-entry accounting reconciliation.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      100% Secure Lipila
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Direct Delivery Calculations */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">🚚</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Automated Kilometre Delivery</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Establish custom per-kilometer delivery metrics and offer buyers precise live shipping quotes instantly.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Localized Transport
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5. Integrated Ledger Feed */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">💹</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">ZRA Tax Ledger feeds</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Synchronize your store revenue journals directly to double-entry ledgers with ZRA-compliant VAT summaries.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      ZRA Compliant
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Cashless Commerce */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-amber-550 shadow-sm transition-all duration-300 border-t-4 border-t-amber-500 flex flex-col justify-between col-span-1">
+                  <div className="space-y-4">
+                    <div className="text-3xl">⚡</div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Optimized Speed Delivery</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Lightweight server-side response designs guarantee users in rural blocks with weak networks buy smoothly.
+                    </p>
+                  </div>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-800 rounded-full text-[9px] font-extrabold uppercase">
+                      Maximized Conversion
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+
+          {/* CTA ON FEATURES CARD */}
+          <div className="text-center mt-12">
+            <button
+              onClick={() => {
+                setActiveTab("register");
+                setIsViewingLanding(false);
+              }}
+              className="px-8 py-4 bg-[#4ade80] hover:bg-[#3ec470] text-slate-950 font-black rounded-xl text-sm shadow-md hover:shadow-xl transition-all cursor-pointer inline-flex items-center gap-2 transform hover:-translate-y-0.5"
+            >
+              <span>Start Farming Smarter — Free 30 Days</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </section>
 
