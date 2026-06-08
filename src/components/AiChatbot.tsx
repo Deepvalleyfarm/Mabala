@@ -45,16 +45,44 @@ export default function AiChatbot() {
 
     try {
       const env = (import.meta as any).env || {};
-      const apiBase = env.VITE_API_URL || "https://api.mabala.cloud";
+      const apiBase = env.VITE_API_URL || "";
       const targetUrl = apiBase ? `${apiBase}/api/chat` : "/api/chat";
-      const response = await fetch(targetUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg.text,
-          history: messages.map(m => ({ role: m.sender === "user" ? "user" : "model", text: m.text }))
-        })
-      });
+      
+      const payload = {
+        message: userMsg.text,
+        history: messages.map(m => ({ role: m.sender === "user" ? "user" : "model", text: m.text }))
+      };
+
+      let response;
+      try {
+        response = await fetch(targetUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        // Self-healing: if custom API origin returns 404 or 5xx, try falling back to relative path
+        if ((response.status === 404 || response.status >= 500) && apiBase) {
+          console.warn("[AiChatbot] Target API returned error status. Self-healing fallback to relative path.");
+          response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+      } catch (err: any) {
+        // Self-healing: connection/network failure on custom API origin, try relative path
+        if (apiBase) {
+          console.warn(`[AiChatbot] Target API request failed: ${err.message}. Trying relative path fallback.`);
+          response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          throw err;
+        }
+      }
 
       if (!response.ok) {
         throw new Error("Failed to contact Hercules API");

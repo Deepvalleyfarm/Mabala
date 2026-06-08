@@ -116,46 +116,82 @@ import {
 // Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
   const env = (import.meta as any).env || {};
-  const apiBase = env.VITE_API_URL || "https://api.mabala.cloud";
-  const targetUrl = (url.startsWith("/") && !url.startsWith("//")) ? `${apiBase}${url}` : url;
-  const res = await fetch(targetUrl, options);
-  const contentType = res.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
+  // Default to relative paths for standalone server and production deployments to prevent 404/CORS errors
+  const apiBase = env.VITE_API_URL || "";
+  
+  let targetUrl = url;
+  if (url.startsWith("/") && !url.startsWith("//")) {
+    targetUrl = apiBase ? `${apiBase}${url}` : url;
+  }
 
-  if (!res.ok) {
-    let errMsg = `Request failed with status ${res.status}`;
+  const parseResponse = async (res: Response, attemptUrl: string) => {
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+
+    if (!res.ok) {
+      let errMsg = `Request failed with status ${res.status}`;
+      if (isJson) {
+        try {
+          const errData = await res.json();
+          errMsg = errData.error || errData.details || errMsg;
+        } catch (_) {}
+      } else {
+        try {
+          const textStr = await res.text();
+          if (textStr.trim().startsWith("<") || textStr.includes("<html") || textStr.includes("<!DOCTYPE")) {
+            errMsg = `The payment gateway is experiencing connection issues (Status ${res.status}). Placed transaction into automatic standby.`;
+          } else {
+            // Strip all tags FIRST, then slice, to prevent incomplete tags from bypassing regex matching
+            errMsg = textStr.replace(/<[^>]*>/g, "").trim().slice(0, 150) || errMsg;
+          }
+        } catch (_) {}
+      }
+      throw new Error(errMsg);
+    }
+
     if (isJson) {
       try {
-        const errData = await res.json();
-        errMsg = errData.error || errData.details || errMsg;
-      } catch (_) {}
+        return await res.json();
+      } catch (parseErr: any) {
+        console.warn("[safeFetchJsonClient] JSON parsing error on success response:", parseErr.message);
+        return { status: "Pending", isSimulatedFallback: true };
+      }
     } else {
       try {
         const textStr = await res.text();
-        if (textStr.trim().startsWith("<") || textStr.includes("<html") || textStr.includes("<!DOCTYPE")) {
-          errMsg = `The payment gateway is experiencing connection issues (Status ${res.status}). Placed transaction into automatic standby.`;
-        } else {
-          // Strip all tags FIRST, then slice, to prevent incomplete tags from bypassing regex matching
-          errMsg = textStr.replace(/<[^>]*>/g, "").trim().slice(0, 150) || errMsg;
-        }
+        console.warn("[safeFetchJsonClient] Success response but NOT JSON content:", textStr.slice(0, 100));
       } catch (_) {}
-    }
-    throw new Error(errMsg);
-  }
-
-  if (isJson) {
-    try {
-      return await res.json();
-    } catch (parseErr: any) {
-      console.warn("[safeFetchJsonClient] JSON parsing error on success response:", parseErr.message);
       return { status: "Pending", isSimulatedFallback: true };
     }
-  } else {
-    try {
-      const textStr = await res.text();
-      console.warn("[safeFetchJsonClient] Success response but NOT JSON content:", textStr.slice(0, 100));
-    } catch (_) {}
-    return { status: "Pending", isSimulatedFallback: true };
+  };
+
+  try {
+    const res = await fetch(targetUrl, options);
+    
+    // Self-healing: If we used a custom API Base URL and received a 404/5xx error, immediately attempt real relative path callback
+    if ((res.status === 404 || res.status >= 500) && apiBase && url.startsWith("/")) {
+      console.warn(`[safeFetchJsonClient] Target API origin ${apiBase} returned status ${res.status}. Self-healing system calling relative path: ${url}`);
+      try {
+        const fallbackRes = await fetch(url, options);
+        return await parseResponse(fallbackRes, url);
+      } catch (fallbackErr) {
+        // Fallback failed, revert/throw primary response error
+        return await parseResponse(res, targetUrl);
+      }
+    }
+    return await parseResponse(res, targetUrl);
+  } catch (err: any) {
+    // Self-healing: If a custom API Base URL failed with connection/network error, automatically try relative path
+    if (apiBase && url.startsWith("/")) {
+      console.warn(`[safeFetchJsonClient] Target API connection failed (${err.message}). Self-healing system calling relative path fallback: ${url}`);
+      try {
+        const fallbackRes = await fetch(url, options);
+        return await parseResponse(fallbackRes, url);
+      } catch (fallbackErr) {
+        throw err;
+      }
+    }
+    throw err;
   }
 }
 
