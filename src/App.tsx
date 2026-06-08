@@ -115,7 +115,9 @@ import {
 
 // Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
-  const res = await fetch(url, options);
+  const apiBase = import.meta.env.VITE_API_URL || "";
+  const targetUrl = (url.startsWith("/") && !url.startsWith("//")) ? `${apiBase}${url}` : url;
+  const res = await fetch(targetUrl, options);
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
 
@@ -3417,15 +3419,12 @@ export default function App() {
                       onClick={async () => {
                         setLipilaError("");
                         try {
-                          const res = await fetch(`/api/payments/check-status?referenceId=${lipilaRefId}`);
-                          if (res.ok) {
-                            const data = await res.json();
-                            if (data.status === "Successful" || data.status === "Success" || data.status === "Completed") {
-                              setLipilaPaymentStatus("Successful");
-                              handlePaymentSuccessAllocation(lipilaCheckout);
-                            } else {
-                              setLipilaError("Reference is still pending. Approve PIN and try checking again.");
-                            }
+                          const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
+                          if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
+                            setLipilaPaymentStatus("Successful");
+                            handlePaymentSuccessAllocation(lipilaCheckout);
+                          } else {
+                            setLipilaError("Reference is still pending. Approve PIN and try checking again.");
                           }
                         } catch (err: any) {
                           setLipilaError(err.message || "Manual check status error.");
@@ -4644,15 +4643,12 @@ export default function App() {
                     onClick={async () => {
                       setLipilaError("");
                       try {
-                        const res = await fetch(`/api/payments/check-status?referenceId=${lipilaRefId}`);
-                        if (res.ok) {
-                          const data = await res.json();
-                          if (data.status === "Successful" || data.status === "Success" || data.status === "Completed") {
-                            setLipilaPaymentStatus("Successful");
-                            handlePaymentSuccessAllocation(lipilaCheckout);
-                          } else {
-                            setLipilaError("Reference is still pending. Approve PIN and try checking again.");
-                          }
+                        const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
+                        if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
+                          setLipilaPaymentStatus("Successful");
+                          handlePaymentSuccessAllocation(lipilaCheckout);
+                        } else {
+                          setLipilaError("Reference is still pending. Approve PIN and try checking again.");
                         }
                       } catch (err: any) {
                         setLipilaError(err.message || "Manual check status error.");
