@@ -116,15 +116,20 @@ import {
 // Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
   const env = (import.meta as any).env || {};
-  // Default to relative paths for standalone server and production deployments to prevent 404/CORS errors
   let apiBase = env.VITE_API_URL || "";
   if (apiBase) {
     if (apiBase.startsWith("VITE_API_URL=")) {
       apiBase = apiBase.slice("VITE_API_URL=".length);
     }
     apiBase = apiBase.replace(/^['"]|['"]$/g, "").trim();
+    if (apiBase.endsWith("/")) {
+      apiBase = apiBase.slice(0, -1);
+    }
   }
-  
+
+  // Fallback secure AI Studio cloud staging URL where the full-stack server runs with key loaded
+  const sandboxBase = "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app";
+
   let targetUrl = url;
   if (url.startsWith("/") && !url.startsWith("//")) {
     targetUrl = apiBase ? `${apiBase}${url}` : url;
@@ -147,7 +152,6 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
           if (textStr.trim().startsWith("<") || textStr.includes("<html") || textStr.includes("<!DOCTYPE")) {
             errMsg = `The payment gateway is experiencing connection issues (Status ${res.status}). Placed transaction into automatic standby.`;
           } else {
-            // Strip all tags FIRST, then slice, to prevent incomplete tags from bypassing regex matching
             errMsg = textStr.replace(/<[^>]*>/g, "").trim().slice(0, 150) || errMsg;
           }
         } catch (_) {}
@@ -171,30 +175,59 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
     }
   };
 
-  try {
-    const res = await fetch(targetUrl, options);
-    
-    // Self-healing: If we used a custom API Base URL and received a 404/5xx error, immediately attempt real relative path callback
-    if ((res.status === 404 || res.status >= 500) && apiBase && url.startsWith("/")) {
-      console.warn(`[safeFetchJsonClient] Target API origin ${apiBase} returned status ${res.status}. Self-healing system calling relative path: ${url}`);
-      try {
-        const fallbackRes = await fetch(url, options);
-        return await parseResponse(fallbackRes, url);
-      } catch (fallbackErr) {
-        // Fallback failed, revert/throw primary response error
-        return await parseResponse(res, targetUrl);
-      }
+  const fetchWithResponseCheck = async (fetchUrl: string) => {
+    const res = await fetch(fetchUrl, options);
+    if (!res.ok) {
+      const parsedError = await parseResponse(res, fetchUrl).catch(e => e);
+      throw parsedError instanceof Error ? parsedError : new Error(String(parsedError));
     }
-    return await parseResponse(res, targetUrl);
+    return await parseResponse(res, fetchUrl);
+  };
+
+  try {
+    // Attempt 1: Try custom API Base or default relative URL
+    return await fetchWithResponseCheck(targetUrl);
   } catch (err: any) {
-    // Self-healing: If a custom API Base URL failed with connection/network error, automatically try relative path
+    console.warn(`[safeFetchJsonClient] Attempt 1 failed for ${targetUrl}: ${err.message}`);
+    
+    // Attempt 2: If we had a custom VITE_API_URL and it failed, fallback to native relative path same-origin request
     if (apiBase && url.startsWith("/")) {
-      console.warn(`[safeFetchJsonClient] Target API connection failed (${err.message}). Self-healing system calling relative path fallback: ${url}`);
+      console.log(`[safeFetchJsonClient] Attempting same-origin fallback for: ${url}`);
       try {
-        const fallbackRes = await fetch(url, options);
-        return await parseResponse(fallbackRes, url);
-      } catch (fallbackErr) {
-        throw err;
+        return await fetchWithResponseCheck(url);
+      } catch (fallbackErr: any) {
+        console.warn(`[safeFetchJsonClient] Attempt 2 (relative fallback) also failed: ${fallbackErr.message}`);
+        
+        // Attempt 3: If both failed, and we are running outside our target sandbox/localhost, fallback to Google Cloud Run secure backend
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
+        
+        if (!isSandbox && !isLocalhost && url.startsWith("/")) {
+          const sandboxUrl = `${sandboxBase}${url}`;
+          console.log(`[safeFetchJsonClient] Attempting secure cloud staging sandbox fallback for: ${sandboxUrl}`);
+          try {
+            return await fetchWithResponseCheck(sandboxUrl);
+          } catch (sandboxErr: any) {
+            console.error(`[safeFetchJsonClient] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
+            throw sandboxErr;
+          }
+        }
+        throw fallbackErr;
+      }
+    } else if (url.startsWith("/")) {
+      // Attempt 3: Even if they didn't have VITE_API_URL but the relative path failed (e.g. running statically without VITE_API_URL), fallback to sandbox
+      const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
+      
+      if (!isSandbox && !isLocalhost) {
+        const sandboxUrl = `${sandboxBase}${url}`;
+        console.log(`[safeFetchJsonClient] Attempting secure cloud staging sandbox fallback for: ${sandboxUrl}`);
+        try {
+          return await fetchWithResponseCheck(sandboxUrl);
+        } catch (sandboxErr: any) {
+          console.error(`[safeFetchJsonClient] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
+          throw sandboxErr;
+        }
       }
     }
     throw err;

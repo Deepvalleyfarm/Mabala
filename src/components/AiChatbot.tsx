@@ -51,7 +51,12 @@ export default function AiChatbot() {
           apiBase = apiBase.slice("VITE_API_URL=".length);
         }
         apiBase = apiBase.replace(/^['"]|['"]$/g, "").trim();
+        if (apiBase.endsWith("/")) {
+          apiBase = apiBase.slice(0, -1);
+        }
       }
+      
+      const sandboxBase = "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app";
       const targetUrl = apiBase ? `${apiBase}/api/chat` : "/api/chat";
       
       const payload = {
@@ -59,39 +64,68 @@ export default function AiChatbot() {
         history: messages.map(m => ({ role: m.sender === "user" ? "user" : "model", text: m.text }))
       };
 
-      let response;
-      try {
-        response = await fetch(targetUrl, {
+      const executeFetch = async (fetchUrl: string) => {
+        const res = await fetch(fetchUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-
-        // Self-healing: if custom API origin returns 404 or 5xx, try falling back to relative path
-        if ((response.status === 404 || response.status >= 500) && apiBase) {
-          console.warn("[AiChatbot] Target API returned error status. Self-healing fallback to relative path.");
-          response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
+        if (!res.ok) {
+          throw new Error(`Chat request failed with status ${res.status}`);
         }
+        return res;
+      };
+
+      let response;
+      try {
+        // Attempt 1: Try custom API origin or same-origin path
+        response = await executeFetch(targetUrl);
       } catch (err: any) {
-        // Self-healing: connection/network failure on custom API origin, try relative path
+        console.warn(`[AiChatbot] Attempt 1 failed for ${targetUrl}: ${err.message}`);
+        
+        // Attempt 2: If we had a custom VITE_API_URL and it failed, fallback to native relative path
         if (apiBase) {
-          console.warn(`[AiChatbot] Target API request failed: ${err.message}. Trying relative path fallback.`);
-          response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
+          console.log("[AiChatbot] Attempting relative fallback route '/api/chat'");
+          try {
+            response = await executeFetch("/api/chat");
+          } catch (fallbackErr: any) {
+            console.warn(`[AiChatbot] Attempt 2 (relative fallback) also failed: ${fallbackErr.message}`);
+            
+            // Attempt 3: Secure sandbox cloud fallback
+            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
+            
+            if (!isSandbox && !isLocalhost) {
+              const sandboxUrl = `${sandboxBase}/api/chat`;
+              console.log(`[AiChatbot] Attempting secure cloud staging sandbox fallback: ${sandboxUrl}`);
+              try {
+                response = await executeFetch(sandboxUrl);
+              } catch (sandboxErr: any) {
+                console.error(`[AiChatbot] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
+                throw sandboxErr;
+              }
+            } else {
+              throw fallbackErr;
+            }
+          }
         } else {
-          throw err;
+          // Attempt 3 fallback if no custom VITE_API_URL but local path returned non-ok (e.g. running on local static hosting)
+          const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
+          
+          if (!isSandbox && !isLocalhost) {
+            const sandboxUrl = `${sandboxBase}/api/chat`;
+            console.log(`[AiChatbot] Attempting secure cloud staging sandbox fallback: ${sandboxUrl}`);
+            try {
+              response = await executeFetch(sandboxUrl);
+            } catch (sandboxErr: any) {
+              console.error(`[AiChatbot] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
+              throw sandboxErr;
+            }
+          } else {
+            throw err;
+          }
         }
-      }
-
-      if (!response.ok) {
-        throw new Error("Failed to contact Hercules API");
       }
 
       const data = await response.json();
