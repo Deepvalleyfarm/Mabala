@@ -298,10 +298,16 @@ const DEFAULT_TEAM_MEMBERS: UserMember[] = [
 
 export default function App() {
   // Multi-tenant profiles & administrative states
-  const [userProfile, setUserProfile] = useState({
-    name: "Shadrick Kasuli",
-    email: "shikasuli@gmail.com",
-    phone: "+260977112233"
+  const [userProfile, setUserProfile] = useState(() => {
+    const cached = localStorage.getItem("mabala_user_profile");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return {
+      name: "Shadrick Kasuli",
+      email: "shikasuli@gmail.com",
+      phone: "+260977112233"
+    };
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -314,7 +320,10 @@ export default function App() {
   };
 
   const [activeFarmIndex, setActiveFarmIndex] = useState<number>(0);
-  const [credits, setCredits] = useState<number>(300); // base subscription package size
+  const [credits, setCredits] = useState<number>(() => {
+    const cached = localStorage.getItem("mabala_credits");
+    return cached !== null ? Number(cached) : 300;
+  });
 
   // Marketplace core states
   const [marketplaceVendors, setMarketplaceVendors] = useState<MarketVendor[]>(() => {
@@ -448,9 +457,15 @@ export default function App() {
 
   const [teamMembers, setTeamMembers] = useState<UserMember[]>(DEFAULT_TEAM_MEMBERS);
 
-  const [subscriptionTier, setSubscriptionTier] = useState<string>("Commercial Growth Layer");
-  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary">("Farmer");
-  const [vetFeeActivation, setVetFeeActivation] = useState<boolean>(true);
+  const [subscriptionTier, setSubscriptionTier] = useState<string>(() => {
+    return localStorage.getItem("mabala_subscription_tier") || "Commercial Growth Layer";
+  });
+  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary">(() => {
+    return (localStorage.getItem("mabala_workspace_mode") as any) || "Farmer";
+  });
+  const [vetFeeActivation, setVetFeeActivation] = useState<boolean>(() => {
+    return localStorage.getItem("mabala_vet_fee_activation") !== "false";
+  });
 
   // Multi-Country and Currency Localization states
   const [selectedCountry, setSelectedCountry] = useState<CountryInfo>(COUNTRIES[0]); // Default Zambia
@@ -469,47 +484,205 @@ export default function App() {
   ]);
 
   // Dynamic ERP database
-  const [farms, setFarms] = useState<Farm[]>([
-    {
-      id: "farm-1",
-      name: "Sunrise Agro-Tech Farms",
-      tpin: "1002345678",
-      vatNumber: "ZM-123",
-      address: "Great East Road, Lusaka",
-      phone: "+260977112233",
-      email: "info@sunriseagro.co.zm",
-      financialYearStart: "2026-01-01",
-      financialYearEnd: "2026-12-31",
-      currency: "ZMW",
-      currencySymbol: "ZK",
-      taxSystem: "VAT"
+  const [farms, setFarms] = useState<Farm[]>(() => {
+    const cached = localStorage.getItem("mabala_farms");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
     }
-  ]);
+    return [
+      {
+        id: "farm-1",
+        name: "Sunrise Agro-Tech Farms",
+        tpin: "1002345678",
+        vatNumber: "ZM-123",
+        address: "Great East Road, Lusaka",
+        phone: "+260977112233",
+        email: "info@sunriseagro.co.zm",
+        financialYearStart: "2026-01-01",
+        financialYearEnd: "2026-12-31",
+        currency: "ZMW",
+        currencySymbol: "ZK",
+        taxSystem: "VAT"
+      }
+    ];
+  });
 
-  const [accounts, setAccounts] = useState<Account[]>(() => INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseTransaction[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [crops, setCrops] = useState<CropCycle[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [payslips, setPayslips] = useState<Payslip[]>([]);
-  const [poultry, setPoultry] = useState<PoultryBatch[]>([]);
-  const [fish, setFish] = useState<FishBatch[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [cashSales, setCashSales] = useState<CashSale[]>([]);
-  const [loans, setLoans] = useState<Loan[]>([]);
-  const [investments, setInvestments] = useState<Investment[]>([]);
-  const [livestock, setLivestock] = useState<LivestockRecord[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(() => {
+    const cached = localStorage.getItem("mabala_accounts");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+  });
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    const cached = localStorage.getItem("mabala_suppliers");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const cached = localStorage.getItem("mabala_customers");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [expenses, setExpenses] = useState<ExpenseTransaction[]>(() => {
+    const cached = localStorage.getItem("mabala_expenses");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    const cached = localStorage.getItem("mabala_invoices");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [quotations, setQuotations] = useState<Quotation[]>(() => {
+    const cached = localStorage.getItem("mabala_quotations");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [crops, setCrops] = useState<CropCycle[]>(() => {
+    const cached = localStorage.getItem("mabala_crops");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const cached = localStorage.getItem("mabala_employees");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [payslips, setPayslips] = useState<Payslip[]>(() => {
+    const cached = localStorage.getItem("mabala_payslips");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [poultry, setPoultry] = useState<PoultryBatch[]>(() => {
+    const cached = localStorage.getItem("mabala_poultry");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [fish, setFish] = useState<FishBatch[]>(() => {
+    const cached = localStorage.getItem("mabala_fish");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const cached = localStorage.getItem("mabala_inventory");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [cashSales, setCashSales] = useState<CashSale[]>(() => {
+    const cached = localStorage.getItem("mabala_cash_sales");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [loans, setLoans] = useState<Loan[]>(() => {
+    const cached = localStorage.getItem("mabala_loans");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [investments, setInvestments] = useState<Investment[]>(() => {
+    const cached = localStorage.getItem("mabala_investments");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [livestock, setLivestock] = useState<LivestockRecord[]>(() => {
+    const cached = localStorage.getItem("mabala_livestock");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
 
   // New modules states
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [otherRevenues, setOtherRevenues] = useState<OtherRevenue[]>([]);
-  const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
-  const [employeeAdvances, setEmployeeAdvances] = useState<EmployeeAdvance[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [archivedRecords, setArchivedRecords] = useState<ArchiveRecord[]>([]);
+  const [assets, setAssets] = useState<Asset[]>(() => {
+    const cached = localStorage.getItem("mabala_assets");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [otherRevenues, setOtherRevenues] = useState<OtherRevenue[]>(() => {
+    const cached = localStorage.getItem("mabala_other_revenues");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>(() => {
+    const cached = localStorage.getItem("mabala_leave_records");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [employeeAdvances, setEmployeeAdvances] = useState<EmployeeAdvance[]>(() => {
+    const cached = localStorage.getItem("mabala_employee_advances");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const cached = localStorage.getItem("mabala_audit_logs");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+
+  const [archivedRecords, setArchivedRecords] = useState<ArchiveRecord[]>(() => {
+    const cached = localStorage.getItem("mabala_archived_records");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
 
   // Global Confirmation Dialog for bulk and sensitive deletion actions
   const [globalConfirm, setGlobalConfirm] = useState<{
@@ -997,9 +1170,23 @@ export default function App() {
       }
     }
   }, [currentRole, adminClaimantEmail, userProfile.email]);
-  const [farmStatus, setFarmStatus] = useState<"ACTIVE" | "FROZEN" | "SUSPENDED">("ACTIVE");
-  const [statusChangeLogs, setStatusChangeLogs] = useState<any[]>([]);
-  const [creditTransactions, setCreditTransactions] = useState<any[]>([]);
+  const [farmStatus, setFarmStatus] = useState<"ACTIVE" | "FROZEN" | "SUSPENDED" | string>(() => {
+    return localStorage.getItem("mabala_farm_status") || "ACTIVE";
+  });
+  const [statusChangeLogs, setStatusChangeLogs] = useState<any[]>(() => {
+    const cached = localStorage.getItem("mabala_status_change_logs");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
+  const [creditTransactions, setCreditTransactions] = useState<any[]>(() => {
+    const cached = localStorage.getItem("mabala_credit_transactions");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    return [];
+  });
   const [platformPackages, setPlatformPackages] = useState<any[]>([
     { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 100, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
     { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
@@ -1016,6 +1203,134 @@ export default function App() {
     { id: "tier-4", name: "Tier 4: Statutory & Reports Pro", cost: 5, modules: "Chart of Accounts, IFRS Financial Reports, Statutory Ledger, Audit Log", color: "#8b5cf6" },
     { id: "tier-5", name: "Tier 5: Advanced Livestock & Poultry Pro", cost: 8, modules: "Livestock Records, Poultry Batches, Aquaculture, Vet-Certified Logs", color: "#10b981" }
   ]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_user_profile", JSON.stringify(userProfile));
+  }, [userProfile]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_credits", String(credits));
+  }, [credits]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_team_members", JSON.stringify(teamMembers));
+  }, [teamMembers]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_subscription_tier", subscriptionTier);
+  }, [subscriptionTier]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_workspace_mode", workspaceMode);
+  }, [workspaceMode]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_vet_fee_activation", String(vetFeeActivation));
+  }, [vetFeeActivation]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_farms", JSON.stringify(farms));
+  }, [farms]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_accounts", JSON.stringify(accounts));
+  }, [accounts]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_suppliers", JSON.stringify(suppliers));
+  }, [suppliers]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_customers", JSON.stringify(customers));
+  }, [customers]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_expenses", JSON.stringify(expenses));
+  }, [expenses]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_invoices", JSON.stringify(invoices));
+  }, [invoices]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_quotations", JSON.stringify(quotations));
+  }, [quotations]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_crops", JSON.stringify(crops));
+  }, [crops]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_employees", JSON.stringify(employees));
+  }, [employees]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_payslips", JSON.stringify(payslips));
+  }, [payslips]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_poultry", JSON.stringify(poultry));
+  }, [poultry]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_fish", JSON.stringify(fish));
+  }, [fish]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_inventory", JSON.stringify(inventory));
+  }, [inventory]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_cash_sales", JSON.stringify(cashSales));
+  }, [cashSales]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_loans", JSON.stringify(loans));
+  }, [loans]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_investments", JSON.stringify(investments));
+  }, [investments]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_livestock", JSON.stringify(livestock));
+  }, [livestock]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_assets", JSON.stringify(assets));
+  }, [assets]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_other_revenues", JSON.stringify(otherRevenues));
+  }, [otherRevenues]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_leave_records", JSON.stringify(leaveRecords));
+  }, [leaveRecords]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_employee_advances", JSON.stringify(employeeAdvances));
+  }, [employeeAdvances]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_audit_logs", JSON.stringify(auditLogs));
+  }, [auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_archived_records", JSON.stringify(archivedRecords));
+  }, [archivedRecords]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_farm_status", farmStatus);
+  }, [farmStatus]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_status_change_logs", JSON.stringify(statusChangeLogs));
+  }, [statusChangeLogs]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_credit_transactions", JSON.stringify(creditTransactions));
+  }, [creditTransactions]);
 
   const activeFarm = farms[activeFarmIndex] || farms[0];
   const isReadonly = credits === 0 || farmStatus === "FROZEN";
@@ -1805,8 +2120,8 @@ export default function App() {
     // Mapping package details
     const pkgs = [
       { id: "Basic", name: "Mabala Basic Merchant", price: 150, credits: 300, desc: "Publish up to 5 items inside farm catalogs directories." },
-      { id: "Elite", name: "Mabala Elite Vendor", price: 350, credits: 5000, desc: "Publish 25 items, prioritize results directories, analytics." },
-      { id: "Cooperative Pro", name: "Cooperative Pro", price: 600, credits: 25000, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders." }
+      { id: "Elite", name: "Mabala Elite Vendor", price: 500, credits: 5000, desc: "Publish 25 items, prioritize results directories, analytics." },
+      { id: "Cooperative Pro", name: "Cooperative Pro", price: 1000, credits: 25000, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders." }
     ];
     const matched = pkgs.find(p => p.id === data.subscriptionPackage || p.name === data.subscriptionPackage) || pkgs[0];
 

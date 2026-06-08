@@ -1157,7 +1157,11 @@ export default function WelcomeScreen({
                   <button 
                     onClick={() => {
                       setSubscriptionTier(pkg.name);
-                      setActiveTab("register");
+                      if (pkg.name === "Marketplace Supplier") {
+                        setActiveTab("register-vendor");
+                      } else {
+                        setActiveTab("register");
+                      }
                       setIsViewingLanding(false);
                     }}
                     className={`w-full py-2.5 rounded-xl text-xs font-black tracking-wide transition transform hover:scale-[1.01] cursor-pointer ${
@@ -1821,8 +1825,8 @@ export default function WelcomeScreen({
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                         {[
                           { id: "Basic", name: "Mabala Basic Merchant", cost: 150, desc: "Publish up to 5 items inside farm catalogs.", badge: "Organic Growth", credits: 300 },
-                          { id: "Elite", name: "Mabala Elite Vendor", cost: 350, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade", credits: 5000 },
-                          { id: "Cooperative Pro", name: "Cooperative Pro", cost: 600, desc: "Infinite product catalogue, multi-agent store logins.", badge: "Zambia National Co-ops", credits: 25000 }
+                          { id: "Elite", name: "Mabala Elite Vendor", cost: 500, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade", credits: 5000 },
+                          { id: "Cooperative Pro", name: "Cooperative Pro", cost: 1000, desc: "Infinite product catalogue, multi-agent store logins.", badge: "Zambia National Co-ops", credits: 25000 }
                         ].map(pkg => {
                           const isSelected = onboardPkg === pkg.id;
                           return (

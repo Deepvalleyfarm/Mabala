@@ -1616,8 +1616,8 @@ export default function MarketplacePanel({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {[
                       { id: "Basic", name: "Mabala Basic Merchant", cost: 150, desc: "Publish up to 5 items inside farm catalogs directories.", badge: "Organic Growth" },
-                      { id: "Elite", name: "Mabala Elite Vendor", cost: 350, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade" },
-                      { id: "Cooperative Pro", name: "Cooperative Pro", cost: 600, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders.", badge: "Zambia National Co-ops" }
+                      { id: "Elite", name: "Mabala Elite Vendor", cost: 500, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade" },
+                      { id: "Cooperative Pro", name: "Cooperative Pro", cost: 1000, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders.", badge: "Zambia National Co-ops" }
                     ].map(pkg => {
                       const isSelected = onboardPkg === pkg.id;
                       return (

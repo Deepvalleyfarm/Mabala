@@ -21,8 +21,10 @@ import {
   AlertTriangle, 
   Trash2, 
   FileCheck, 
-  Maximize2 
+  Maximize2,
+  Sparkles
 } from "lucide-react";
+import backupPreset from "../data/backup.json";
 
 interface BackupRestorePanelProps {
   // state getters
@@ -651,6 +653,31 @@ export default function BackupRestorePanel({
           <div>
             <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Restore or Import Backup</h3>
             <p className="text-[11px] text-slate-500 leading-relaxed">Accepts and loads data from a previous file backup (.json) or directly pasted JSON string payload.</p>
+          </div>
+
+          {/* Preloaded Demo Backup Seeding Option */}
+          <div className="p-4 bg-emerald-50/50 border border-emerald-200/80 rounded-xl space-y-3 font-sans animate-fade-in">
+            <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-[12px] uppercase">
+              <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
+              <span>Mabala Backup Dataset Detected</span>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+              A preloaded system backup containing all crop cycles, expenses, assets, loans, employees, advances, sales, and invoices from the attached copy has been loaded. Click below to inspect and restore this full dataset instantly.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  parseAndVerify(JSON.stringify(backupPreset));
+                } catch (e) {
+                  setErrorMsg("Unable to parse pretrained backup: " + String(e));
+                }
+              }}
+              className="py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10 cursor-pointer w-full"
+            >
+              <Database className="w-4 h-4" />
+              <span>Load Identified System Backup</span>
+            </button>
           </div>
 
           {/* Interactive Drag Drop Zone */}
