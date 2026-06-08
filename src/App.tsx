@@ -117,7 +117,13 @@ import {
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
   const env = (import.meta as any).env || {};
   // Default to relative paths for standalone server and production deployments to prevent 404/CORS errors
-  const apiBase = env.VITE_API_URL || "";
+  let apiBase = env.VITE_API_URL || "";
+  if (apiBase) {
+    if (apiBase.startsWith("VITE_API_URL=")) {
+      apiBase = apiBase.slice("VITE_API_URL=".length);
+    }
+    apiBase = apiBase.replace(/^['"]|['"]$/g, "").trim();
+  }
   
   let targetUrl = url;
   if (url.startsWith("/") && !url.startsWith("//")) {

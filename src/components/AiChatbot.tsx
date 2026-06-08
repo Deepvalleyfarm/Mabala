@@ -45,7 +45,13 @@ export default function AiChatbot() {
 
     try {
       const env = (import.meta as any).env || {};
-      const apiBase = env.VITE_API_URL || "";
+      let apiBase = env.VITE_API_URL || "";
+      if (apiBase) {
+        if (apiBase.startsWith("VITE_API_URL=")) {
+          apiBase = apiBase.slice("VITE_API_URL=".length);
+        }
+        apiBase = apiBase.replace(/^['"]|['"]$/g, "").trim();
+      }
       const targetUrl = apiBase ? `${apiBase}/api/chat` : "/api/chat";
       
       const payload = {
