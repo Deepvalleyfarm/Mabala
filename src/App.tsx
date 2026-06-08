@@ -115,7 +115,8 @@ import {
 
 // Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
-  const apiBase = import.meta.env.VITE_API_URL || "";
+  const env = (import.meta as any).env || {};
+  const apiBase = env.VITE_API_URL || "https://api.mabala.cloud";
   const targetUrl = (url.startsWith("/") && !url.startsWith("//")) ? `${apiBase}${url}` : url;
   const res = await fetch(targetUrl, options);
   const contentType = res.headers.get("content-type") || "";

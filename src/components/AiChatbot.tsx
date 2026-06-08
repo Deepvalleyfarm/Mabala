@@ -44,7 +44,10 @@ export default function AiChatbot() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const env = (import.meta as any).env || {};
+      const apiBase = env.VITE_API_URL || "https://api.mabala.cloud";
+      const targetUrl = apiBase ? `${apiBase}/api/chat` : "/api/chat";
+      const response = await fetch(targetUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
