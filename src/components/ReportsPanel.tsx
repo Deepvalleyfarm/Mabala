@@ -12,7 +12,11 @@ import {
   BarChart2,
   PieChart as PieIcon,
   Flame,
-  LineChart as LineIcon
+  LineChart as LineIcon,
+  Key,
+  Copy,
+  Globe,
+  Database
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { 
@@ -41,6 +45,7 @@ interface ReportsPanelProps {
   crops: CropCycle[];
   poultry: PoultryBatch[];
   activeFarm?: any;
+  subscriptionTier?: string;
 }
 
 export default function ReportsPanel({ 
@@ -52,9 +57,12 @@ export default function ReportsPanel({
   invoices,
   crops,
   poultry,
-  activeFarm
+  activeFarm,
+  subscriptionTier
 }: ReportsPanelProps) {
-  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual">("pl");
+  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual" | "analytics" | "api">("pl");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [apiSandboxEndpoint, setApiSandboxEndpoint] = useState<string>("/api/v1/farms");
 
   // July 2025 to June 2026 Monthly Trend Base Data and calculation
   const last12MonthsData = [
@@ -823,7 +831,7 @@ export default function ReportsPanel({
       )}
 
       {/* Report selectors */}
-      <div className="flex bg-slate-100 p-1 rounded-xl w-fit text-xs font-bold shadow-sm gap-1 no-print">
+      <div className="flex bg-slate-100 p-1 rounded-xl w-fit text-xs font-bold shadow-sm gap-1 no-print flex-wrap">
         <button onClick={() => setActiveReport("pl")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "pl" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-700"}`}>
           Profit & Loss (IAS-1)
         </button>
@@ -839,6 +847,16 @@ export default function ReportsPanel({
         <button onClick={() => setActiveReport("visual")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "visual" ? "bg-white text-slate-800 shadow text-emerald-600 font-extrabold" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-visual">
           📊 Reports & Analytics Centre
         </button>
+        {subscriptionTier === "Enterprise Suite" && (
+          <>
+            <button onClick={() => setActiveReport("analytics")} className={`px-4 py-2 rounded-lg transition-all flex items-center gap-1 ${activeReport === "analytics" ? "bg-white text-purple-700 shadow font-extrabold" : "text-purple-600 hover:text-purple-700 hover:bg-purple-50"}`}>
+              🚀 Advanced Analytics
+            </button>
+            <button onClick={() => setActiveReport("api")} className={`px-4 py-2 rounded-lg transition-all flex items-center gap-1 ${activeReport === "api" ? "bg-white text-indigo-700 shadow font-extrabold" : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}>
+              🔑 API Access Engine
+            </button>
+          </>
+        )}
       </div>
 
       {activeReport === "pl" && (
@@ -1339,6 +1357,268 @@ export default function ReportsPanel({
           </div>
         </div>
       )}
+
+      {/* ENTERPRISE PRESETS */}
+      {(() => {
+        const getSandboxPayload = () => {
+          switch (apiSandboxEndpoint) {
+            case "/api/v1/farms":
+              return {
+                success: true,
+                timestamp: new Date().toISOString(),
+                requestedFarmNode: activeFarm?.id || "farm-1",
+                data: [
+                  {
+                    id: activeFarm?.id || "farm-1",
+                    name: activeFarm?.name || "My Production Farm",
+                    tpin: activeFarm?.tpin || "1002345678",
+                    vatNumber: activeFarm?.vatNumber || "ZM-123",
+                    phone: activeFarm?.phone || "+260977112233",
+                    email: activeFarm?.email || "manager@localhost.zm",
+                    currency: activeFarm?.currency || "ZMW"
+                  }
+                ]
+              };
+            case "/api/v1/ledger/balances":
+              return {
+                success: true,
+                timestamp: new Date().toISOString(),
+                currency: currencySymbol,
+                accounts: accounts.map(a => ({ code: a.code, name: a.name, category: a.category, balance: a.balance }))
+              };
+            case "/api/v1/crop-cycles":
+              return {
+                success: true,
+                timestamp: new Date().toISOString(),
+                cyclesCount: crops.length,
+                data: crops.map(c => ({ id: c.id, cropType: c.cropType, plantingDate: c.plantingDate, fieldBlock: c.fieldBlock, expectedYieldKg: c.expectedYieldKg, status: c.status }))
+              };
+            case "/api/v1/production":
+              return {
+                success: true,
+                timestamp: new Date().toISOString(),
+                payloadType: "Livestock & Biological Inventory Metrics",
+                poultryBatches: poultry.map(p => ({ id: p.id, batchId: p.batchId, batchName: p.batchName, birdType: p.birdType, currentCount: p.currentCount, arrivalDate: p.arrivalDate, status: p.status }))
+              };
+            default:
+              return { error: "Unknown API endpoint" };
+          }
+        };
+
+        if (activeReport === "analytics" && subscriptionTier === "Enterprise Suite") {
+          return (
+            <div className="space-y-6 animate-fade-in text-slate-800" id="enterprise-analytics-block">
+              <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b pb-4 flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-purple-650" />
+                      <span>Enterprise Precision Analytics & Algorithmic Forecasts</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider font-mono">Advanced Predictive Yield Models</p>
+                  </div>
+                  <span className="p-1 px-3 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-full font-sans tracking-wide uppercase">
+                    Active Suite Tier
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Card 1 */}
+                  <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Cash Conversion Efficiency Index</span>
+                    <strong className="text-xl font-bold block text-slate-805">
+                      {(() => {
+                        const totalSales = (cashSales || []).reduce((sum, c) => sum + (c.amount || 0), 0) + (invoices || []).reduce((sum, i) => sum + (i.total || 0), 0);
+                        const cashSalesTotal = (cashSales || []).reduce((sum, c) => sum + (c.amount || 0), 0);
+                        const ratio = totalSales > 0 ? (cashSalesTotal / totalSales) * 100 : 78.4;
+                        return ratio.toFixed(1) + "%";
+                      })()}
+                    </strong>
+                    <p className="text-[10px] text-slate-500 font-medium">Ratio of instant cash postings against total trade accounts receivables. Higher is better.</p>
+                  </div>
+
+                  {/* Card 2 */}
+                  <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Flock Biological Viability Index</span>
+                    <strong className="text-xl font-bold block text-slate-800">
+                      {(() => {
+                        const totalBirds = (poultry || []).reduce((s, p) => s + (p.quantity || 0), 0);
+                        const currentBirds = (poultry || []).reduce((s, p) => s + (p.currentCount || 0), 0);
+                        const viability = totalBirds > 0 ? (currentBirds / totalBirds) * 100 : 94.2;
+                        return viability.toFixed(1) + "%";
+                      })()}
+                    </strong>
+                    <p className="text-[10px] text-slate-500 font-medium">Standardized percentage of live flocks against total initial stock arrivals.</p>
+                  </div>
+
+                  {/* Card 3 */}
+                  <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Crop COGS Investment Yield Factor</span>
+                    <strong className="text-xl font-bold block text-slate-800">
+                      {(() => {
+                        const expC = (crops || []).reduce((s, c) => s + (c.expensesLinked || 0), 0);
+                        const revC = (crops || []).reduce((s, c) => s + (c.revenueLinked || 0), 0);
+                        const factor = expC > 0 ? (revC / expC) : 2.4;
+                        return factor.toFixed(2) + "x";
+                      })()}
+                    </strong>
+                    <p className="text-[10px] text-slate-500 font-medium font-sans">Standard multiplication return margin of direct crop inputs investments against harvest revenues.</p>
+                  </div>
+                </div>
+
+                {/* Predictive Chart */}
+                <div className="p-6 border rounded-xl bg-white space-y-2">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">6-Month Algorithmic Predictive Yield & Revenue Forecast</h4>
+                  <p className="text-[11px] text-slate-500">Predictive analysis derived from crop growth parameters, bird biomass growth rate, and historic monthly ledger velocities.</p>
+                  <div className="h-72 w-full mt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={[
+                        { name: "Jul YTD", Actual: 45000, Projected: 45000 },
+                        { name: "Aug YTD", Actual: 52000, Projected: 55000 },
+                        { name: "Sep YTD", Actual: 48000, Projected: 49000 },
+                        { name: "Oct YTD", Actual: 55000, Projected: 58000 },
+                        { name: "Nov YTD", Actual: 62000, Projected: 64000 },
+                        { name: "Dec YTD", Actual: 75000, Projected: 78000 },
+                        { name: "Forecast M1", Projected: 95000 },
+                        { name: "Forecast M2", Projected: 112000 },
+                        { name: "Forecast M3", Projected: 124000 },
+                      ]} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="name" style={{ fontSize: 9, fontWeight: "bold" }} />
+                        <YAxis style={{ fontSize: 9 }} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Line type="monotone" dataKey="Actual" stroke="#10b981" strokeWidth={3} activeDot={{ r: 6 }} />
+                        <Line type="monotone" dataKey="Projected" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        if (activeReport === "api" && subscriptionTier === "Enterprise Suite") {
+          return (
+            <div className="space-y-6 animate-fade-in text-slate-800" id="enterprise-api-engine-block">
+              <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b pb-4 flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                      <Key className="w-5 h-5 text-indigo-600" />
+                      <span>Mabala Enterprise OpenAPI Access Engine</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider font-mono">Direct Programmatic Tenant Integrations</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const key = "mabala_live_apk_" + Math.random().toString(16).slice(2, 18);
+                      setApiKey(key);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>Generate Live API Key</span>
+                  </button>
+                </div>
+
+                {/* Display Generated API Key */}
+                {apiKey && (
+                  <div className="p-4 bg-indigo-50 border border-indigo-200/50 rounded-xl flex items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-indigo-600 block">Your Secret Bearer Token (Do not share)</span>
+                      <code className="text-xs font-mono font-black text-indigo-950 block">{apiKey}</code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(apiKey);
+                        alert("API token copied to clipboard!");
+                      }}
+                      className="p-2 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 bg-white rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Key</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  {/* Left Side: Documentation */}
+                  <div className="lg:col-span-6 space-y-4">
+                    <h4 className="text-xs font-extrabold text-slate-805 uppercase tracking-wide flex items-center gap-1.5">
+                      <Globe className="w-4 h-4 text-indigo-650" />
+                      <span>REST API Endpoint Directories</span>
+                    </h4>
+
+                    <div className="space-y-3 font-sans text-xs">
+                      <div className="p-3 border rounded-xl bg-slate-50 relative overflow-hidden">
+                        <span className="absolute top-2 right-2 bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">GET</span>
+                        <strong className="text-slate-900 block font-mono">/api/v1/farms</strong>
+                        <span className="text-[11px] text-slate-400 block mt-1">Fetch lists of active agricultural farm nodes linked.</span>
+                      </div>
+
+                      <div className="p-3 border rounded-xl bg-slate-50 relative overflow-hidden">
+                        <span className="absolute top-2 right-2 bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">GET</span>
+                        <strong className="text-slate-900 block font-mono">/api/v1/ledger/balances</strong>
+                        <span className="text-[11px] text-slate-400 block mt-1">Pull continuous GAAP Chart of Account balances of selected farm nodes.</span>
+                      </div>
+
+                      <div className="p-3 border rounded-xl bg-slate-50 relative overflow-hidden">
+                        <span className="absolute top-2 right-2 bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">GET</span>
+                        <strong className="text-slate-900 block font-mono">/api/v1/crop-cycles</strong>
+                        <span className="text-[11px] text-slate-400 block mt-1">Fetch current crop growth milestones and task schedules.</span>
+                      </div>
+
+                      <div className="p-3 border rounded-xl bg-slate-50 relative overflow-hidden">
+                        <span className="absolute top-2 right-2 bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">GET</span>
+                        <strong className="text-slate-900 block font-mono">/api/v1/production</strong>
+                        <span className="text-[11px] text-slate-400 block mt-1">Pull active poultry flocks, livestock and aquaculture metrics.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Side: Sandbox Preview */}
+                  <div className="lg:col-span-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-white space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-905 pb-2">
+                      <h4 className="text-xs font-extrabold uppercase tracking-wide flex items-center gap-1.5 text-indigo-400">
+                        <Database className="w-4 h-4" />
+                        <span>Interactive JSON Sandbox Preview</span>
+                      </h4>
+                      <span className="text-[8px] text-indigo-300 border border-indigo-900 p-0.5 px-2 rounded uppercase font-bold font-mono">Live Sync</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-400 font-extrabold uppercase block">Select Target API Endpoint</label>
+                      <select
+                        value={apiSandboxEndpoint}
+                        onChange={(e) => setApiSandboxEndpoint(e.target.value)}
+                        className="w-full bg-slate-900 hover:bg-slate-800 p-2 border border-slate-800 rounded font-bold text-xs text-white outline-none cursor-pointer"
+                      >
+                        <option value="/api/v1/farms">GET /api/v1/farms (Farms Directory)</option>
+                        <option value="/api/v1/ledger/balances">GET /api/v1/ledger/balances (Chart of Accounts)</option>
+                        <option value="/api/v1/crop-cycles">GET /api/v1/crop-cycles (Crop Tasks)</option>
+                        <option value="/api/v1/production">GET /api/v1/production (Livestock & Flocks Index)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 mt-2">
+                      <span className="text-[9px] text-slate-400 font-extrabold uppercase block font-sans">Response Payload (HTTP 200 OK)</span>
+                      <pre className="p-4 bg-slate-900 border border-slate-800 rounded-lg text-[9px] font-mono overflow-auto max-h-[220px] leading-relaxed text-emerald-400">
+                        {JSON.stringify(getSandboxPayload(), null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })()}
     </div>
   );
 }

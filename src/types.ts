@@ -556,6 +556,7 @@ export interface UserMember {
   lastActive: string;
   status?: "Active" | "Deactivated";
   password?: string;
+  accessibleFarmIds?: string[];
 }
 
 export interface Asset {

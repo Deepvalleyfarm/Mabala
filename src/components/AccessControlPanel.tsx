@@ -30,6 +30,8 @@ interface AccessControlPanelProps {
   userEmail: string;
   activeFarmName: string;
   adminClaimantEmail: string;
+  farms?: any[];
+  subscriptionTier?: string;
 }
 
 export default function AccessControlPanel({
@@ -45,7 +47,9 @@ export default function AccessControlPanel({
   adminClaimed,
   userEmail,
   activeFarmName,
-  adminClaimantEmail
+  adminClaimantEmail,
+  farms = [],
+  subscriptionTier
 }: AccessControlPanelProps) {
   const [activeRoleTab, setActiveRoleTab] = useState<PredefinedRole>("Accountant");
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -54,6 +58,7 @@ export default function AccessControlPanel({
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<PredefinedRole>("Farm Worker");
+  const [selectedFarmIds, setSelectedFarmIds] = useState<string[]>([]);
 
   const rolesList: PredefinedRole[] = (() => {
     const isDeepValleyAdmin = userEmail === "deepvaleyfarm@gmail.com";
@@ -85,16 +90,25 @@ export default function AccessControlPanel({
     e.preventDefault();
     if (!newMemberName || !newMemberEmail) return;
     
+    // Check user organization list limit based on Enterprise subscription
+    const maxTeamUsers = subscriptionTier === "Enterprise Suite" ? 20 : 10;
+    if (teamMembers.length >= maxTeamUsers) {
+      alert(`Under your package (${subscriptionTier || "Standard"}), organization limits are restricted to ${maxTeamUsers} team users. Please upgrade or prune inactive users.`);
+      return;
+    }
+
     onAddTeamMember({
       name: newMemberName,
       email: newMemberEmail,
       role: newMemberRole,
+      accessibleFarmIds: selectedFarmIds,
     });
 
     // Reset Form
     setNewMemberName("");
     setNewMemberEmail("");
     setNewMemberRole("Farm Worker");
+    setSelectedFarmIds([]);
     setShowAddMemberModal(false);
   };
 
@@ -412,6 +426,35 @@ export default function AccessControlPanel({
                   <option value="Farm Owner">Farm Owner (Full Workspace Administrator)</option>
                 </select>
               </div>
+
+              {subscriptionTier === "Enterprise Suite" && farms && farms.length > 0 && (
+                <div className="space-y-1.5 mt-2">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 block">Accessible Farm Nodes</label>
+                  <p className="text-[10px] text-slate-400 font-medium">Configure which farming segments this user is authorized to view.</p>
+                  <div className="mt-1 border border-slate-200/60 rounded-xl p-3.5 space-y-2.5 bg-slate-50/50 max-h-[140px] overflow-y-auto">
+                    {farms.map(f => {
+                      const checked = selectedFarmIds.includes(f.id);
+                      return (
+                        <label key={f.id} className="flex items-center gap-2 text-xs font-semibold text-slate-705 cursor-pointer">
+                          <input 
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              if (checked) {
+                                setSelectedFarmIds(prev => prev.filter(id => id !== f.id));
+                              } else {
+                                setSelectedFarmIds(prev => [...prev, f.id]);
+                              }
+                            }}
+                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+                          />
+                          <span>{f.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-4 border-t mt-4 text-xs font-semibold">

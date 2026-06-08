@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import WelcomeScreen from "./components/WelcomeScreen";
 import AiChatbot from "./components/AiChatbot";
@@ -1007,8 +1007,181 @@ export default function App() {
     { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true }
   ]);
 
+  const [isAllFarmsActive, setIsAllFarmsActive] = useState<boolean>(false);
+  const [farmAccountsMap, setFarmAccountsMap] = useState<Record<string, Account[]>>({});
+  const [creditTiers, setCreditTiers] = useState([
+    { id: "tier-1", name: "Tier 1: Basic Operations", cost: 1, modules: "Dashboard, Sales Tracker, User Profiles, Backup & Restore", color: "#94a3b8" },
+    { id: "tier-2", name: "Tier 2: Standard Crop Operations", cost: 2, modules: "Crop Cycles, Milestones Planning, Expenses Ledger, Invoices & Quotes", color: "#3b82f6" },
+    { id: "tier-3", name: "Tier 3: Capital Finance Hub", cost: 3, modules: "Finance & Loans Hub, Capital Investments, Asset Register, Depreciation", color: "#ec4899" },
+    { id: "tier-4", name: "Tier 4: Statutory & Reports Pro", cost: 5, modules: "Chart of Accounts, IFRS Financial Reports, Statutory Ledger, Audit Log", color: "#8b5cf6" },
+    { id: "tier-5", name: "Tier 5: Advanced Livestock & Poultry Pro", cost: 8, modules: "Livestock Records, Poultry Batches, Aquaculture, Vet-Certified Logs", color: "#10b981" }
+  ]);
+
   const activeFarm = farms[activeFarmIndex] || farms[0];
   const isReadonly = credits === 0 || farmStatus === "FROZEN";
+
+  const isAllFarmsSelected = isAllFarmsActive && subscriptionTier === "Enterprise Suite";
+
+  const currentMember = useMemo(() => {
+    return teamMembers.find(m => m.email.trim().toLowerCase() === userProfile.email.trim().toLowerCase());
+  }, [teamMembers, userProfile.email]);
+
+  const accessibleFarms = useMemo(() => {
+    if (currentMember && currentMember.accessibleFarmIds && currentMember.accessibleFarmIds.length > 0) {
+      return farms.filter(f => currentMember.accessibleFarmIds!.includes(f.id));
+    }
+    return farms;
+  }, [farms, currentMember]);
+
+  // Filter transaction states for rendering/read-only views based on selected farm node or collected multi-farm
+  const displayedExpenses = useMemo(() => {
+    return isAllFarmsSelected ? expenses : expenses.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, expenses, activeFarm?.id]);
+
+  const displayedCrops = useMemo(() => {
+    return isAllFarmsSelected ? crops : crops.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, crops, activeFarm?.id]);
+
+  const displayedInvoices = useMemo(() => {
+    return isAllFarmsSelected ? invoices : invoices.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, invoices, activeFarm?.id]);
+
+  const displayedPoultry = useMemo(() => {
+    return isAllFarmsSelected ? poultry : poultry.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, poultry, activeFarm?.id]);
+
+  const displayedCashSales = useMemo(() => {
+    return isAllFarmsSelected ? cashSales : cashSales.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, cashSales, activeFarm?.id]);
+
+  const displayedLivestock = useMemo(() => {
+    return isAllFarmsSelected ? livestock : livestock.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, livestock, activeFarm?.id]);
+
+  const displayedFish = useMemo(() => {
+    return isAllFarmsSelected ? fish : fish.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, fish, activeFarm?.id]);
+
+  const displayedInventory = useMemo(() => {
+    return isAllFarmsSelected ? inventory : inventory.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, inventory, activeFarm?.id]);
+
+  const displayedAssets = useMemo(() => {
+    return isAllFarmsSelected ? assets : assets.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, assets, activeFarm?.id]);
+
+  const displayedOtherRevenues = useMemo(() => {
+    return isAllFarmsSelected ? otherRevenues : otherRevenues.filter(x => !x.farmId || x.farmId === activeFarm?.id);
+  }, [isAllFarmsSelected, otherRevenues, activeFarm?.id]);
+
+  // Synchronize dynamic Chart of Accounts balances by sub-farm node
+  useEffect(() => {
+    if (activeFarm?.id && !isAllFarmsSelected) {
+      setFarmAccountsMap(prev => {
+        const currentMapVal = prev[activeFarm.id];
+        const hasDiff = !currentMapVal || currentMapVal.some((acc, idx) => acc.balance !== accounts[idx]?.balance);
+        if (hasDiff) {
+          return {
+            ...prev,
+            [activeFarm.id]: accounts
+          };
+        }
+        return prev;
+      });
+    }
+  }, [accounts, activeFarm?.id, isAllFarmsSelected]);
+
+  // Restore Chart of Account active balances on farm node focus swap
+  const prevActiveFarmIdRef = useRef<string>("");
+  useEffect(() => {
+    if (activeFarm?.id) {
+      if (prevActiveFarmIdRef.current !== activeFarm.id) {
+        prevActiveFarmIdRef.current = activeFarm.id;
+        const mapped = farmAccountsMap[activeFarm.id];
+        if (mapped) {
+          setAccounts(mapped);
+        } else {
+          setAccounts(INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
+        }
+      }
+    }
+  }, [activeFarm?.id, farmAccountsMap]);
+
+  // Merged accounts balance summary for collected multiple farms view
+  const displayedAccounts = useMemo(() => {
+    if (isAllFarmsSelected) {
+      return INITIAL_ACCOUNTS.map(baseAcc => {
+        let totalBal = 0;
+        farms.forEach(f => {
+          const farmAccs = farmAccountsMap[f.id] || [];
+          const match = farmAccs.find(a => a.code === baseAcc.code);
+          if (match) {
+            totalBal += match.balance;
+          } else if (f.id === activeFarm?.id) {
+            const stateMatch = accounts.find(a => a.code === baseAcc.code);
+            if (stateMatch) totalBal += stateMatch.balance;
+          }
+        });
+        return { ...baseAcc, balance: totalBal };
+      });
+    }
+    return accounts;
+  }, [isAllFarmsSelected, accounts, farmAccountsMap, farms, activeFarm?.id]);
+
+  const getTierForTab = (tab: string) => {
+    switch (tab) {
+      case "dashboard":
+      case "sales":
+      case "profile":
+      case "backup-restore":
+        return "tier-1";
+      case "crops":
+      case "expenses":
+      case "invoices":
+        return "tier-2";
+      case "finance-hub":
+      case "assets":
+        return "tier-3";
+      case "accounts":
+      case "reports":
+      case "audit-archive":
+        return "tier-4";
+      case "livestock":
+      case "poultry":
+      case "aquaculture":
+        return "tier-5";
+      default:
+        return null;
+    }
+  };
+
+  // Active module-access credit deduction engine 
+  const [prevTab, setPrevTab] = useState<string>("dashboard");
+  useEffect(() => {
+    if (activeTab === prevTab) return;
+    
+    const tierId = getTierForTab(activeTab);
+    if (tierId) {
+      const matchedTier = creditTiers.find(t => t.id === tierId);
+      const cost = matchedTier ? matchedTier.cost : 1;
+      
+      if (cost > 0) {
+        setCredits(prev => Math.max(prev - cost, 0));
+        
+        // Push transactions straight to credit ledger audits
+        const newTx = {
+          id: "tx-module-" + Date.now(),
+          date: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          amount: cost,
+          description: `Access module: ${activeTab.toUpperCase()} (${matchedTier?.name || "Credit Usage"})`,
+          type: "usage"
+        };
+        setCreditTransactions(prev => [newTx, ...prev]);
+      }
+    }
+    
+    setPrevTab(activeTab);
+  }, [activeTab, prevTab, creditTiers]);
 
   const handleUpdateActiveFarm = (updatedFields: Partial<any>) => {
     setFarms(prev => prev.map((f, i) => {
@@ -3109,13 +3282,26 @@ export default function App() {
               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-none pb-1">Sub-Farm Workspace</span>
               <div className="flex items-center gap-1">
                 <select 
-                  value={activeFarmIndex} 
-                  onChange={e => setActiveFarmIndex(Number(e.target.value))}
+                  value={isAllFarmsActive ? "all" : String(activeFarmIndex)} 
+                  onChange={e => {
+                    if (e.target.value === "all") {
+                      setIsAllFarmsActive(true);
+                    } else {
+                      setIsAllFarmsActive(false);
+                      setActiveFarmIndex(Number(e.target.value));
+                    }
+                  }}
                   className="bg-slate-100 border border-slate-200 rounded px-2 py-0.5 font-bold text-xs text-slate-700 outline-none cursor-pointer"
                 >
-                  {farms.map((f, idx) => (
-                    <option key={f.id} value={idx}>{f.name}</option>
-                  ))}
+                  {accessibleFarms.map((f) => {
+                    const idx = farms.findIndex(farm => farm.id === f.id);
+                    return (
+                      <option key={f.id} value={String(idx)}>{f.name}</option>
+                    );
+                  })}
+                  {subscriptionTier === "Enterprise Suite" && (
+                    <option value="all">⭐ Collected Data (All Selected Farms)</option>
+                  )}
                 </select>
                 <button 
                   onClick={() => setShowFarmConfigModal(true)}
@@ -3262,7 +3448,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                   <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Total Revenue YTD</div>
                   <div className="text-2xl font-bold mt-1 text-slate-800">
-                    {selectedCountry.symbol} {accounts.filter(a => a.category === "Revenue").reduce((s, a) => s + a.balance, 0).toLocaleString()}
+                    {selectedCountry.symbol} {displayedAccounts.filter(a => a.category === "Revenue").reduce((s, a) => s + a.balance, 0).toLocaleString()}
                   </div>
                   <span className="text-[9px] text-emerald-500 mt-2 font-medium block">✓ Derived from crop & aquaculture sales</span>
                 </div>
@@ -3270,7 +3456,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 font-sans">
                   <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Expenses YTD</div>
                   <div className="text-2xl font-bold mt-1 text-rose-500">
-                    {selectedCountry.symbol} {accounts.filter(a => a.category === "Expense").reduce((s, a) => s + a.balance, 0).toLocaleString()}
+                    {selectedCountry.symbol} {displayedAccounts.filter(a => a.category === "Expense").reduce((s, a) => s + a.balance, 0).toLocaleString()}
                   </div>
                   <span className="text-[9px] text-slate-400 mt-2 font-medium block">Multi-line journal allocations</span>
                 </div>
@@ -3278,8 +3464,8 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                   <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Net Operating surplus</div>
                   {(() => {
-                    const rev = accounts.filter(a => a.category === "Revenue").reduce((s, a) => s + a.balance, 0);
-                    const exp = accounts.filter(a => a.category === "Expense").reduce((s, a) => s + a.balance, 0);
+                    const rev = displayedAccounts.filter(a => a.category === "Revenue").reduce((s, a) => s + a.balance, 0);
+                    const exp = displayedAccounts.filter(a => a.category === "Expense").reduce((s, a) => s + a.balance, 0);
                     const diff = rev - exp;
                     return (
                       <>
@@ -3409,7 +3595,7 @@ export default function App() {
               renderAccessDenied("Expenses Ledger")
             ) : (
               <ExpensesPanel 
-                expenses={expenses} 
+                expenses={displayedExpenses} 
                 suppliers={suppliers} 
                 onAddTransaction={handleAddExpense} 
                 onAddSupplier={handleAddSupplier}
@@ -3424,7 +3610,7 @@ export default function App() {
               renderAccessDenied("Crop Cycles / Tasks")
             ) : (
               <CropsPanel 
-                crops={crops} 
+                crops={displayedCrops} 
                 onAddCrop={handleAddCrop} 
                 onUpdateMilestone={handleUpdateMilestone} 
                 onUpdateStatus={handleUpdateCropStatus}
@@ -3519,10 +3705,10 @@ export default function App() {
               renderAccessDenied("Invoices & Quotes")
             ) : (
               <InvoicesPanel 
-                invoices={invoices} 
+                invoices={displayedInvoices} 
                 quotations={quotations} 
                 customers={customers} 
-                crops={crops}
+                crops={displayedCrops}
                 onAddInvoice={handleAddInvoice} 
                 onAddQuotation={handleAddQuotation}
                 onMarkPaid={handleMarkPaid}
@@ -3537,11 +3723,11 @@ export default function App() {
 
           {(activeTab === "livestock" || activeTab === "poultry") && (
             (!hasReadPermission("livestock") && !hasReadPermission("poultry")) ? (
-              renderAccessDenied("Livestock & Poultry Records")
+              renderAccessDenied("Live Stock & Poultry Records")
             ) : (
               <LivestockPoultryPanel 
-                batches={poultry} 
-                records={livestock} 
+                batches={displayedPoultry} 
+                records={displayedLivestock} 
                 suppliers={suppliers} 
                 onAddPoultry={handleAddPoultry} 
                 onUpdatePoultryBatch={handleUpdatePoultryBatch}
@@ -3558,10 +3744,10 @@ export default function App() {
                 setWorkspaceMode={setWorkspaceMode}
                 vetFeeActivation={vetFeeActivation}
                 setVetFeeActivation={setVetFeeActivation}
-                accounts={accounts}
+                accounts={displayedAccounts}
                 setAccounts={setAccounts}
                 customers={customers}
-                invoices={invoices}
+                invoices={displayedInvoices}
                 onAddInvoice={handleAddInvoice}
                 onMarkPaid={handleMarkPaid}
                 onDeleteLivestockRecord={handleDeleteLivestockRecord}
@@ -3577,7 +3763,7 @@ export default function App() {
               renderAccessDenied("Aquaculture Systems")
             ) : (
               <AquaculturePanel 
-                batches={fish} 
+                batches={displayedFish} 
                 onAddFishBatch={handleAddFishBatch} 
                 onAddWaterReading={handleAddWaterReading}
                 isReadonly={isReadonly || !hasWritePermission("aquaculture")}
@@ -3612,7 +3798,7 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y font-semibold text-slate-800">
-                        {inventory.map(item => (
+                        {displayedInventory.map(item => (
                           <tr key={item.id} className="hover:bg-slate-50/50">
                             <td className="p-3 font-mono text-slate-700">{item.id}</td>
                             <td className="p-3 text-slate-900">{item.name}</td>
@@ -3698,6 +3884,8 @@ export default function App() {
               userEmail={userProfile.email}
               activeFarmName={activeFarm.name}
               adminClaimantEmail={adminClaimantEmail}
+              farms={farms}
+              subscriptionTier={subscriptionTier}
             />
           )}
 
@@ -3827,6 +4015,8 @@ export default function App() {
               setLipilaTransactions={setLipilaTransactions}
               defaultVaccinationSchedule={defaultVaccinationSchedule}
               setDefaultVaccinationSchedule={setDefaultVaccinationSchedule}
+              creditTiers={creditTiers}
+              setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
                 setLipilaCheckout({
                   type: "subscription",
@@ -3876,6 +4066,8 @@ export default function App() {
               setLipilaTransactions={setLipilaTransactions}
               defaultVaccinationSchedule={defaultVaccinationSchedule}
               setDefaultVaccinationSchedule={setDefaultVaccinationSchedule}
+              creditTiers={creditTiers}
+              setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
                 setLipilaCheckout({
                   type: "subscription",
