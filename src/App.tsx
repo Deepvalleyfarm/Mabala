@@ -113,6 +113,44 @@ import {
   Shield
 } from "lucide-react";
 
+// Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
+async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
+  const res = await fetch(url, options);
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  if (!res.ok) {
+    let errMsg = `Request failed with status ${res.status}`;
+    if (isJson) {
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errData.details || errMsg;
+      } catch (_) {}
+    } else {
+      try {
+        const textStr = await res.text();
+        errMsg = textStr.slice(0, 150).replace(/<[^>]*>/g, "") || errMsg;
+      } catch (_) {}
+    }
+    throw new Error(errMsg);
+  }
+
+  if (isJson) {
+    try {
+      return await res.json();
+    } catch (parseErr: any) {
+      console.warn("[safeFetchJsonClient] JSON parsing error on success response:", parseErr.message);
+      return { status: "Pending", isSimulatedFallback: true };
+    }
+  } else {
+    try {
+      const textStr = await res.text();
+      console.warn("[safeFetchJsonClient] Success response but NOT JSON content:", textStr.slice(0, 100));
+    } catch (_) {}
+    return { status: "Pending", isSimulatedFallback: true };
+  }
+}
+
 const DEFAULT_PERMISSIONS: RolePermissionsMap = {
   "Platform Administrator": {
     dashboard: { read: true, write: true },
@@ -561,15 +599,12 @@ export default function App() {
         try {
           const nameHint = lipilaCheckout?.registrationData?.fullName || lipilaCheckout?.registrationData?.storeName || userProfile?.name || "";
           const url = `/api/payments/lookup?accountNumber=${formattedPhone}${nameHint ? `&nameHint=${encodeURIComponent(nameHint)}` : ""}`;
-          const res = await fetch(url);
+          const data = await safeFetchJsonClient(url);
           
-          if (res.ok) {
-            const data = await res.json();
-            if (active && data.success) {
-              setLipilaHolderName(data.holderName);
-              setLipilaSearchingName(false);
-              return;
-            }
+          if (active && data && data.success) {
+            setLipilaHolderName(data.holderName);
+            setLipilaSearchingName(false);
+            return;
           }
         } catch (err) {
           console.error("Name lookup query failed:", err);
@@ -817,38 +852,35 @@ export default function App() {
     const intervalId = setInterval(async () => {
       setLipilaPollingCount(prev => prev + 1);
       try {
-        const res = await fetch(`/api/payments/check-status?referenceId=${lipilaRefId}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "Successful" || data.status === "Success" || data.status === "Completed") {
-            setLipilaPaymentStatus("Successful");
-            handlePaymentSuccessAllocation(lipilaCheckout);
-            clearInterval(intervalId);
-          } else if (data.status === "Failed") {
-            const failMsg = data.message || "Payment request declined or timing out.";
-            
-            // Record failed transaction for auditing logs
-            setLipilaTransactions(prev => [
-              {
-                id: "tx-lipila-" + Date.now(),
-                referenceId: lipilaRefId || `ref-${Date.now()}`,
-                amount: Number(lipilaCheckout?.price) || 0,
-                currency: "ZMW",
-                phone: lipilaPhone || "26097100000",
-                holderName: lipilaHolderName || "Shadrick Kasuli",
-                packageName: lipilaCheckout?.name || "Premium Upgrade",
-                packageType: lipilaCheckout?.type || "subscription",
-                status: "Failed" as const,
-                date: new Date().toISOString().replace('T', ' ').slice(0, 19),
-                errorDetails: failMsg
-              },
-              ...prev
-            ]);
-            clearInterval(intervalId);
-            
-            // Immediately kick the user out to marketing landing view on payment processing failure
-            await handleLipilaCancelOrFailure(`Lupila API Failure: ${failMsg}`);
-          }
+        const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
+        if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
+          setLipilaPaymentStatus("Successful");
+          handlePaymentSuccessAllocation(lipilaCheckout);
+          clearInterval(intervalId);
+        } else if (data && data.status === "Failed") {
+          const failMsg = data.message || "Payment request declined or timing out.";
+          
+          // Record failed transaction for auditing logs
+          setLipilaTransactions(prev => [
+            {
+              id: "tx-lipila-" + Date.now(),
+              referenceId: lipilaRefId || `ref-${Date.now()}`,
+              amount: Number(lipilaCheckout?.price) || 0,
+              currency: "ZMW",
+              phone: lipilaPhone || "26097100000",
+              holderName: lipilaHolderName || "Shadrick Kasuli",
+              packageName: lipilaCheckout?.name || "Premium Upgrade",
+              packageType: lipilaCheckout?.type || "subscription",
+              status: "Failed" as const,
+              date: new Date().toISOString().replace('T', ' ').slice(0, 19),
+              errorDetails: failMsg
+            },
+            ...prev
+          ]);
+          clearInterval(intervalId);
+          
+          // Immediately kick the user out to marketing landing view on payment processing failure
+          await handleLipilaCancelOrFailure(`Lupila API Failure: ${failMsg}`);
         }
       } catch (err) {
         console.error("Polling check query failed:", err);
@@ -891,7 +923,7 @@ export default function App() {
     setLipilaRefId(generatedRefId);
 
     try {
-      const response = await fetch("/api/payments/collect", {
+      const data = await safeFetchJsonClient("/api/payments/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -904,13 +936,7 @@ export default function App() {
         })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || errData.details || "Collection failed");
-      }
-
-      const data = await response.json();
-      if (data.status === "Failed") {
+      if (data && data.status === "Failed") {
         setLipilaPaymentStatus("Failed");
         const failMsg = data.message || "Transaction has failed";
         setLipilaError(failMsg);

@@ -659,14 +659,6 @@ export default function WelcomeScreen({
               >
                 <span>Register as a Vendor</span>
               </button>
-
-              <button 
-                onClick={onStartDemo}
-                className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-700 border border-slate-250 rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Zap className="w-4 h-4 text-emerald-500" />
-                <span>Initialize Live Demo Workspace</span>
-              </button>
             </div>
 
             {/* Static visual stats dashboard container mock */}

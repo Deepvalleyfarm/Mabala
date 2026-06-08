@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import https from "https";
 
 dotenv.config();
 
@@ -10,6 +11,80 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Robust wrapper to call HTTP REST APIs safely with global fetch or Node https fallback
+async function safeFetchJson(url: string, options: any): Promise<any> {
+  // If native global fetch is defined, try that first with response checks
+  if (typeof fetch !== "undefined") {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        // Ensure standard string body
+        body: options.body ? (typeof options.body === "string" ? options.body : JSON.stringify(options.body)) : undefined
+      });
+      if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          return await response.json();
+        } else {
+          const text = await response.text();
+          console.warn(`[safeFetchJson] Success response but NOT JSON content. Type: ${contentType}, text:`, text.slice(0, 100));
+        }
+      } else {
+        const text = await response.text();
+        console.warn(`[safeFetchJson] Non-OK status ${response.status}:`, text.slice(0, 200));
+      }
+    } catch (e: any) {
+      console.warn("[safeFetchJson] Native fetch attempt failed:", e.message);
+    }
+  }
+
+  // Pure Node.js HTTPS fallback
+  return new Promise((resolve, reject) => {
+    try {
+      const parsedUrl = new URL(url);
+      const reqOpts = {
+        method: options.method || "GET",
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        headers: {
+          "user-agent": "Node/secure-gateway",
+          ...options.headers
+        }
+      };
+
+      const req = https.request(reqOpts, (res) => {
+        let rawData = "";
+        res.on("data", (chunk) => { rawData += chunk; });
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const parsed = JSON.parse(rawData);
+              resolve(parsed);
+            } catch (jsErr) {
+              console.warn(`[safeFetchJson https fallback] JSON parsing failed:`, jsErr);
+              reject(new Error("Response body is not valid JSON"));
+            }
+          } else {
+            reject(new Error(`HTTP status ${res.statusCode}: ${rawData.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+
+      if (options.body) {
+        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+      }
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
 
 // Initialize Gemini client lazily
 let ai: GoogleGenAI | null = null;
@@ -102,7 +177,7 @@ app.post("/api/payments/collect", async (req, res) => {
     console.log("Initiating Lipila Payment:", payload);
 
     try {
-      const response = await fetch("https://api.lipila.dev/api/v1/collections/mobile-money", {
+      const data = await safeFetchJson("https://api.lipila.dev/api/v1/collections/mobile-money", {
         method: "POST",
         headers: {
           "accept": "application/json",
@@ -113,15 +188,11 @@ app.post("/api/payments/collect", async (req, res) => {
         body: JSON.stringify(payload)
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data) {
         console.log("Lipila API success response:", data);
         res.json(data);
         return;
       }
-
-      const errorText = await response.text();
-      console.warn("Lipila API error response:", errorText);
     } catch (fetchErr: any) {
       console.warn("Lipila API fetch failed, using fallback:", fetchErr.message);
     }
@@ -150,7 +221,7 @@ app.get("/api/payments/check-status", async (req, res) => {
     const apiKey = process.env.LIPILA_API_KEY || "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d";
 
     try {
-      const response = await fetch(`https://api.lipila.dev/api/v1/collections/check-status?referenceId=${referenceId}`, {
+      const data = await safeFetchJson(`https://api.lipila.dev/api/v1/collections/check-status?referenceId=${referenceId}`, {
         method: "GET",
         headers: {
           "accept": "application/json",
@@ -158,14 +229,10 @@ app.get("/api/payments/check-status", async (req, res) => {
         }
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data) {
         res.json(data);
         return;
       }
-
-      const errorText = await response.text();
-      console.warn("Lipila Check Status Error:", errorText);
     } catch (fetchErr: any) {
       console.warn("Lipila status check fetch failed, using fallback:", fetchErr.message);
     }
