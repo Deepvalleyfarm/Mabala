@@ -14,14 +14,22 @@ app.use(express.json());
 
 // Robust wrapper to call HTTP REST APIs safely with global fetch or Node https fallback
 async function safeFetchJson(url: string, options: any): Promise<any> {
+  const timeoutMs = 4000; // Strict 4-second timeout limit to prevent gateway timeouts
+
   // If native global fetch is defined, try that first with response checks
   if (typeof fetch !== "undefined") {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         // Ensure standard string body
         body: options.body ? (typeof options.body === "string" ? options.body : JSON.stringify(options.body)) : undefined
       });
+      clearTimeout(timer);
+
       if (response.ok) {
         const contentType = response.headers.get("content-type") || "";
         if (contentType.includes("application/json")) {
@@ -29,60 +37,79 @@ async function safeFetchJson(url: string, options: any): Promise<any> {
         } else {
           const text = await response.text();
           console.warn(`[safeFetchJson] Success response but NOT JSON content. Type: ${contentType}, text:`, text.slice(0, 100));
+          throw new Error("Response content is not JSON");
         }
       } else {
         const text = await response.text();
         console.warn(`[safeFetchJson] Non-OK status ${response.status}:`, text.slice(0, 200));
+        throw new Error(`HTTP status ${response.status}`);
       }
     } catch (e: any) {
+      clearTimeout(timer);
       console.warn("[safeFetchJson] Native fetch attempt failed:", e.message);
+      if (e.name === "AbortError" || e.message?.toLowerCase().includes("abort") || e.message?.toLowerCase().includes("timeout")) {
+        throw new Error("Request timed out");
+      }
+      // Otherwise, we allow falling through to the Node fallback
     }
   }
 
   // Pure Node.js HTTPS fallback
   return new Promise((resolve, reject) => {
-    try {
-      const parsedUrl = new URL(url);
-      const reqOpts = {
-        method: options.method || "GET",
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || 443,
-        path: parsedUrl.pathname + parsedUrl.search,
-        headers: {
-          "user-agent": "Node/secure-gateway",
-          ...options.headers
-        }
-      };
-
-      const req = https.request(reqOpts, (res) => {
-        let rawData = "";
-        res.on("data", (chunk) => { rawData += chunk; });
-        res.on("end", () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            try {
-              const parsed = JSON.parse(rawData);
-              resolve(parsed);
-            } catch (jsErr) {
-              console.warn(`[safeFetchJson https fallback] JSON parsing failed:`, jsErr);
-              reject(new Error("Response body is not valid JSON"));
-            }
-          } else {
-            reject(new Error(`HTTP status ${res.statusCode}: ${rawData.slice(0, 200)}`));
-          }
-        });
-      });
-
-      req.on("error", (err) => {
-        reject(err);
-      });
-
-      if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+    let completed = false;
+    const parsedUrl = new URL(url);
+    const reqOpts = {
+      method: options.method || "GET",
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 443,
+      path: parsedUrl.pathname + (parsedUrl.search || ""),
+      headers: {
+        "user-agent": "Node/secure-gateway",
+        ...options.headers
       }
-      req.end();
-    } catch (err) {
+    };
+
+    const timer = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        req.destroy();
+        reject(new Error("Request timed out"));
+      }
+    }, timeoutMs);
+
+    const req = https.request(reqOpts, (res) => {
+      let rawData = "";
+      res.on("data", (chunk) => { rawData += chunk; });
+      res.on("end", () => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            const parsed = JSON.parse(rawData);
+            resolve(parsed);
+          } catch (jsErr) {
+            console.warn(`[safeFetchJson https fallback] JSON parsing failed:`, jsErr);
+            reject(new Error("Response body is not valid JSON"));
+          }
+        } else {
+          reject(new Error(`HTTP status ${res.statusCode}: ${rawData.slice(0, 150)}`));
+        }
+      });
+    });
+
+    req.on("error", (err) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timer);
       reject(err);
+    });
+
+    if (options.body) {
+      req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
     }
+    req.end();
   });
 }
 

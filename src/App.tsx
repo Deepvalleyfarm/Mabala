@@ -129,7 +129,12 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
     } else {
       try {
         const textStr = await res.text();
-        errMsg = textStr.slice(0, 150).replace(/<[^>]*>/g, "") || errMsg;
+        if (textStr.trim().startsWith("<") || textStr.includes("<html") || textStr.includes("<!DOCTYPE")) {
+          errMsg = `The payment gateway is experiencing connection issues (Status ${res.status}). Placed transaction into automatic standby.`;
+        } else {
+          // Strip all tags FIRST, then slice, to prevent incomplete tags from bypassing regex matching
+          errMsg = textStr.replace(/<[^>]*>/g, "").trim().slice(0, 150) || errMsg;
+        }
       } catch (_) {}
     }
     throw new Error(errMsg);
