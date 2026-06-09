@@ -2167,6 +2167,19 @@ export default function App() {
     // Look up package pricing dynamically from config
     const matchedPkg = platformPackages.find(p => p.name === data.subscriptionTier) || platformPackages[0];
     
+    if (matchedPkg.name === "Smallholder Pack") {
+      // Smallholder Pack: Disable payment gateway and grant direct dashboard access immediately!
+      handlePaymentSuccessAllocation({
+        type: "subscription",
+        name: matchedPkg.name,
+        price: matchedPkg.price,
+        creditsToAward: matchedPkg.credits,
+        description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
+        registrationData: data
+      });
+      return;
+    }
+
     // Launch Lipila Mobile Money Terminal before granting access or issuing credits
     setLipilaCheckout({
       type: "subscription",
@@ -4394,7 +4407,7 @@ export default function App() {
               setPlatformPackages={setPlatformPackages}
               currencySymbol={selectedCountry.symbol}
               currentRole={currentRole}
-              viewMode="profile"
+               viewMode="profile"
               subscriptionTier={subscriptionTier}
               setSubscriptionTier={setSubscriptionTier}
               workspaceMode={workspaceMode}
@@ -4413,13 +4426,24 @@ export default function App() {
               creditTiers={creditTiers}
               setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
-                setLipilaCheckout({
-                  type: "subscription",
-                  name: pkg.name,
-                  price: pkg.price,
-                  creditsToAward: pkg.credits,
-                  description: pkg.features || pkg.description || "Active subscription upgrade"
-                });
+                if (pkg.name === "Smallholder Pack") {
+                  // Direct bypass of Lipila payment gateway for Smallholder Pack
+                  handlePaymentSuccessAllocation({
+                    type: "subscription",
+                    name: pkg.name,
+                    price: pkg.price,
+                    creditsToAward: pkg.credits,
+                    description: pkg.features || pkg.description || "Active subscription upgrade"
+                  });
+                } else {
+                  setLipilaCheckout({
+                    type: "subscription",
+                    name: pkg.name,
+                    price: pkg.price,
+                    creditsToAward: pkg.credits,
+                    description: pkg.features || pkg.description || "Active subscription upgrade"
+                  });
+                }
               }}
             />
           )}
@@ -4464,13 +4488,24 @@ export default function App() {
               creditTiers={creditTiers}
               setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
-                setLipilaCheckout({
-                  type: "subscription",
-                  name: pkg.name,
-                  price: pkg.price,
-                  creditsToAward: pkg.credits,
-                  description: pkg.features || pkg.description || "Active subscription upgrade"
-                });
+                if (pkg.name === "Smallholder Pack") {
+                  // Direct bypass of Lipila payment gateway for Smallholder Pack
+                  handlePaymentSuccessAllocation({
+                    type: "subscription",
+                    name: pkg.name,
+                    price: pkg.price,
+                    creditsToAward: pkg.credits,
+                    description: pkg.features || pkg.description || "Active subscription upgrade"
+                  });
+                } else {
+                  setLipilaCheckout({
+                    type: "subscription",
+                    name: pkg.name,
+                    price: pkg.price,
+                    creditsToAward: pkg.credits,
+                    description: pkg.features || pkg.description || "Active subscription upgrade"
+                  });
+                }
               }}
             />
           )}
