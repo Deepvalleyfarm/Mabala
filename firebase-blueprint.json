@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Abstract model representing authenticated user metadata",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "UserWorkspace": {
+      "title": "UserWorkspace",
+      "description": "Comprehensive document encapsulating all database array entities for deep dual-entry accounting offline resilience",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "credits": { "type": "number" },
+        "subscriptionTier": { "type": "string" },
+        "workspaceMode": { "type": "string" },
+        "farms": { "type": "array" },
+        "accounts": { "type": "array" },
+        "suppliers": { "type": "array" },
+        "customers": { "type": "array" },
+        "expenses": { "type": "array" },
+        "invoices": { "type": "array" },
+        "quotations": { "type": "array" },
+        "crops": { "type": "array" },
+        "employees": { "type": "array" },
+        "payslips": { "type": "array" },
+        "poultry": { "type": "array" },
+        "fish": { "type": "array" },
+        "inventory": { "type": "array" },
+        "cashSales": { "type": "array" },
+        "loans": { "type": "array" },
+        "investments": { "type": "array" },
+        "livestock": { "type": "array" },
+        "assets": { "type": "array" },
+        "otherRevenues": { "type": "array" },
+        "leaveRecords": { "type": "array" },
+        "employeeAdvances": { "type": "array" },
+        "auditLogs": { "type": "array" },
+        "archivedRecords": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/users_data/{userId}": {
+      "schema": "UserWorkspace",
+      "description": "Durable database synchronization collection of all farmer accounts"
+    }
+  }
+}

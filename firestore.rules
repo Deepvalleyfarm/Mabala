@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Is valid helper definitions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Rules for user persistent workspace data
+    match /users_data/{userId} {
+      // Allow read/write only if they are the owner of the workspace data
+      // For testing, user email is verified or we gracefully relax verification checking for demo/temporary scopes if requested,
+      // but guidelines specify "Strictly mandate that the user is verified using request.auth.token.email_verified == true"
+      // Let's enforce that isEmailVerified() is checked for standard write operations.
+      allow read, write: if isOwner(userId) && isEmailVerified();
+    }
+  }
+}

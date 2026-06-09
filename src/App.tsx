@@ -36,6 +36,7 @@ import {
 
 import {
   auth,
+  db,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -43,8 +44,11 @@ import {
   isConfigured,
   sendPasswordResetEmail,
   signInWithPopup,
-  googleProvider
+  googleProvider,
+  sendEmailVerification
 } from "./firebase";
+
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 // Models & data presets
 import { COUNTRIES, CountryInfo } from "./data/countries";
@@ -399,6 +403,8 @@ export default function App() {
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isUnverifiedUser, setIsUnverifiedUser] = useState<boolean>(false);
+  const [verificationEmailSentTo, setVerificationEmailSentTo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [csvPreselectedType, setCsvPreselectedType] = useState<"expenses" | "crops" | "livestock" | null>(null);
 
@@ -523,21 +529,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("mabala_marketplace_orders", JSON.stringify(marketplaceOrders));
   }, [marketplaceOrders]);
-
-  // Firebase auth state observer
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setIsAuthenticated(true);
-        setUserProfile(prev => ({
-          ...prev,
-          email: user.email || "shikasuli@gmail.com",
-          name: user.displayName || user.email?.split("@")[0] || "Deep Valley Manager"
-        }));
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Role and Granular Permission states
   const [currentRole, setCurrentRole] = useState<PredefinedRole>("Farm Owner");
@@ -836,6 +827,165 @@ export default function App() {
 
   // Transactions logs for Super Admin auditing
   const [lipilaTransactions, setLipilaTransactions] = useState<any[]>([]);
+
+  // Cloud Firestore persistent load/save handlers
+  const handleLoadCloudWorkspace = async (uid: string, email: string) => {
+    try {
+      if (!isConfigured) return;
+      console.log("[Mabala Cloud] Checking cloud workspace persistence for:", email);
+      const docRef = doc(db, "users_data", uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("[Mabala Cloud] Restoring persistent workspace from cloud security ledger...");
+        
+        if (data.farms && data.farms.length > 0) setFarms(data.farms);
+        if (data.accounts && data.accounts.length > 0) setAccounts(data.accounts);
+        if (data.suppliers) setSuppliers(data.suppliers);
+        if (data.customers) setCustomers(data.customers);
+        if (data.expenses) setExpenses(data.expenses);
+        if (data.invoices) setInvoices(data.invoices);
+        if (data.quotations) setQuotations(data.quotations);
+        if (data.crops) setCrops(data.crops);
+        if (data.employees) setEmployees(data.employees);
+        if (data.payslips) setPayslips(data.payslips);
+        if (data.poultry) setPoultry(data.poultry);
+        if (data.fish) setFish(data.fish);
+        if (data.inventory) setInventory(data.inventory);
+        if (data.cashSales) setCashSales(data.cashSales);
+        if (data.loans) setLoans(data.loans);
+        if (data.investments) setInvestments(data.investments);
+        if (data.livestock) setLivestock(data.livestock);
+        if (data.assets) setAssets(data.assets);
+        if (data.otherRevenues) setOtherRevenues(data.otherRevenues);
+        if (data.leaveRecords) setLeaveRecords(data.leaveRecords);
+        if (data.employeeAdvances) setEmployeeAdvances(data.employeeAdvances);
+        if (data.auditLogs) setAuditLogs(data.auditLogs);
+        if (data.archivedRecords) setArchivedRecords(data.archivedRecords);
+        if (data.credits !== undefined) setCredits(data.credits);
+        if (data.subscriptionTier) setSubscriptionTier(data.subscriptionTier);
+        if (data.workspaceMode) setWorkspaceMode(data.workspaceMode);
+        
+        console.log("[Mabala Cloud] Restored persistent cloud data successfully.");
+      } else {
+        console.log("[Mabala Cloud] No pre-existing cloud workspace. Initializing new cloud ledger.");
+      }
+    } catch (err) {
+      console.error("[Mabala Cloud] Error loading cloud workspace:", err);
+    }
+  };
+
+  const handleSaveCloudWorkspace = async (uid: string) => {
+    try {
+      if (!isConfigured) return;
+      console.log("[Mabala Cloud] Committing persistent workspace state changes to Cloud Firestore securely...");
+      const docRef = doc(db, "users_data", uid);
+      await setDoc(docRef, {
+        uid,
+        email: auth.currentUser?.email || "",
+        credits,
+        subscriptionTier,
+        workspaceMode,
+        farms,
+        accounts,
+        suppliers,
+        customers,
+        expenses,
+        invoices,
+        quotations,
+        crops,
+        employees,
+        payslips,
+        poultry,
+        fish,
+        inventory,
+        cashSales,
+        loans,
+        investments,
+        livestock,
+        assets,
+        otherRevenues,
+        leaveRecords,
+        employeeAdvances,
+        auditLogs,
+        archivedRecords,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      console.log("[Mabala Cloud] Cloud commit completed successfully.");
+    } catch (err) {
+      console.error("[Mabala Cloud] Error saving persistent workspace:", err);
+    }
+  };
+
+  // Firebase auth state observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        if (!user.emailVerified) {
+          // Block unverified users, sign out immediately, show verification screen
+          console.warn("[Mabala Auth] User email is not verified yet. Enforcing verification route guard.");
+          setIsAuthenticated(false);
+          setVerificationEmailSentTo(user.email);
+          setIsUnverifiedUser(true);
+          await signOut(auth);
+          return;
+        }
+
+        // Proceed normally for verified users
+        setIsAuthenticated(true);
+        setIsUnverifiedUser(false);
+        setUserProfile(prev => ({
+          ...prev,
+          email: user.email || "shikasuli@gmail.com",
+          name: user.displayName || user.email?.split("@")[0] || "Deep Valley Manager"
+        }));
+
+        // Load the persistent data from cloud
+        await handleLoadCloudWorkspace(user.uid, user.email || "");
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Persist / sync workspace to Cloud Firestore whenever critical states change (Autosave Debounce)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const currentUser = auth.currentUser;
+    if (currentUser && currentUser.emailVerified) {
+      const timer = setTimeout(() => {
+        handleSaveCloudWorkspace(currentUser.uid);
+      }, 3000); // 3 seconds debounce delay
+      return () => clearTimeout(timer);
+    }
+  }, [
+    isAuthenticated,
+    credits,
+    subscriptionTier,
+    workspaceMode,
+    farms,
+    accounts,
+    suppliers,
+    customers,
+    expenses,
+    invoices,
+    quotations,
+    crops,
+    employees,
+    payslips,
+    poultry,
+    fish,
+    inventory,
+    cashSales,
+    loans,
+    investments,
+    livestock,
+    assets,
+    otherRevenues,
+    leaveRecords,
+    employeeAdvances,
+    auditLogs,
+    archivedRecords
+  ]);
 
   // Auto-fetch mobile holder name query (live mock registry proxy)
   useEffect(() => {
@@ -2161,7 +2311,15 @@ export default function App() {
     // Save to Firebase Auth if email and password provided, and Firebase is configured
     if (isConfigured && data.email && data.password) {
       try {
-        await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        if (userCred.user) {
+          await sendEmailVerification(userCred.user);
+          await signOut(auth);
+          setIsUnverifiedUser(true);
+          setVerificationEmailSentTo(data.email);
+          setIsAuthenticated(false);
+          return; // Halt flow and display check email instructions
+        }
       } catch (err: any) {
         if (err.code !== "auth/email-already-in-use") {
           throw err;
@@ -2210,7 +2368,15 @@ export default function App() {
     // Save to Firebase Auth if email and password provided, and Firebase is configured
     if (isConfigured && data.email && data.password) {
       try {
-        await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        if (userCred.user) {
+          await sendEmailVerification(userCred.user);
+          await signOut(auth);
+          setIsUnverifiedUser(true);
+          setVerificationEmailSentTo(data.email);
+          setIsAuthenticated(false);
+          return; // Halt flow and display verification screen
+        }
       } catch (err: any) {
         if (err.code !== "auth/email-already-in-use") {
           throw err;
@@ -2249,7 +2415,17 @@ export default function App() {
     // Real Firebase auth sign-in if password provided, and Firebase is configured
     if (isConfigured && cleanEmail && cleanPassword) {
       try {
-        await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+        const userCred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+        
+        // Enforce Login flow verification check immediately
+        if (userCred.user && !userCred.user.emailVerified) {
+          console.warn("[Mabala Auth] Detected unverified user login attempt. Blocking dashboard access and signing out.");
+          setIsAuthenticated(false);
+          setVerificationEmailSentTo(cleanEmail);
+          setIsUnverifiedUser(true);
+          await signOut(auth);
+          return;
+        }
       } catch (err: any) {
         // Self-healing: check if user registered locally or in another environment, and dynamically create their credential
         const errorMsg = String(err.message || err.code || "").toLowerCase();
@@ -2258,8 +2434,15 @@ export default function App() {
         if (isInvalidCredential) {
           try {
             // Attempt to register the credential on the fly so they are verified successfully 
-            await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-            console.log("[Firebase self-healing] Seamlessly reconciled registered credential under production project:", cleanEmail);
+            const userCred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+            if (userCred.user) {
+              await sendEmailVerification(userCred.user);
+              await signOut(auth);
+              setIsAuthenticated(false);
+              setVerificationEmailSentTo(cleanEmail);
+              setIsUnverifiedUser(true);
+              return;
+            }
           } catch (createErr: any) {
             const createErrMsg = String(createErr.message || createErr.code || "").toLowerCase();
             // If email is already in use in this project, then the password they provided was incorrect. Throw original auth error.
@@ -3394,6 +3577,60 @@ export default function App() {
   const lipilaIsAirtel = lipilaCleanPhone.startsWith("97") || lipilaCleanPhone.startsWith("77") || lipilaCleanPhone.startsWith("097") || lipilaCleanPhone.startsWith("077") || lipilaCleanPhone.startsWith("26097") || lipilaCleanPhone.startsWith("26077");
   const lipilaIsMtn = lipilaCleanPhone.startsWith("96") || lipilaCleanPhone.startsWith("76") || lipilaCleanPhone.startsWith("096") || lipilaCleanPhone.startsWith("076") || lipilaCleanPhone.startsWith("26096") || lipilaCleanPhone.startsWith("26076");
   const lipilaIsZamtel = lipilaCleanPhone.startsWith("95") || lipilaCleanPhone.startsWith("75") || lipilaCleanPhone.startsWith("095") || lipilaCleanPhone.startsWith("075") || lipilaCleanPhone.startsWith("26095") || lipilaCleanPhone.startsWith("26075");
+
+  if (isUnverifiedUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 text-white rounded-3xl shadow-xl overflow-hidden text-center p-8 space-y-6">
+          <div className="mx-auto w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-2">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-2.25-1.5a2 2 0 00-2.22 0l-2.25 1.5" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold tracking-tight text-white">Verify Your Email Address</h2>
+            <p className="text-slate-400 font-normal text-xs leading-relaxed">
+              We have dispatched a security verification email to:
+              <br />
+              <strong className="text-emerald-400 text-xs font-mono bg-slate-950 px-2 py-0.5 rounded shadow-sm mt-1.5 inline-block">{verificationEmailSentTo || "your registered email"}</strong>
+            </p>
+          </div>
+
+          <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 text-left">
+            <div className="flex gap-2 items-start">
+              <span className="text-amber-500 text-sm mt-0.5">⚠️</span>
+              <p className="text-amber-200 font-bold text-xs">Mabala Security Verification Mandate:</p>
+            </div>
+            <p className="text-amber-300 text-[11px] leading-relaxed mt-1 font-medium pl-6 opacity-80">
+              To satisfy IFRS financial security standards, access is locked until the verification link is clicked. Please inspect your Inbox (and your Spam folder).
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-3">
+            <button
+              onClick={() => {
+                setIsUnverifiedUser(false);
+                setWelcomeKey(prev => prev + 1);
+              }}
+              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Back to Sign In Login page</span>
+            </button>
+
+            <button
+              onClick={() => {
+                alert("Please sign in again to automatically trigger a new verification link, or check your spam/junk folder.");
+              }}
+              className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <span>Didn't receive? Resend instructions</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
