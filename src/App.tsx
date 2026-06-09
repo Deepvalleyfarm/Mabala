@@ -41,7 +41,9 @@ import {
   signOut,
   onAuthStateChanged,
   isConfigured,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  signInWithPopup,
+  googleProvider
 } from "./firebase";
 
 // Models & data presets
@@ -128,7 +130,10 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
   }
 
   // Fallback secure AI Studio cloud staging URL where the full-stack server runs with key loaded
-  const sandboxBase = "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app";
+  const isMabalaProd = window.location.hostname.includes("mabala.cloud");
+  const sandboxBase = isMabalaProd 
+    ? "https://api.mabala.cloud" 
+    : "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app";
 
   let targetUrl = url;
   if (url.startsWith("/") && !url.startsWith("//")) {
@@ -2280,6 +2285,20 @@ export default function App() {
     handleStartDemo(email);
   };
 
+  const handleGoogleSignIn = async () => {
+    if (!isConfigured) {
+      throw new Error("Firebase backend is not fully configured yet.");
+    }
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    setUserProfile({
+      name: user.displayName || user.email?.split("@")[0] || "Google User",
+      email: user.email || "shikasuli@gmail.com",
+      phone: user.phoneNumber || "+260977889900"
+    });
+    handleStartDemo(user.email || "shikasuli@gmail.com");
+  };
+
   const handleRestoreBackup = (data: BackupData) => {
     if (data.farms && data.farms.length > 0) {
       setFarms(data.farms);
@@ -3386,6 +3405,7 @@ export default function App() {
           onRegister={handleRegister} 
           onRegisterVendor={handleRegisterVendor}
           onLogin={handleLogin} 
+          onGoogleSignIn={handleGoogleSignIn} 
           platformPackages={platformPackages}
           contactDetails={contactDetails}
           activeAds={activeAds}

@@ -53,6 +53,7 @@ interface WelcomeScreenProps {
     logoUrl?: string;
   }) => void | Promise<void>;
   onLogin: (email: string, password?: string) => void | Promise<void>;
+  onGoogleSignIn?: () => void | Promise<void>;
   platformPackages?: any[];
   contactDetails?: {
     email: string;
@@ -72,6 +73,7 @@ export default function WelcomeScreen({
   onRegister, 
   onRegisterVendor,
   onLogin,
+  onGoogleSignIn,
   platformPackages = [
     { name: "Basic Farmer Planner", price: 150, description: "Solo farmer ledgering and animal tags limit 50", isActive: true },
     { name: "Commercial Growth Layer", price: 300, description: "Advanced Crop & Feed Conversion Rate records, limit unlimited", isActive: true },
@@ -326,6 +328,28 @@ export default function WelcomeScreen({
     } catch (err: any) {
       console.error("[Mabala Welcome] Error logging in:", err);
       setFormError(`⚠️ Login Error: ${err.message || "Invalid credentials."}`);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleGoogleSignInClick = async () => {
+    if (!onGoogleSignIn) return;
+    setFormError("");
+    setOtpError("");
+    setIsSendingOtp(true);
+    try {
+      await onGoogleSignIn();
+    } catch (err: any) {
+      console.error("[Mabala Welcome] Error logging in with Google:", err);
+      const errMsg = String(err.message || err.code || "").toLowerCase();
+      if (errMsg.includes("popup-closed-by-user") || errMsg.includes("popup_closed_by_user")) {
+        setFormError("Google Sign-In Error: popup-closed-by-user (The popup was closed by the user or blocked by the browser inside this iframe. Read easy solutions below.)");
+      } else if (errMsg.includes("popup-blocked") || errMsg.includes("popup_blocked")) {
+        setFormError("Google Sign-In Error: popup-blocked (The popup was blocked by the browser inside this iframe. Read easy solutions below.)");
+      } else {
+        setFormError(`⚠️ Google Sign-In Error: ${err.message || "Could not authenticate."}`);
+      }
     } finally {
       setIsSendingOtp(false);
     }
@@ -1677,8 +1701,29 @@ export default function WelcomeScreen({
                     )}
 
                     {formError && (
-                      <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-905 rounded-xl text-[11px] font-bold leading-relaxed animate-fade-in">
-                        ⚠️ {formError}
+                      <div className="animate-fade-in">
+                        {formError.includes("popup-closed-by-user") || formError.includes("popup-blocked") ? (
+                          <div className="p-3.5 bg-rose-50/90 border border-rose-200 text-rose-950 rounded-xl text-xs font-semibold leading-relaxed space-y-2">
+                            <div className="font-bold text-rose-800 flex items-center gap-1">
+                              <span>⚠️ Pop-up Blocked or Closed</span>
+                            </div>
+                            <p className="text-slate-600 font-medium text-[11px] leading-normal">
+                              Because this workspace runs in an <strong>iframe</strong> inside Google AI Studio, your browser may block the Google Sign-In popup or its third-party authentication cookies.
+                            </p>
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-rose-100 font-medium text-[11px] space-y-1">
+                              <p className="font-bold text-emerald-800">💡 Easy Resolution Tactics:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-slate-600">
+                                <li>Click the <strong>"Open in New Tab" (Pop out)</strong> button in the top-right corner of the preview toolbar, then click Google Sign-In there. It will work instantly!</li>
+                                <li>Enable pop-ups and accept third-party cookies for this preview.</li>
+                                <li>Alternatively, use the <strong>Mabala Demo Credentials</strong> loaded above for direct login inside the iframe.</li>
+                              </ul>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-905 rounded-xl text-[11px] font-bold leading-relaxed shadow-xs">
+                            ⚠️ {formError}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1690,6 +1735,31 @@ export default function WelcomeScreen({
                       <LogIn className="w-4 h-4" />
                       <span>{isSendingOtp ? "Authenticating..." : "Login Securely"}</span>
                     </button>
+
+                    {onGoogleSignIn && (
+                      <>
+                        <div className="flex items-center my-3">
+                          <div className="flex-1 border-t border-slate-200"></div>
+                          <span className="px-3 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-white">or</span>
+                          <div className="flex-1 border-t border-slate-200"></div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleGoogleSignInClick}
+                          disabled={isSendingOtp}
+                          className="w-full py-2 px-4 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-slate-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.22-.66-.35-1.36-.35-2.1z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                          </svg>
+                          <span>Sign In with Google</span>
+                        </button>
+                      </>
+                    )}
                   </form>
                 ) : activeTab === "register" ? (
                   <form onSubmit={handleRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800">

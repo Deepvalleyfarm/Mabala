@@ -62,6 +62,12 @@ export const storage = getStorage(app);
 
 // Facilitate Google Sign-In helper if requested
 export const googleProvider = new GoogleAuthProvider();
+const googleClientId = (firebaseConfig as any).googleClientId || (env.VITE_FIREBASE_GOOGLE_CLIENT_ID as string) || "";
+if (googleClientId) {
+  googleProvider.setCustomParameters({
+    client_id: googleClientId
+  });
+}
 
 // Common auth utility integrations
 export {
