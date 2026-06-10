@@ -47,12 +47,37 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["uid", "email"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Log representing transactions processed through Lipila API",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "phone": { "type": "string" },
+        "narration": { "type": "string" },
+        "status": { "type": "string" },
+        "packageName": { "type": "string" },
+        "packageType": { "type": "string" },
+        "creditsToAward": { "type": "number" },
+        "serverApiKey": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "amount", "status"]
     }
   },
   "firestore": {
     "/users_data/{userId}": {
       "schema": "UserWorkspace",
       "description": "Durable database synchronization collection of all farmer accounts"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Collection logging all payments initiated or completed through Hostinger or Local Proxies"
     }
   }
 }

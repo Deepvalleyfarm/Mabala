@@ -1343,7 +1343,11 @@ export default function App() {
           narration: `Mabala ${lipilaCheckout?.type === "subscription" ? "Subscription" : "Credits"}: ${lipilaCheckout?.name}`,
           accountNumber: cleanPhone,
           currency: lipilaCheckout?.currency || "ZMW",
-          email: (lipilaCheckout?.registrationData?.email) || userProfile.email || "shikasuli@gmail.com"
+          email: (lipilaCheckout?.registrationData?.email) || userProfile.email || "shikasuli@gmail.com",
+          uid: auth.currentUser?.uid || "anonymous",
+          packageName: lipilaCheckout?.name || "Mabala Upgrade Plan",
+          packageType: lipilaCheckout?.type || "subscription",
+          creditsToAward: Number(lipilaCheckout?.creditsToAward) || 0
         })
       });
 
