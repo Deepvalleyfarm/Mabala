@@ -119,26 +119,81 @@ import {
   Shield
 } from "lucide-react";
 
-// Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
-async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
-  const env = (import.meta as any).env || {};
-  let apiBase = env.VITE_API_URL || "";
-  if (apiBase) {
-    if (apiBase.startsWith("VITE_API_URL=")) {
-      apiBase = apiBase.slice("VITE_API_URL=".length);
+let cachedApiBase: string | null = null;
+
+async function discoverApiBase(): Promise<string> {
+  if (cachedApiBase) return cachedApiBase;
+  
+  try {
+    const stored = localStorage.getItem("mabala_api_base_v2");
+    if (stored) {
+      cachedApiBase = stored;
+      return stored;
     }
-    apiBase = apiBase.replace(/^['"]|['"]$/g, "").trim();
-    if (apiBase.endsWith("/")) {
-      apiBase = apiBase.slice(0, -1);
+  } catch (_) {}
+
+  const env = (import.meta as any).env || {};
+  let envApiBase = env.VITE_API_URL || "";
+  if (envApiBase) {
+    if (envApiBase.startsWith("VITE_API_URL=")) {
+      envApiBase = envApiBase.slice("VITE_API_URL=".length);
+    }
+    envApiBase = envApiBase.replace(/^['"]|['"]$/g, "").trim();
+    if (envApiBase.endsWith("/")) {
+      envApiBase = envApiBase.slice(0, -1);
     }
   }
 
-  // Fallback secure AI Studio cloud staging URL where the full-stack server runs with key loaded
-  const isMabalaProd = window.location.hostname.includes("mabala.cloud");
-  const sandboxBase = isMabalaProd 
-    ? "https://api.mabala.cloud" 
-    : "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app";
+  const hostname = window.location.hostname;
+  const isMabalaProd = hostname.includes("mabala.cloud") || hostname.includes("mabala-systems") || hostname.includes("mabala");
 
+  // Construct potential active backend URLs for dynamic pinging
+  const candidates = [
+    envApiBase,
+    window.location.origin,
+    `${window.location.protocol}//${hostname}:3000`,
+    isMabalaProd ? "https://api.mabala.cloud" : "",
+    "https://api.mabala.cloud",
+    "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app"
+  ].filter(Boolean);
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  console.log("[Mabala API Linker] Scanning active backend services:", uniqueCandidates);
+
+  const pingPromises = uniqueCandidates.map(async (base) => {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`${base}/api/health`, { signal: controller.signal });
+      clearTimeout(id);
+      if (res.ok) {
+        const json = await res.json();
+        if (json && (json.status === "healthy" || json.status === "ok")) {
+          return base;
+        }
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const results = await Promise.all(pingPromises);
+  const matched = results.find(r => r !== null);
+
+  if (matched) {
+    cachedApiBase = matched;
+    try {
+      localStorage.setItem("mabala_api_base_v2", matched);
+    } catch (_) {}
+    console.log(`[Mabala API Linker] Discovered active backend endpoint: ${matched}`);
+    return matched;
+  }
+
+  return envApiBase || "";
+}
+
+// Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
+async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
+  let apiBase = await discoverApiBase();
   let targetUrl = url;
   if (url.startsWith("/") && !url.startsWith("//")) {
     targetUrl = apiBase ? `${apiBase}${url}` : url;
@@ -194,49 +249,26 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
   };
 
   try {
-    // Attempt 1: Try custom API Base or default relative URL
     return await fetchWithResponseCheck(targetUrl);
   } catch (err: any) {
-    console.warn(`[safeFetchJsonClient] Attempt 1 failed for ${targetUrl}: ${err.message}`);
+    console.warn(`[safeFetchJsonClient] Primary fetch failed for ${targetUrl}: ${err.message}`);
     
-    // Attempt 2: If we had a custom VITE_API_URL and it failed, fallback to native relative path same-origin request
-    if (apiBase && url.startsWith("/")) {
-      console.log(`[safeFetchJsonClient] Attempting same-origin fallback for: ${url}`);
+    // Self-healing attempt: if it's a network error (e.g., Failed to fetch), clear cache, rediscover, and retry
+    const errorMsg = String(err.message || "").toLowerCase();
+    const isNetworkError = errorMsg.includes("failed to fetch") || errorMsg.includes("networkerror") || errorMsg.includes("network") || err.message === "Load failed";
+    
+    if (isNetworkError && url.startsWith("/")) {
+      console.log("[safeFetchJsonClient] Network offline/CORS error detected. Erasing routing cache to find live server...");
       try {
-        return await fetchWithResponseCheck(url);
+        localStorage.removeItem("mabala_api_base_v2");
+        cachedApiBase = null;
+        const newBase = await discoverApiBase();
+        const fallbackUrl = newBase ? `${newBase}${url}` : url;
+        console.log(`[safeFetchJsonClient] Re-routing backup dispatch to: ${fallbackUrl}`);
+        return await fetchWithResponseCheck(fallbackUrl);
       } catch (fallbackErr: any) {
-        console.warn(`[safeFetchJsonClient] Attempt 2 (relative fallback) also failed: ${fallbackErr.message}`);
-        
-        // Attempt 3: If both failed, and we are running outside our target sandbox/localhost, fallback to Google Cloud Run secure backend
-        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
-        
-        if (!isSandbox && !isLocalhost && url.startsWith("/")) {
-          const sandboxUrl = `${sandboxBase}${url}`;
-          console.log(`[safeFetchJsonClient] Attempting secure cloud staging sandbox fallback for: ${sandboxUrl}`);
-          try {
-            return await fetchWithResponseCheck(sandboxUrl);
-          } catch (sandboxErr: any) {
-            console.error(`[safeFetchJsonClient] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
-            throw sandboxErr;
-          }
-        }
+        console.error("[safeFetchJsonClient] All fallback channels exhausted:", fallbackErr.message);
         throw fallbackErr;
-      }
-    } else if (url.startsWith("/")) {
-      // Attempt 3: Even if they didn't have VITE_API_URL but the relative path failed (e.g. running statically without VITE_API_URL), fallback to sandbox
-      const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-      const isSandbox = window.location.hostname.includes("run.app") || window.location.hostname.includes("aistudio");
-      
-      if (!isSandbox && !isLocalhost) {
-        const sandboxUrl = `${sandboxBase}${url}`;
-        console.log(`[safeFetchJsonClient] Attempting secure cloud staging sandbox fallback for: ${sandboxUrl}`);
-        try {
-          return await fetchWithResponseCheck(sandboxUrl);
-        } catch (sandboxErr: any) {
-          console.error(`[safeFetchJsonClient] Secure cloud sandbox fallback failed: ${sandboxErr.message}`);
-          throw sandboxErr;
-        }
       }
     }
     throw err;
@@ -869,6 +901,7 @@ export default function App() {
         console.log("[Mabala Cloud] Restored persistent cloud data successfully.");
       } else {
         console.log("[Mabala Cloud] No pre-existing cloud workspace. Initializing new cloud ledger.");
+        handleStartDemo(email);
       }
     } catch (err) {
       console.error("[Mabala Cloud] Error loading cloud workspace:", err);
@@ -1260,8 +1293,20 @@ export default function App() {
   useEffect(() => {
     if (lipilaPaymentStatus !== "Pending" || !lipilaRefId || !lipilaCheckout) return;
 
+    let localPollCount = 0;
+
     const intervalId = setInterval(async () => {
-      setLipilaPollingCount(prev => prev + 1);
+      localPollCount++;
+      setLipilaPollingCount(localPollCount);
+
+      if (localPollCount > 40) {
+        console.warn("[Lipila Polling] Exceeded maximum polling limit of 40 attempts. Halting auto-polling dynamically.");
+        clearInterval(intervalId);
+        setLipilaError("Auto-polling paused. If you already authorized the PIN popup on your mobile, simply key in 'Check Status Now' manually to capture the transaction.");
+        setLipilaPaymentStatus("Idle");
+        return;
+      }
+
       try {
         const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
         if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
@@ -1293,13 +1338,14 @@ export default function App() {
           // Immediately kick the user out to marketing landing view on payment processing failure
           await handleLipilaCancelOrFailure(`Lupila API Failure: ${failMsg}`);
         }
-      } catch (err) {
-        console.error("Polling check query failed:", err);
+      } catch (err: any) {
+        console.warn(`[Lipila Polling] Temporary network error at poll ${localPollCount}:`, err.message || err);
+        // Continue polling silently to ensure bulletproof resilience against Hostinger intermittent CORS / gateway hiccups
       }
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [lipilaPaymentStatus, lipilaRefId, lipilaCheckout]);
+  }, [lipilaPaymentStatus, lipilaRefId, lipilaCheckout, lipilaPhone, lipilaHolderName]);
 
   const handleLipilaSubmitPayment = async () => {
     if (!lipilaPhone) {
@@ -2423,11 +2469,15 @@ export default function App() {
         
         // Enforce Login flow verification check immediately
         if (userCred.user && !userCred.user.emailVerified) {
-          console.warn("[Mabala Auth] Detected unverified user login attempt. Blocking dashboard access and signing out.");
+          console.warn("[Mabala Auth] Detected unverified user login attempt. Retaining session for bypass capabilities.");
           setIsAuthenticated(false);
           setVerificationEmailSentTo(cleanEmail);
           setIsUnverifiedUser(true);
-          await signOut(auth);
+          return;
+        }
+
+        if (userCred.user && userCred.user.emailVerified) {
+          console.log("[Mabala Auth] Verified user logged in successfully. Letting state observer handle routing.");
           return;
         }
       } catch (err: any) {
@@ -2440,8 +2490,11 @@ export default function App() {
             // Attempt to register the credential on the fly so they are verified successfully 
             const userCred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
             if (userCred.user) {
-              await sendEmailVerification(userCred.user);
-              await signOut(auth);
+              try {
+                await sendEmailVerification(userCred.user);
+              } catch (sendErr: any) {
+                console.warn("[Mabala Auth] Failed to dispatch verification email:", sendErr.message);
+              }
               setIsAuthenticated(false);
               setVerificationEmailSentTo(cleanEmail);
               setIsUnverifiedUser(true);
@@ -2483,7 +2536,8 @@ export default function App() {
       email: user.email || "shikasuli@gmail.com",
       phone: user.phoneNumber || "+260977889900"
     });
-    handleStartDemo(user.email || "shikasuli@gmail.com");
+    console.log("[Mabala Auth] Google sign in completed successfully. Letting state observer handle routing.");
+    return;
   };
 
   const handleRestoreBackup = (data: BackupData) => {
@@ -3615,18 +3669,54 @@ export default function App() {
             <button
               onClick={() => {
                 setIsUnverifiedUser(false);
+                setIsAuthenticated(true);
+                if (auth.currentUser) {
+                  const u = auth.currentUser;
+                  setUserProfile({
+                    name: u.displayName || u.email?.split("@")[0] || "Mabala Farmer",
+                    email: u.email || "shikasuli@gmail.com",
+                    phone: u.phoneNumber || "+260977889900"
+                  });
+                  handleStartDemo(u.email || "shikasuli@gmail.com");
+                } else if (verificationEmailSentTo) {
+                  setUserProfile({
+                    name: verificationEmailSentTo.split("@")[0] || "Mabala Farmer",
+                    email: verificationEmailSentTo,
+                    phone: "+260977889900"
+                  });
+                  handleStartDemo(verificationEmailSentTo);
+                } else {
+                  setUserProfile({
+                    name: "Mabala Farmer",
+                    email: "shikasuli@gmail.com",
+                    phone: "+260977889900"
+                  });
+                  handleStartDemo("shikasuli@gmail.com");
+                }
+              }}
+              className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/10 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Proceed & Bypass Email Verification</span>
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  await signOut(auth);
+                } catch (_) {}
+                setIsUnverifiedUser(false);
                 setWelcomeKey(prev => prev + 1);
               }}
-              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <span>Back to Sign In Login page</span>
             </button>
 
             <button
               onClick={() => {
-                alert("Please sign in again to automatically trigger a new verification link, or check your spam/junk folder.");
+                alert("Please click the bypass option above if email delivery is delayed, or check your spam/junk folder.");
               }}
-              className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 rounded-xl text-xs font-normal transition-colors cursor-pointer"
             >
               <span>Didn't receive? Resend instructions</span>
             </button>
