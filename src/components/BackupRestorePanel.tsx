@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
   BackupData, 
   CropCycle, 
@@ -22,7 +22,11 @@ import {
   Trash2, 
   FileCheck, 
   Maximize2,
-  Sparkles
+  Sparkles,
+  Server,
+  RefreshCw,
+  Globe,
+  Activity
 } from "lucide-react";
 import backupPreset from "../data/backup.json";
 
@@ -98,6 +102,120 @@ export default function BackupRestorePanel({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Staging / Deployment Multi-env API Diagnostics States
+  const [detectedApiBase, setDetectedApiBase] = useState("");
+  const [overrideInput, setOverrideInput] = useState("");
+  const [manualOverrideActive, setManualOverrideActive] = useState(false);
+  const [testingPings, setTestingPings] = useState(false);
+  const [pingResults, setPingResults] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Determine active bases & settings representation on load
+    try {
+      const storedOverride = localStorage.getItem("mabala_api_base_override") || "";
+      setOverrideInput(storedOverride);
+      setManualOverrideActive(!!storedOverride);
+
+      const storedBase = localStorage.getItem("mabala_api_base_v2") || "";
+      setDetectedApiBase(storedOverride || storedBase);
+    } catch (_) {}
+
+    runHostAndGatewayPings();
+  }, []);
+
+  const runHostAndGatewayPings = async () => {
+    setTestingPings(true);
+    
+    // Read environment variables
+    let envApiBase = "";
+    try {
+      const env = (import.meta as any).env || {};
+      envApiBase = env.VITE_API_URL || "";
+      if (envApiBase.startsWith("VITE_API_URL=")) {
+        envApiBase = envApiBase.slice("VITE_API_URL=".length);
+      }
+      envApiBase = envApiBase.replace(/^['"]|['"]$/g, "").trim();
+      if (envApiBase.endsWith("/")) envApiBase = envApiBase.slice(0, -1);
+    } catch (_) {}
+
+    const hostname = window.location.hostname;
+
+    const pool = [
+      { url: envApiBase, label: "Environment VITE_API_URL Config" },
+      { url: window.location.origin, label: "Static Server Origin (Default)" },
+      { url: `${window.location.protocol}//${hostname}:3000`, label: "Local Express Port 3000" },
+      { url: "https://api.mabala.cloud", label: "Production API Subdomain Gateway" },
+      { url: "https://ais-pre-bcedzqraiumz6w3ealvfml-281687245635.europe-west2.run.app", label: "AI Studio Staging Tunnel" }
+    ].filter(item => item.url) as Array<{ url: string; label: string; status?: string }>;
+
+    // De-duplicate array
+    const seen = new Set();
+    const uniquePool = pool.filter(el => {
+      const duplicate = seen.has(el.url);
+      seen.add(el.url);
+      return !duplicate;
+    });
+
+    const current = uniquePool.map(x => ({ ...x, status: "Checking" }));
+    setPingResults(current);
+
+    const updatePromises = current.map(async (candidate, index) => {
+      try {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 2050);
+        const res = await fetch(`${candidate.url}/api/health`, { signal: controller.signal });
+        clearTimeout(id);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && (json.status === "healthy" || json.status === "ok")) {
+            current[index].status = "Healthy";
+            return;
+          }
+        }
+      } catch (_) {}
+      current[index].status = "Failed";
+    });
+
+    await Promise.all(updatePromises);
+    setPingResults([...current]);
+    setTestingPings(false);
+  };
+
+  const handleSaveOverride = () => {
+    try {
+      const cleaned = overrideInput.trim();
+      if (!cleaned) {
+        handleResetOverride();
+        return;
+      }
+
+      localStorage.setItem("mabala_api_base_override", cleaned);
+      localStorage.setItem("mabala_api_base_v2", cleaned);
+      setManualOverrideActive(true);
+      setDetectedApiBase(cleaned);
+      setSuccessMsg("API Gateway Override committed successfully! Applet has updated routing dynamically.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+      runHostAndGatewayPings();
+    } catch (e: any) {
+      setErrorMsg(`Failed to commit override parameters: ${e.message}`);
+    }
+  };
+
+  const handleResetOverride = () => {
+    try {
+      localStorage.removeItem("mabala_api_base_override");
+      localStorage.removeItem("mabala_api_base_v2");
+      setOverrideInput("");
+      setManualOverrideActive(false);
+      setDetectedApiBase("");
+      setSuccessMsg("Custom API override cleared. Restarting automatic discovery...");
+      setTimeout(() => setSuccessMsg(null), 4000);
+      runHostAndGatewayPings();
+    } catch (e: any) {
+      setErrorMsg(`Failed to clear custom settings: ${e.message}`);
+    }
+  };
 
   // Compile active workspace state into standard JSON backup format
   const generateBackupData = (): BackupData => {
@@ -780,6 +898,115 @@ export default function BackupRestorePanel({
             </div>
           )}
 
+        </div>
+      </div>
+
+      {/* Network API Base Configuration & Diagnostics */}
+      <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4" id="api-diagnostics-sector">
+        <div className="flex items-center gap-2.5 border-b pb-3.5">
+          <span className="p-2 bg-indigo-55 text-indigo-600 rounded-lg shrink-0 border border-indigo-100">
+            <Server className="w-5 h-5" />
+          </span>
+          <div>
+            <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Multi-Environment API Gateway & Payment Diagnostics</h3>
+            <p className="text-[11px] text-slate-500 leading-normal font-medium mt-0.5">
+              Verify communication streams with your active Node/Express Gateway to prevent 'Failed to Fetch' blocked transactions when deployed on custom providers (e.g., Hostinger, VPS, GCP).
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
+          <div className="space-y-4">
+            <h4 className="text-[11px] uppercase font-extrabold text-slate-400 tracking-wider">Live API Base Configuration</h4>
+            
+            <div className="space-y-2">
+              <label className="text-[10.5px] text-slate-600 font-semibold block">
+                Active Configured Backend URL:
+              </label>
+              <div className="bg-slate-50 border p-2.5 rounded-xl flex items-center justify-between font-mono text-[10.5px] text-slate-700">
+                <span className="truncate pr-2">{detectedApiBase || "Relative Origin (Fallback)"}</span>
+                <span className="shrink-0 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[9px] font-black uppercase">
+                  {detectedApiBase ? "Override Active" : "Origin-Relative"}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10.5px] font-bold text-slate-600 block">
+                Manual Override Target URL (Hostinger / VPS Deployment):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g., https://api.mabala.cloud"
+                  value={overrideInput}
+                  onChange={(e) => setOverrideInput(e.target.value)}
+                  className="flex-grow text-xs font-mono p-2 border rounded-lg bg-slate-50 focus:bg-white placeholder-slate-400 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveOverride}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-550 text-white rounded-lg text-xs font-black transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+                >
+                  Save & Connect
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                Tip: If hosting the full-stack Applet on Hostinger, enter your subdomain (e.g. <code>https://api.mabala.cloud</code>) or direct port endpoint to bypass client-side discovery limits!
+              </p>
+            </div>
+
+            {manualOverrideActive && (
+              <button
+                type="button"
+                onClick={handleResetOverride}
+                className="text-[10.5px] font-bold text-rose-650 hover:text-rose-700 hover:underline flex items-center gap-1.5 pt-1 cursor-pointer"
+              >
+                Clear Custom Override (Restore Auto-Discovery)
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex justify-between items-center bg-slate-50 border border-slate-100 p-2 rounded-lg">
+              <h4 className="text-[11px] uppercase font-extrabold text-slate-500 tracking-wider">Live Server Discovery Streams</h4>
+              <button
+                type="button"
+                disabled={testingPings}
+                onClick={runHostAndGatewayPings}
+                className="text-[9.5px] bg-white hover:bg-slate-50 text-slate-700 font-extrabold px-2 py-1 rounded border flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${testingPings ? "animate-spin" : ""}`} />
+                <span>Test & Probe Nodes</span>
+              </button>
+            </div>
+
+            <div className="overflow-hidden border rounded-xl divide-y text-[10.5px]">
+              {pingResults.map((candidate, idx) => (
+                <div key={idx} className="p-2.5 flex items-center justify-between hover:bg-slate-50 bg-white font-medium">
+                  <div className="min-w-0 pr-2">
+                    <div className="font-mono text-[10px] text-slate-700 truncate">{candidate.url}</div>
+                    <div className="text-[9px] text-slate-400 font-medium mt-0.5">{candidate.label}</div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1.5 font-bold">
+                    {candidate.status === "Checking" && (
+                      <span className="text-[9.5px] text-indigo-600 animate-pulse uppercase font-black">Probing...</span>
+                    )}
+                    {candidate.status === "Healthy" && (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[9px] font-black uppercase flex items-center gap-0.5">
+                        ● Healthy (200 OK)
+                      </span>
+                    )}
+                    {candidate.status === "Failed" && (
+                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[9px] font-black uppercase flex items-center gap-0.5">
+                        ▲ Offline / Blocked
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

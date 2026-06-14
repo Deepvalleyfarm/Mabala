@@ -683,3 +683,15 @@ export interface FeedFormula {
   totalQuantityKg: number;
   farmId: string;
 }
+
+export interface FarmTask {
+  id: string;
+  title: string;
+  description: string;
+  category: "General" | "Equipment Maintenance" | "Irrigation Scheduling" | "Harvesting" | "Livestock Feed" | "Crop Spraying" | "Other";
+  dueDate: string; // ISO-8601 YYYY-MM-DD or YYYY-MM-DDTHH:MM
+  isCompleted: boolean;
+  completedAt?: string; // date completed (e.g., ISO string)
+  farmId: string;
+}
+

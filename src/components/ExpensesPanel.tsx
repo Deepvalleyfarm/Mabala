@@ -14,7 +14,11 @@ import {
   ArrowRight,
   ClipboardList,
   Contact,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Upload,
+  CheckCircle,
+  Copy,
+  Info
 } from "lucide-react";
 
 interface ExpensesPanelProps {
@@ -55,6 +59,7 @@ export default function ExpensesPanel({
   const [activeTab, setActiveTab] = useState<"expenses" | "suppliers">("expenses");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // New Trans State
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
@@ -78,16 +83,262 @@ export default function ExpensesPanel({
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
+  // CSV Bulk Upload states
+  const [showCsvForm, setShowCsvForm] = useState(false);
+  const [csvPayloadText, setCsvPayloadText] = useState("");
+  const [csvDragActive, setCsvDragActive] = useState(false);
+  const [csvPreviewList, setCsvPreviewList] = useState<any[]>([]);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvSuccessMessage, setCsvSuccessMessage] = useState<string | null>(null);
+  const csvFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setCsvDragActive(true);
+    } else if (e.type === "dragleave") {
+      setCsvDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCsvDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      readAndParseCsvFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      readAndParseCsvFile(e.target.files[0]);
+    }
+  };
+
+  const readAndParseCsvFile = (file: File) => {
+    if (!file.name.endsWith(".csv")) {
+      setCsvError("Invalid file type. Please upload a structured .csv format file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setCsvPayloadText(text);
+      handleParseCsv(text);
+    };
+    reader.onerror = () => {
+      setCsvError("Error reading uploaded CSV file.");
+    };
+    reader.readAsText(file);
+  };
+
+  const handleParseCsv = (text: string) => {
+    setCsvError(null);
+    setCsvSuccessMessage(null);
+    if (!text.trim()) {
+      setCsvPreviewList([]);
+      return;
+    }
+
+    try {
+      const lines: string[] = [];
+      let currentLine = "";
+      let insideQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (char === '"') {
+          insideQuotes = !insideQuotes;
+        } else if (char === "\n" && !insideQuotes) {
+          lines.push(currentLine);
+          currentLine = "";
+        } else if (char === "\r" && !insideQuotes) {
+          // Ignore
+        } else {
+          currentLine += char;
+        }
+      }
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+
+      if (lines.length === 0) {
+        setCsvPreviewList([]);
+        return;
+      }
+
+      const rawHeaders = lines[0].split(",");
+      const headers = rawHeaders.map(h => h.trim().toLowerCase());
+      const dataRows = lines.slice(1).filter(line => line.trim() !== "");
+
+      const parsed = dataRows.map((line, idx) => {
+        const columns = [];
+        let cell = "";
+        let insideQ = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            insideQ = !insideQ;
+          } else if (char === "," && !insideQ) {
+            columns.push(cell);
+            cell = "";
+          } else {
+            cell += char;
+          }
+        }
+        columns.push(cell);
+
+        const record: Record<string, string> = {};
+        headers.forEach((header, colIdx) => {
+          record[header] = columns[colIdx] ? columns[colIdx].trim() : "";
+        });
+
+        // Resolve mappings with alternative spelling variants
+        const dateVal = record.date || record.timestamp || record.day || new Date().toISOString().split('T')[0];
+        const supplierNameVal = record.suppliername || record.supplier || record.vendor || "Bulk Supplier";
+        const categoryVal = record.category || record.account || record.accountname || "Aquafeed & Feed Purchases Expense";
+        const descriptionVal = record.description || record.desc || record.remarks || `Imported transaction line ${idx + 1}`;
+        const quantityVal = record.quantity ? Number(record.quantity) : record.qty ? Number(record.qty) : 1;
+        const unitPriceVal = record.unitprice ? Number(record.unitprice) : record.price ? Number(record.price) : record.rate ? Number(record.rate) : 0;
+        const coaCodeVal = record.coacode || record.code || record.accountcode || "";
+
+        // Resolve CoA category & code matching:
+        let matchedCoa = EXP_COA_MAP.find(coa => coa.code === coaCodeVal);
+        if (!matchedCoa) {
+          matchedCoa = EXP_COA_MAP.find(coa => coa.category.toLowerCase().includes(categoryVal.toLowerCase()) || categoryVal.toLowerCase().includes(coa.category.toLowerCase()));
+        }
+
+        const finalCoaCode = matchedCoa ? matchedCoa.code : (coaCodeVal || "5200");
+        const finalCategory = matchedCoa ? matchedCoa.category : (categoryVal || "Aquafeed & Feed Purchases Expense");
+
+        // Schema validation
+        const errors: string[] = [];
+        if (isNaN(quantityVal) || quantityVal <= 0) {
+          errors.push("Quantity must be a positive number greater than zero.");
+        }
+        if (isNaN(unitPriceVal) || unitPriceVal <= 0) {
+          errors.push("Unit Price must be a positive number greater than zero.");
+        }
+        
+        const isAccountCodeInMap = EXP_COA_MAP.some(item => item.code === finalCoaCode);
+        if (!finalCoaCode || !isAccountCodeInMap) {
+          errors.push(`Selected Chart of Accounts debit account code (DR ${finalCoaCode || "N/A"}) is invalid.`);
+        }
+
+        return {
+          id: `csv-${idx}-${Date.now()}`,
+          original: record,
+          date: dateVal,
+          supplierName: supplierNameVal,
+          category: finalCategory,
+          coaCode: finalCoaCode,
+          description: descriptionVal,
+          quantity: quantityVal,
+          unitPrice: unitPriceVal,
+          total: (isNaN(quantityVal) ? 0 : quantityVal) * (isNaN(unitPriceVal) ? 0 : unitPriceVal),
+          errors,
+          isValid: errors.length === 0,
+          isSelected: errors.length === 0
+        };
+      });
+
+      setCsvPreviewList(parsed);
+    } catch (err: any) {
+      setCsvError(`Failed to parse CSV lines: ${err.message}`);
+    }
+  };
+
+  const handleLoadDemoCsv = () => {
+    const demoCsv = `date,supplierName,category,description,quantity,unitPrice,coacode\n` +
+      `2026-06-01,Copperbelt Seeds,Crop Seed & Seedling Acquisition,Imported Maize Seed Type-H,5,120,5310\n` +
+      `2026-06-02,Lusaka Feed Mills,Aquafeed & Feed Purchases Expense,Tilapia Starter Crumble 20kg bags,10,340,5200\n` +
+      `2026-06-03,Kitwe Vet Clinic,Veterinary, Meds & Fingerling Purchase,Vaccination drops 100ml,2,190,5300\n` +
+      `2026-06-04,Zambia Power,Aeration, Pumping & Electricity,Substation high-load pump invoice,1,1250,5410`;
+    setCsvPayloadText(demoCsv);
+    handleParseCsv(demoCsv);
+  };
+
+  const handleBulkImportSave = () => {
+    if (isReadonly) return;
+    const targets = csvPreviewList.filter(item => item.isSelected && item.isValid);
+    if (targets.length === 0) {
+      alert("No valid checked records available to import.");
+      return;
+    }
+
+    try {
+      targets.forEach(item => {
+        let checkSup = suppliers.find(s => s.name.toLowerCase() === item.supplierName.toLowerCase());
+        if (!checkSup) {
+          const newSup: Supplier = {
+            id: "SUP-AUTO-" + Math.floor(Math.random() * 100005),
+            name: item.supplierName,
+            category: "General Purchases",
+            contactPerson: "",
+            phone: "",
+            email: "",
+            address: "",
+            tpin: "",
+            notes: "Onboarded automatically during historical CSV bulk ledger entry"
+          };
+          onAddSupplier(newSup);
+          checkSup = newSup;
+        }
+
+        const taxPct = taxSystem === "VAT" ? 0.15 : taxSystem === "Sales Tax" ? 0.05 : 0;
+        const subPaid = item.total;
+        const taxVal = subPaid * taxPct;
+
+        const tx: ExpenseTransaction = {
+          id: "EXP-BULK-" + Math.floor(Math.random() * 100000),
+          supplierId: checkSup.id,
+          supplierName: checkSup.name,
+          date: item.date,
+          taxSystem: taxSystem,
+          taxAmount: taxVal,
+          subtotal: subPaid,
+          total: subPaid + taxVal,
+          rows: [
+            {
+              category: item.category,
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              amount: subPaid,
+              coaCode: item.coaCode
+            }
+          ],
+          farmId: "farm-1"
+        };
+        onAddTransaction(tx);
+      });
+
+      setCsvSuccessMessage(`Successfully bulk imported ${targets.length} historical ledger transactions into the active farm record!`);
+      setCsvPreviewList([]);
+      setCsvPayloadText("");
+      setShowCsvForm(false);
+      setTimeout(() => setCsvSuccessMessage(null), 5000);
+    } catch (err: any) {
+      setCsvError(`Failed to insert batch: ${err.message}`);
+    }
+  };
+
   const addRow = () => {
+    setFormError(null);
     setRows([...rows, { category: "Aquafeed & Feed Purchases Expense", description: "", quantity: 1, unitPrice: 0, amount: 0, coaCode: "5200" }]);
   };
 
   const removeRow = (index: number) => {
+    setFormError(null);
     if (rows.length === 1) return;
     setRows(rows.filter((_, i) => i !== index));
   };
 
   const updateRow = (index: number, field: keyof ExpenseRow, val: any) => {
+    setFormError(null);
     const updated = [...rows];
     let rowObj = { ...updated[index] };
     
@@ -139,12 +390,50 @@ export default function ExpensesPanel({
 
   const handleSaveTransaction = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
     if (!selectedSupplierId) {
-      alert("Please select a registered supplier.");
+      const err = "Please select a registered supplier.";
+      setFormError(err);
+      alert(err);
       return;
     }
+
     const sup = suppliers.find(s => s.id === selectedSupplierId);
-    if (!sup) return;
+    if (!sup) {
+      const err = "Selected supplier was not found.";
+      setFormError(err);
+      alert(err);
+      return;
+    }
+
+    // Comprehensive Schema Validation for each row
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      
+      // Amount validation ensures strictly positive value (quantity and unitPrice must be > 0)
+      if (row.quantity <= 0) {
+        const err = `Validation Error (Line ${i + 1}): Quantity must be a positive number greater than zero.`;
+        setFormError(err);
+        alert(err);
+        return;
+      }
+      if (row.unitPrice <= 0) {
+        const err = `Validation Error (Line ${i + 1}): Unit Price must be a positive number greater than zero.`;
+        setFormError(err);
+        alert(err);
+        return;
+      }
+
+      // Selected Account Code Validation
+      const isAccountCodeInMap = EXP_COA_MAP.some(item => item.code === row.coaCode);
+      if (!row.coaCode || !isAccountCodeInMap) {
+        const err = `Validation Error (Line ${i + 1}): Selected Chart of Accounts debit account code (DR ${row.coaCode || "N/A"}) is invalid. Please select a valid Category.`;
+        setFormError(err);
+        alert(err);
+        return;
+      }
+    }
 
     const tx: ExpenseTransaction = {
       id: "EXP-" + (100 + expenses.length + 1),
@@ -161,6 +450,7 @@ export default function ExpensesPanel({
 
     onAddTransaction(tx);
     setShowAddForm(false);
+    setFormError(null);
     // Reset Rows
     setRows([{ category: "Aquafeed & Feed Purchases Expense", description: "", quantity: 1, unitPrice: 0, amount: 0, coaCode: "5200" }]);
   };
@@ -252,6 +542,205 @@ export default function ExpensesPanel({
         </div>
       )}
 
+      {/* CSV Bulk Upload Form Block */}
+      {showCsvForm && !showSupplierForm && (
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 space-y-6 animate-slide-up" id="csv-bulk-form">
+          <div className="flex justify-between items-center border-b pb-3.5">
+            <div>
+              <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-2.5 py-1 rounded-full uppercase tracking-widest font-mono">
+                Historical Ledger Seed Tool
+              </span>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5 mt-2">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Bulk Import Historical Expenses & Transactions</span>
+              </h3>
+            </div>
+            <button
+              onClick={() => {
+                setShowCsvForm(false);
+                setCsvPreviewList([]);
+                setCsvError(null);
+              }}
+              className="px-3 py-1.5 bg-slate-100 font-bold hover:bg-slate-200 text-slate-700 rounded-lg text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+              <Info className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Chart of Accounts Alignment & Mappings Instructions</span>
+            </h4>
+            <p className="text-[11px] text-slate-500 leading-normal font-medium">
+              Your CSV file columns will automatically map to corresponding ledger attributes. You can use standard spellings. 
+              The system scans for columns matching <strong>date</strong>, <strong>supplierName</strong>, <strong>category</strong> (or <strong>account</strong>), <strong>description</strong>, <strong>quantity</strong>, <strong>unitPrice</strong>, and optionally <strong>coaCode</strong> (or <strong>accountCode</strong>).
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block w-full mt-1">Acceptable CoA Debit Code mappings:</span>
+              {EXP_COA_MAP.map(item => (
+                <span key={item.code} className="px-2 py-0.5 bg-white text-slate-800 rounded font-mono text-[9.5px] font-bold border border-slate-200 shadow-2xs">
+                  {item.category} (DR {item.code})
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1 border-t border-slate-200/60 justify-end">
+              <button
+                type="button"
+                onClick={handleLoadDemoCsv}
+                className="px-3 py-1 bg-slate-900 text-white hover:bg-slate-800 duration-150 font-bold rounded-lg text-[10.5px] shadow-xs cursor-pointer"
+              >
+                Load Demonstrative Demo Template
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Drag Drop / Input Fields Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              onDragEnter={handleDrag}
+              onDragOver={handleDrag}
+              onDragLeave={handleDrag}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center text-center transition-all min-h-[145px] relative ${
+                csvDragActive 
+                  ? "border-emerald-500 bg-emerald-50/10" 
+                  : "border-slate-300 bg-slate-50/50 hover:border-slate-400"
+              }`}
+            >
+              <input
+                type="file"
+                ref={csvFileInputRef}
+                onChange={handleFileChange}
+                accept=".csv"
+                className="hidden"
+              />
+              <Upload className="w-8 h-8 text-slate-400 mb-2" />
+              <p className="text-xs font-bold text-slate-700">Drag & Drop your expense CSV here</p>
+              <p className="text-[10px] text-slate-400 mb-2">or select file location on your machine</p>
+              <button
+                type="button"
+                onClick={() => csvFileInputRef.current?.click()}
+                className="px-3 py-1 text-slate-700 bg-white border rounded border-slate-300 hover:bg-slate-50 text-[10.5px] font-bold shadow-xs cursor-pointer"
+              >
+                Upload CSV File
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500">
+                Direct CSV Raw Text Paste Area
+              </label>
+              <textarea
+                value={csvPayloadText}
+                onChange={(e) => {
+                  setCsvPayloadText(e.target.value);
+                  handleParseCsv(e.target.value);
+                }}
+                rows={5}
+                placeholder="date,supplierName,category,description,quantity,unitPrice,coacode&#10;2026-06-01,Supplier LLC,Aquafeed & Feed Purchases Expense,Feed Bags,5,150,5200"
+                className="w-full text-xs font-mono p-2.5 border rounded-xl bg-slate-50/50 focus:bg-white resize-none shadow-inner"
+              />
+            </div>
+          </div>
+
+          {/* Errors and successes */}
+          {csvError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{csvError}</span>
+            </div>
+          )}
+
+          {csvSuccessMessage && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{csvSuccessMessage}</span>
+            </div>
+          )}
+
+          {/* Parsed CSV Transactions preview list */}
+          {csvPreviewList.length > 0 && (
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">CSV Bulk Verification Grid</h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5 leading-none">Review, toggle selection or fix validation warnings below.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleBulkImportSave}
+                  disabled={csvPreviewList.filter(x => x.isSelected && x.isValid).length === 0}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md font-sans"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Import {csvPreviewList.filter(x => x.isSelected && x.isValid).length} Executable Lines</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto max-h-72 border rounded-xl divide-y bg-white">
+                <table className="w-full text-left text-xs bg-white">
+                  <thead className="bg-slate-50 uppercase text-[9px] font-bold text-slate-500 tracking-wider sticky top-0 border-b">
+                    <tr>
+                      <th className="p-3 w-8">Import</th>
+                      <th className="p-3">Details Alignment</th>
+                      <th className="p-3">Attributes Calculation</th>
+                      <th className="p-3">Analysis Check</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {csvPreviewList.map((item, idx) => (
+                      <tr key={item.id} className={`hover:bg-slate-50/50 ${!item.isValid ? "bg-rose-50/20" : ""}`}>
+                        <td className="p-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={item.isSelected}
+                            disabled={!item.isValid}
+                            onChange={() => {
+                              const updated = [...csvPreviewList];
+                              updated[idx].isSelected = !updated[idx].isSelected;
+                              setCsvPreviewList(updated);
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-30"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <div className="text-[11px] font-bold text-slate-900">{item.supplierName}</div>
+                          <div className="text-[10.5px] text-slate-500 font-medium font-sans">{item.description}</div>
+                          <div className="text-[9.5px] mt-0.5 text-slate-400 font-medium">{item.date}</div>
+                        </td>
+                        <td className="p-3">
+                          <div className="text-[10.5px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5 inline-block md:block md:w-fit font-bold">
+                            {item.category} (DR {item.coaCode})
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-1 font-semibold">
+                            {item.quantity} units x {currencySymbol}{item.unitPrice.toFixed(2)} = {currencySymbol}{item.total.toFixed(2)}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          {item.isValid ? (
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[9.5px] font-black tracking-wider uppercase border border-emerald-200/50 flex items-center gap-1 animate-pulse inline-flex">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600 animate-spin-slow shrink-0" /> Perfect Record
+                            </span>
+                          ) : (
+                            <div className="bg-rose-50 border border-rose-100 p-1.5 rounded-lg max-w-xs space-y-1">
+                              <span className="text-[9px] uppercase font-extrabold text-rose-800 tracking-wider block">Line Failures</span>
+                              {item.errors.map((err: string) => (
+                                <li key={err} className="text-[9.5px] text-rose-700 font-bold list-none leading-tight">{err}</li>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Multi-Line Record Form */}
       {showAddForm && !showSupplierForm && (
         <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200">
@@ -328,7 +817,7 @@ export default function ExpensesPanel({
                       value={row.quantity}
                       onChange={e => updateRow(index, "quantity", e.target.value)}
                       required 
-                      className="w-full text-xs border bg-white rounded p-1.5 font-mono mt-1"
+                      className={`w-full text-xs border bg-white rounded p-1.5 font-mono mt-1 ${row.quantity <= 0 ? 'border-rose-500 ring-1 ring-rose-250 bg-rose-50 text-rose-800' : 'focus:border-emerald-500'}`}
                     />
                   </div>
                   <div className="col-span-1.5">
@@ -338,7 +827,7 @@ export default function ExpensesPanel({
                       value={row.unitPrice}
                       onChange={e => updateRow(index, "unitPrice", e.target.value)}
                       required 
-                      className="w-full text-xs border bg-white rounded p-1.5 font-mono mt-1"
+                      className={`w-full text-xs border bg-white rounded p-1.5 font-mono mt-1 ${row.unitPrice <= 0 ? 'border-rose-500 ring-1 ring-rose-250 bg-rose-50 text-rose-800' : 'focus:border-emerald-500'}`}
                     />
                   </div>
                   <div className="col-span-1.5 text-right flex flex-col justify-center">
@@ -355,6 +844,13 @@ export default function ExpensesPanel({
             </div>
 
             <button type="button" onClick={addRow} className="px-3.5 py-1.5 bg-slate-100 text-slate-800 hover:bg-slate-200 rounded-lg text-xs font-bold border">+ Add Lead Line</button>
+
+            {formError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 animate-pulse">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
 
             {/* Accounting preview box */}
             <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex justify-between items-center text-xs">
@@ -393,17 +889,24 @@ export default function ExpensesPanel({
             </div>
             {!isReadonly ? (
               <div className="flex items-center gap-2">
-                {onGotoCsvImport && (
-                  <button
-                    onClick={() => onGotoCsvImport("expenses")}
-                    className="px-4 py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-705 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Import via CSV</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    setShowCsvForm(!showCsvForm);
+                    setShowAddForm(false);
+                    setShowSupplierForm(false);
+                    setCsvPreviewList([]);
+                    setCsvError(null);
+                  }}
+                  className={`px-4 py-1.5 border hover:bg-slate-50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${showCsvForm ? 'bg-slate-200 border-slate-400 text-slate-800' : 'border-slate-300 text-slate-700'}`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                  <span>{showCsvForm ? "Close CSV Tool" : "Import via CSV"}</span>
+                </button>
                 <button 
-                  onClick={() => setShowAddForm(true)}
+                  onClick={() => {
+                    setShowAddForm(true);
+                    setShowCsvForm(false);
+                  }}
                   className="px-4 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-slate-800"
                 >
                   <Plus className="w-3.5 h-3.5" />

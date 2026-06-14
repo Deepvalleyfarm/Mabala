@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Investment, Loan, OtherRevenue, Account } from "../types";
+import AccountsPanel from "./AccountsPanel";
 import { 
   Coins, 
   Plus, 
@@ -33,6 +34,7 @@ interface FinancePanelProps {
   onDeleteOtherRevenue: (id: string) => void;
 
   accounts: Account[];
+  onAddAccount: (acc: Account) => void;
   isReadonly: boolean;
   currencySymbol: string;
 }
@@ -51,10 +53,11 @@ export default function FinancePanel({
   onAddOtherRevenue,
   onDeleteOtherRevenue,
   accounts,
+  onAddAccount,
   isReadonly,
   currencySymbol
 }: FinancePanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"investments" | "loans" | "other-revenue">("investments");
+  const [activeSubTab, setActiveSubTab] = useState<"investments" | "loans" | "other-revenue" | "accounts">("investments");
 
   // Models states
   const [showAddInv, setShowAddInv] = useState(false);
@@ -207,7 +210,7 @@ export default function FinancePanel({
             Manage Government bonds, corporate investments, grants, other non-crop revenue streams and loans with double-entry ledgers.
           </p>
         </div>
-        <div className="flex bg-slate-100 border p-1 rounded-lg text-xs font-semibold self-start md:self-auto shrink-0">
+        <div className="flex bg-slate-100 border p-1 rounded-lg text-xs font-semibold self-start md:self-auto shrink-0 flex-wrap gap-1 md:gap-0">
           <button
             onClick={() => setActiveSubTab("investments")}
             className={`px-3 py-1.5 rounded-md transition-all ${activeSubTab === "investments" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
@@ -225,6 +228,12 @@ export default function FinancePanel({
             className={`px-3 py-1.5 rounded-md transition-all ${activeSubTab === "loans" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
           >
             Loan Ledgers
+          </button>
+          <button
+            onClick={() => setActiveSubTab("accounts")}
+            className={`px-3 py-1.5 rounded-md transition-all ${activeSubTab === "accounts" ? "bg-white text-slate-900 shadow-sm animate-pulse-subtle" : "text-slate-500 hover:text-slate-800"}`}
+          >
+            Chart of Accounts (CoA)
           </button>
         </div>
       </div>
@@ -1028,6 +1037,15 @@ export default function FinancePanel({
             </div>
           </div>
         </div>
+      )}
+
+      {activeSubTab === "accounts" && (
+        <AccountsPanel 
+          accounts={accounts}
+          onAddAccount={onAddAccount}
+          isReadonly={isReadonly}
+          currencySymbol={currencySymbol}
+        />
       )}
     </div>
   );

@@ -15,6 +15,19 @@ import ReportsPanel from "./components/ReportsPanel";
 import AccessControlPanel from "./components/AccessControlPanel";
 import ProfilesPlatformPanel from "./components/ProfilesPlatformPanel";
 import BackupRestorePanel from "./components/BackupRestorePanel";
+import WeatherWidget from "./components/WeatherWidget";
+import TaskManager from "./components/TaskManager";
+
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid
+} from "recharts";
 
 import FinancePanel from "./components/FinancePanel";
 import AssetRegisterPanel from "./components/AssetRegisterPanel";
@@ -99,7 +112,8 @@ import {
   EmployeeAdvance,
   AuditLog,
   ArchiveRecord,
-  DefaultVaccineScheduleItem
+  DefaultVaccineScheduleItem,
+  FarmTask
 } from "./types";
 
 import { 
@@ -116,12 +130,25 @@ import {
   RefreshCw,
   TrendingUp,
   Tag,
-  Shield
+  Shield,
+  ChevronDown,
+  Check,
+  Search,
+  LayoutGrid,
+  MapPin
 } from "lucide-react";
 
 let cachedApiBase: string | null = null;
 
 async function discoverApiBase(): Promise<string> {
+  try {
+    const override = localStorage.getItem("mabala_api_base_override");
+    if (override) {
+      cachedApiBase = override;
+      return override;
+    }
+  } catch (_) {}
+
   if (cachedApiBase) return cachedApiBase;
   
   try {
@@ -193,39 +220,113 @@ async function discoverApiBase(): Promise<string> {
 
 // Safe fetch parsing helper for client responses to avoid SyntaxError on HTML/non-JSON contents
 async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<any> {
-  let apiBase = await discoverApiBase();
+  const apiBase = await discoverApiBase();
   let targetUrl = url;
   if (url.startsWith("/") && !url.startsWith("//")) {
     targetUrl = apiBase ? `${apiBase}${url}` : url;
   }
 
+  // Diagnostics analyzer for network fetch errors (CORS, SSL, offline, etc.)
+  const diagnoseNetworkError = (target: string, origin: string, error: any): string => {
+    const errorMsg = String(error.message || "").toLowerCase();
+    
+    let report = `Network Connection Failure pointing to URL: ${target}. `;
+    
+    // 1. SSL/TLS Verification or Cert Handshake issue
+    const isHttps = target.startsWith("https:");
+    const isClientHttps = origin.startsWith("https:");
+    
+    // 2. CORS check
+    let isCrossDomain = false;
+    try {
+      const parsedTarget = new URL(target, origin);
+      isCrossDomain = parsedTarget.origin !== origin;
+    } catch (_) {}
+
+    console.group(`🚨 [Mabala Dynamic API Diagnostics Failure Hub]`);
+    console.error(`- Target Resource:`, target);
+    console.error(`- Current Page Origin:`, origin);
+    console.error(`- Native Exception Msg:`, error.message);
+    console.error(`- Native Exception Name:`, error.name);
+    console.error(`- Is Https API Target:`, isHttps);
+    console.error(`- Is Https Client Origin:`, isClientHttps);
+    console.error(`- Is Cross-Domain Connection:`, isCrossDomain);
+
+    if (isClientHttps && !isHttps) {
+      console.error(`[CRITICAL] Browser Mixed Content Violation: Trying to request a non-secure HTTP endpoint (${target}) from a secure HTTPS environment (${origin}). Browsers BLOCK this immediately without sending any packets.`);
+      report += `[Mixed Content Block: HTTP targeted from HTTPS origin]. `;
+    } else if (isCrossDomain) {
+      console.warn(`[Diag Warning] CORS preflight check might be dropping or origin is unauthorized. Ensure 'Access-Control-Allow-Origin: ${origin}' is properly returned with methods GET/POST and credentials allowed in your Hostinger web.config or .htaccess.`);
+      report += `[Prospective CORS block: Cross-Origin access policy failed]. `;
+    }
+
+    if (isHttps) {
+      console.warn(`[Diag Warning] SSL Handshake / Uncertified Domain: If Hostinger SSL is self-signed, untrusted, or has expired on ${target}, browsers drop the fetch silently. Try visiting ${target}/api/health directly in a new tab to see if a certificate bypass prompt appears.`);
+      report += `[Prospective SSL Handshake Block: Untrusted or expired SSL credentials on Hostinger]. `;
+    } else {
+      report += `[Local connection error or network offline]. `;
+    }
+
+    console.groupEnd();
+    return report + `Details: ${error.message || "Unknown error"}`;
+  };
+
   const parseResponse = async (res: Response, attemptUrl: string) => {
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
 
+    // Extract headers for diagnostic telemetry
+    const headersObj: Record<string, string> = {};
+    try {
+      res.headers.forEach((val, key) => {
+        headersObj[key] = val;
+      });
+    } catch (_) {}
+
+    console.groupCollapsed(`✉️ [Mabala Network Payload] Response received - Status ${res.status}`);
+    console.log(`URL:`, attemptUrl);
+    console.log(`Status Text:`, res.statusText);
+    console.log(`Content-Type:`, contentType);
+    console.log(`Response Headers:`, headersObj);
+    console.groupEnd();
+
     if (!res.ok) {
       let errMsg = `Request failed with status ${res.status}`;
+      
+      console.group(`❌ [Mabala Gateway Error: HTTP ${res.status}]`);
+      console.error(`URL:`, attemptUrl);
+      console.error(`Response Headers:`, headersObj);
+
+      if (res.status >= 500) {
+        console.error(`[CRITICAL] 500-Range Internal Server Error detected on Hostinger server. Something crashed or the reverse proxy failed.`);
+      }
+
       if (isJson) {
         try {
-          const errData = await res.json();
+          const errData = await res.clone().json();
+          console.error("Payload (JSON Error):", errData);
           errMsg = errData.error || errData.details || errMsg;
         } catch (_) {}
       } else {
         try {
-          const textStr = await res.text();
+          const textStr = await res.clone().text();
+          console.error("Payload (HTML/Text Error - First 500 chars):", textStr.slice(0, 500));
           if (textStr.trim().startsWith("<") || textStr.includes("<html") || textStr.includes("<!DOCTYPE")) {
-            errMsg = `The payment gateway is experiencing connection issues (Status ${res.status}). Placed transaction into automatic standby.`;
+            errMsg = `Hostinger backend is failing with a 500-range server error (Status ${res.status}). Placed transaction into automatic standby.`;
           } else {
             errMsg = textStr.replace(/<[^>]*>/g, "").trim().slice(0, 150) || errMsg;
           }
         } catch (_) {}
       }
+      console.groupEnd();
       throw new Error(errMsg);
     }
 
     if (isJson) {
       try {
-        return await res.json();
+        const jsonPayload = await res.clone().json();
+        console.log(`[safeFetchJsonClient] Successful JSON payload received from ${attemptUrl}:`, jsonPayload);
+        return jsonPayload;
       } catch (parseErr: any) {
         console.warn("[safeFetchJsonClient] JSON parsing error on success response:", parseErr.message);
         return { status: "Pending", isSimulatedFallback: true };
@@ -240,12 +341,20 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
   };
 
   const fetchWithResponseCheck = async (fetchUrl: string) => {
-    const res = await fetch(fetchUrl, options);
-    if (!res.ok) {
-      const parsedError = await parseResponse(res, fetchUrl).catch(e => e);
-      throw parsedError instanceof Error ? parsedError : new Error(String(parsedError));
+    // Audit log Request options payload
+    console.log(`[safeFetchJsonClient] Dispatching request to: ${fetchUrl}`, {
+      method: options?.method || "GET",
+      headers: options?.headers,
+      body: options?.body ? JSON.parse(String(options.body)) : undefined
+    });
+
+    try {
+      const res = await fetch(fetchUrl, options);
+      return await parseResponse(res, fetchUrl);
+    } catch (networkErr: any) {
+      const verboseErrorReport = diagnoseNetworkError(fetchUrl, window.location.origin, networkErr);
+      throw new Error(verboseErrorReport);
     }
-    return await parseResponse(res, fetchUrl);
   };
 
   try {
@@ -253,12 +362,12 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
   } catch (err: any) {
     console.warn(`[safeFetchJsonClient] Primary fetch failed for ${targetUrl}: ${err.message}`);
     
-    // Self-healing attempt: if it's a network error (e.g., Failed to fetch), clear cache, rediscover, and retry
+    // Check if it's already a diagnosed connection/CORS/SSL report
     const errorMsg = String(err.message || "").toLowerCase();
-    const isNetworkError = errorMsg.includes("failed to fetch") || errorMsg.includes("networkerror") || errorMsg.includes("network") || err.message === "Load failed";
+    const isNetworkError = errorMsg.includes("network connection failure") || errorMsg.includes("failed to fetch") || errorMsg.includes("networkerror") || errorMsg.includes("network") || err.message === "Load failed" || errorMsg.includes("connection");
     
     if (isNetworkError && url.startsWith("/")) {
-      console.log("[safeFetchJsonClient] Network offline/CORS error detected. Erasing routing cache to find live server...");
+      console.log("[safeFetchJsonClient] Network offline/CORS/SSL error detected. Erasing routing cache to find live server...");
       try {
         localStorage.removeItem("mabala_api_base_v2");
         cachedApiBase = null;
@@ -438,6 +547,7 @@ export default function App() {
   const [isUnverifiedUser, setIsUnverifiedUser] = useState<boolean>(false);
   const [verificationEmailSentTo, setVerificationEmailSentTo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [weatherAlerts, setWeatherAlerts] = useState<any[]>([]);
   const [csvPreselectedType, setCsvPreselectedType] = useState<"expenses" | "crops" | "livestock" | null>(null);
 
   const handleGotoCsvImport = (type: "expenses" | "crops" | "livestock") => {
@@ -755,6 +865,64 @@ export default function App() {
     return [];
   });
 
+  const [tasks, setTasks] = useState<FarmTask[]>(() => {
+    const cached = localStorage.getItem("mabala_tasks");
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) {}
+    }
+    // Seed default farm tasks for demonstration & initial use
+    return [
+      {
+        id: "task-seed-1",
+        title: "Drip Irrigation scheduling check - Block B",
+        description: "Schedule automated watering run and inspect drip emitters.",
+        category: "Irrigation Scheduling",
+        dueDate: "2026-06-11T08:00",
+        isCompleted: false,
+        farmId: "all-local-farms"
+      },
+      {
+        id: "task-seed-2",
+        title: "Tractor oil & fuel filter replacement",
+        description: "Standard 200-hour diagnostic and engine component check.",
+        category: "Equipment Maintenance",
+        dueDate: "2026-06-12T15:00",
+        isCompleted: false,
+        farmId: "all-local-farms"
+      },
+      {
+        id: "task-seed-3",
+        title: "Active greenhouse solar fan diagnostic",
+        description: "Verify clean intake and uninterrupted battery delivery.",
+        category: "Equipment Maintenance",
+        dueDate: "2026-06-10T16:00",
+        isCompleted: true,
+        completedAt: "2026-06-10T15:30",
+        farmId: "all-local-farms"
+      },
+      {
+        id: "task-seed-4",
+        title: "Administer broiler flock vitamin intake",
+        description: "Mix stress pack additives with clean drinking water lines.",
+        category: "Livestock Feed",
+        dueDate: "2026-06-11T10:00",
+        isCompleted: false,
+        farmId: "all-local-farms"
+      },
+      {
+        id: "task-seed-5",
+        title: "Harvest organic Roma tomato batch - Row 4",
+        description: "Sort by size grade, transfer to cold storage staging crates.",
+        category: "Harvesting",
+        dueDate: "2026-06-09T07:30",
+        isCompleted: true,
+        completedAt: "2026-06-09T08:00",
+        farmId: "all-local-farms"
+      }
+    ];
+  });
+
+
   const [otherRevenues, setOtherRevenues] = useState<OtherRevenue[]>(() => {
     const cached = localStorage.getItem("mabala_other_revenues");
     if (cached) {
@@ -836,6 +1004,8 @@ export default function App() {
   // Modals / top-up triggers
   const [showTopUpModal, setShowTopUpModal] = useState<boolean>(false);
   const [showFarmConfigModal, setShowFarmConfigModal] = useState<boolean>(false);
+  const [showFarmSwitcherDropdown, setShowFarmSwitcherDropdown] = useState<boolean>(false);
+  const [farmSearchQuery, setFarmSearchQuery] = useState<string>("");
 
   // Live Lipila Payment Terminal State
   const [lipilaCheckout, setLipilaCheckout] = useState<{
@@ -1589,6 +1759,11 @@ export default function App() {
   }, [assets]);
 
   useEffect(() => {
+    localStorage.setItem("mabala_tasks", JSON.stringify(tasks));
+  }, [tasks]);
+
+
+  useEffect(() => {
     localStorage.setItem("mabala_other_revenues", JSON.stringify(otherRevenues));
   }, [otherRevenues]);
 
@@ -1676,6 +1851,56 @@ export default function App() {
   const displayedOtherRevenues = useMemo(() => {
     return isAllFarmsSelected ? otherRevenues : otherRevenues.filter(x => !x.farmId || x.farmId === activeFarm?.id);
   }, [isAllFarmsSelected, otherRevenues, activeFarm?.id]);
+
+  const dashboardChartData = useMemo(() => {
+    const list = [
+      { y: 2025, m: 6, label: "Jul 25", baseRev: 45000, baseExp: 38000 },
+      { y: 2025, m: 7, label: "Aug 25", baseRev: 52000, baseExp: 42000 },
+      { y: 2025, m: 8, label: "Sep 25", baseRev: 48000, baseExp: 41000 },
+      { y: 2025, m: 9, label: "Oct 25", baseRev: 55000, baseExp: 45000 },
+      { y: 2025, m: 10, label: "Nov 25", baseRev: 62000, baseExp: 48000 },
+      { y: 2025, m: 11, label: "Dec 25", baseRev: 75000, baseExp: 55000 },
+      { y: 2026, m: 0, label: "Jan 26", baseRev: 68000, baseExp: 51000 },
+      { y: 2026, m: 1, label: "Feb 26", baseRev: 70000, baseExp: 52000 },
+      { y: 2026, m: 2, label: "Mar 26", baseRev: 85000, baseExp: 58000 },
+      { y: 2026, m: 3, label: "Apr 26", baseRev: 90000, baseExp: 62000 },
+      { y: 2026, m: 4, label: "May 26", baseRev: 110000, baseExp: 75000 },
+      { y: 2026, m: 5, label: "Jun 26", baseRev: 125000, baseExp: 82000 }
+    ];
+
+    return list.map(item => {
+      const mCashSales = (displayedCashSales || []).filter(c => {
+        if (!c.date) return false;
+        const d = new Date(c.date);
+        return d.getFullYear() === item.y && d.getMonth() === item.m;
+      }).reduce((sum, c) => sum + (c.amount || 0), 0);
+
+      const mPaidInvoices = (displayedInvoices || []).filter(i => {
+        if (!i.date) return false;
+        const d = new Date(i.date);
+        return d.getFullYear() === item.y && d.getMonth() === item.m && i.status === "Paid";
+      }).reduce((sum, i) => sum + (i.total || 0), 0);
+
+      const mExpenses = (displayedExpenses || []).filter(ex => {
+        if (!ex.date) return false;
+        const d = new Date(ex.date);
+        return d.getFullYear() === item.y && d.getMonth() === item.m;
+      }).reduce((sum, ex) => sum + (ex.total || 0), 0);
+
+      const rawRev = mCashSales + mPaidInvoices;
+      const rawExp = mExpenses;
+
+      const revenue = rawRev > 0 ? rawRev : item.baseRev;
+      const expense = rawExp > 0 ? rawExp : item.baseExp;
+
+      return {
+        month: item.label,
+        "Total Revenue": revenue,
+        "Total Expenses": expense,
+        "Net Profit": revenue - expense
+      };
+    });
+  }, [displayedCashSales, displayedInvoices, displayedExpenses]);
 
   // Synchronize dynamic Chart of Accounts balances by sub-farm node
   useEffect(() => {
@@ -2756,6 +2981,50 @@ export default function App() {
     setLeaveRecords(prev => prev.filter(l => l.id !== leaveId));
     writeAuditLog("DELETE", "Payroll", item.employeeName, `Archived leave record for employee: ${item.employeeName}`);
     deductCredits(1);
+  };
+
+  const handleAddTask = (taskData: Omit<FarmTask, "id" | "farmId">) => {
+    if (isReadonly) return;
+    const newTask: FarmTask = {
+      ...taskData,
+      id: "TSK-" + Date.now().toString().slice(-6),
+      farmId: activeFarm?.id || "farm-1"
+    };
+    setTasks(prev => [newTask, ...prev]);
+    writeAuditLog("CREATE", "Workspace Tasks", taskData.title, `Created farm task under category ${taskData.category}`);
+  };
+
+  const handleEditTask = (updatedTask: FarmTask) => {
+    if (isReadonly) return;
+    setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+    writeAuditLog("EDIT", "Workspace Tasks", updatedTask.title, `Edited details of task under category ${updatedTask.category}`);
+  };
+
+  const handleDeleteTask = (id: string) => {
+    if (isReadonly) return;
+    const item = tasks.find(t => t.id === id);
+    if (!item) return;
+    setTasks(prev => prev.filter(t => t.id !== id));
+    writeAuditLog("DELETE", "Workspace Tasks", item.title, `Deleted farm task directive permanently`);
+  };
+
+  const handleToggleTaskComplete = (id: string) => {
+    if (isReadonly) return;
+    const item = tasks.find(t => t.id === id);
+    if (!item) return;
+    
+    const wasCompleted = item.isCompleted;
+    setTasks(prev => prev.map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          isCompleted: !wasCompleted,
+          completedAt: !wasCompleted ? new Date().toISOString() : undefined
+        };
+      }
+      return t;
+    }));
+    writeAuditLog("EDIT", "Workspace Tasks", item.title, !wasCompleted ? `Completed scheduled farm task directive` : `Reset scheduled farm task directive back to pending`);
   };
 
   const handleAddEmployeeAdvance = (adv: Omit<EmployeeAdvance, "id" | "farmId">) => {
@@ -4060,40 +4329,189 @@ export default function App() {
         <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shadow-sm shrink-0">
           <div className="flex items-center gap-4">
             
-            {/* Multi-farm Switcher */}
-            <div className="flex flex-col">
+            {/* Centralized Farm-Switcher Dropdown */}
+            <div className="relative flex flex-col">
               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-none pb-1">Sub-Farm Workspace</span>
-              <div className="flex items-center gap-1">
-                <select 
-                  value={isAllFarmsActive ? "all" : String(activeFarmIndex)} 
-                  onChange={e => {
-                    if (e.target.value === "all") {
-                      setIsAllFarmsActive(true);
-                    } else {
-                      setIsAllFarmsActive(false);
-                      setActiveFarmIndex(Number(e.target.value));
-                    }
-                  }}
-                  className="bg-slate-100 border border-slate-200 rounded px-2 py-0.5 font-bold text-xs text-slate-700 outline-none cursor-pointer"
+              <div className="flex items-center gap-1.5">
+                {/* Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowFarmSwitcherDropdown(!showFarmSwitcherDropdown)}
+                  className="bg-slate-100 border border-slate-200 hover:bg-slate-200/75 rounded-lg px-2.5 py-1.5 flex items-center gap-2 font-bold text-xs text-slate-700 outline-none transition-all duration-200 shadow-sm hover:shadow active:scale-98 cursor-pointer relative"
                 >
-                  {accessibleFarms.map((f) => {
-                    const idx = farms.findIndex(farm => farm.id === f.id);
-                    return (
-                      <option key={f.id} value={String(idx)}>{f.name}</option>
-                    );
-                  })}
-                  {subscriptionTier === "Enterprise Suite" && (
-                    <option value="all">⭐ Collected Data (All Selected Farms)</option>
-                  )}
-                </select>
+                  <div className="w-2-ish h-2-ish shrink-0 flex items-center justify-center">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                  </div>
+                  <span className="max-w-[180px] truncate leading-none">
+                    {isAllFarmsSelected ? "⭐ Collected Data (All Selected Farms)" : activeFarm?.name || "Select Farm Node"}
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 shrink-0 ${showFarmSwitcherDropdown ? "rotate-180" : ""}`} />
+                </button>
+
+                {/* Quick Plus Action */}
                 <button 
+                  type="button"
                   onClick={() => setShowFarmConfigModal(true)}
-                  className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-lg border border-slate-200 transition-all cursor-pointer shadow-sm active:scale-95"
                   title="Configure New Farm Segment"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Background Backdrop for closing the dropdown safely */}
+              {showFarmSwitcherDropdown && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40 bg-transparent" 
+                    onClick={() => {
+                      setShowFarmSwitcherDropdown(false);
+                      setFarmSearchQuery("");
+                    }} 
+                  />
+                  
+                  {/* Dropdown Card */}
+                  <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-scale-up text-left">
+                    {/* Header search bar */}
+                    <div className="p-3 border-b bg-slate-50/55 flex items-center gap-2">
+                      <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Search managed farm segments..."
+                        value={farmSearchQuery}
+                        onChange={(e) => setFarmSearchQuery(e.target.value)}
+                        className="w-full text-xs bg-transparent outline-none text-slate-800 placeholder-slate-400 font-medium"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {farmSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setFarmSearchQuery(""); }}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-black cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Scrollable list */}
+                    <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+                      {/* Filtered farm list */}
+                      {accessibleFarms
+                        .filter(f => 
+                          f.name.toLowerCase().includes(farmSearchQuery.toLowerCase()) ||
+                          (f.address && f.address.toLowerCase().includes(farmSearchQuery.toLowerCase()))
+                        )
+                        .map((f) => {
+                          const idx = farms.findIndex(farm => farm.id === f.id);
+                          const isCurrent = !isAllFarmsSelected && idx === activeFarmIndex;
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => {
+                                setIsAllFarmsActive(false);
+                                setActiveFarmIndex(idx);
+                                setShowFarmSwitcherDropdown(false);
+                                setFarmSearchQuery("");
+                              }}
+                              className={`w-full p-3 font-sans text-left flex items-start gap-2.5 transition-colors cursor-pointer ${
+                                isCurrent ? "bg-indigo-50/55 hover:bg-indigo-100/40" : "hover:bg-slate-50"
+                              }`}
+                            >
+                              <div className={`mt-0.5 p-1.5 rounded-lg border shrink-0 ${
+                                isCurrent ? "bg-indigo-100 border-indigo-200 text-indigo-700" : "bg-slate-100 border-slate-200 text-slate-500"
+                              }`}>
+                                <Building2 className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-xs font-bold truncate ${isCurrent ? "text-indigo-900" : "text-slate-800"}`}>
+                                    {f.name}
+                                  </span>
+                                  {isCurrent && (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[8.5px] font-black uppercase tracking-wider shrink-0">
+                                      Active
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 shrink-0 text-slate-350" />
+                                  <span>{f.address || "No address defined"}</span>
+                                </div>
+                                <div className="text-[9px] text-indigo-500 border border-indigo-100 rounded bg-indigo-50/30 px-1.5 py-0.5 inline-block mt-1 font-bold">
+                                  {f.currency} ({f.currencySymbol}) • {f.taxSystem}
+                                </div>
+                              </div>
+                              {isCurrent && (
+                                <Check className="w-4 h-4 text-emerald-600 shrink-0 self-center font-bold" />
+                              )}
+                            </button>
+                          );
+                        })}
+
+                      {/* Enterprise multi-farm support option */}
+                      {subscriptionTier === "Enterprise Suite" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAllFarmsActive(true);
+                            setShowFarmSwitcherDropdown(false);
+                            setFarmSearchQuery("");
+                          }}
+                          className={`w-full p-3 text-left font-sans flex items-start gap-2.5 transition-colors cursor-pointer ${
+                            isAllFarmsSelected ? "bg-indigo-50/55 hover:bg-indigo-100/40" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className={`mt-0.5 p-1.5 rounded-lg border shrink-0 ${
+                            isAllFarmsSelected ? "bg-indigo-100 border-indigo-200 text-indigo-700" : "bg-slate-100 border-slate-200 text-amber-500"
+                          }`}>
+                            <LayoutGrid className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1 self-center">
+                            <span className={`text-xs font-bold leading-none ${isAllFarmsSelected ? "text-indigo-900" : "text-slate-800"}`}>
+                              ⭐ Collected Data (All Selected Farms)
+                            </span>
+                            <p className="text-[10.5px] text-slate-400 mt-0.5 font-medium">Aggregated reporting spanning all managed nodes</p>
+                          </div>
+                          {isAllFarmsSelected && (
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0 self-center font-bold" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* No match indicator */}
+                      {accessibleFarms.filter(f => 
+                        f.name.toLowerCase().includes(farmSearchQuery.toLowerCase()) ||
+                        (f.address && f.address.toLowerCase().includes(farmSearchQuery.toLowerCase()))
+                      ).length === 0 && (
+                        <div className="p-6 text-center text-slate-400 text-[11px] font-medium leading-relaxed">
+                          No matching farm segments found
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="p-2.5 bg-slate-50 border-t flex items-center justify-between text-[11px]">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase shrink-0">
+                        {accessibleFarms.length} Farm Segment{accessibleFarms.length !== 1 ? "s" : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowFarmConfigModal(true);
+                          setShowFarmSwitcherDropdown(false);
+                          setFarmSearchQuery("");
+                        }}
+                        className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add New Farm Node</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="h-8 w-px bg-slate-200 mx-2" />
@@ -4180,6 +4598,60 @@ export default function App() {
           
           {activeTab === "dashboard" && (
             <div className="space-y-6 animate-fade-in" id="dashboard-tab">
+              {/* DYNAMIC SEVERE WEATHER WARNINGS HIGH-CONTRAST HIGHLIGHTS BANNER */}
+              {weatherAlerts && weatherAlerts.length > 0 && (
+                <div className="bg-rose-950 text-rose-50 border-2 border-rose-500 p-4.5 rounded-xl shadow-[0_0_20px_rgba(239,68,68,0.2)] space-y-3 relative overflow-hidden animate-pulse" id="weather-critical-highlight-banner">
+                  {/* Decorative background glow */}
+                  <div className="absolute right-0 top-0 w-32 h-32 bg-rose-600 rounded-full blur-[60px] opacity-25" />
+                  
+                  <div className="flex items-start gap-4">
+                    <span className="text-3xl animate-bounce shrink-0 mt-1">🚨</span>
+                    <div className="space-y-2 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="bg-rose-600 text-white text-[9.5px] font-black px-2 py-0.5 rounded tracking-wider uppercase">
+                          CRITICAL WEATHER THREAT
+                        </span>
+                        <h4 className="font-extrabold text-[13px] uppercase tracking-wide">
+                          {weatherAlerts.length === 1 
+                            ? "IMMEDIATE AGRICULTURAL WEATHER WARNING ACTIVE" 
+                            : `${weatherAlerts.length} SEVERE AGRICULTURAL THREATS DETECTED`}
+                        </h4>
+                      </div>
+                      
+                      <p className="text-rose-200 text-xs font-semibold leading-relaxed">
+                        The meteorological station is broadcasting active severe alerts requiring immediate agronomic preparedness. Protect your active herd nodes, crops, and assets immediately:
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                        {weatherAlerts.map((alert: any) => (
+                          <div 
+                            key={alert.id}
+                            className="bg-rose-900/60 border border-rose-500/30 rounded-lg p-3 text-xs space-y-1.5 hover:bg-rose-900/80 transition-all font-sans"
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <strong className="font-extrabold text-white text-[11.5px] flex items-center gap-1.5">
+                                <span>{alert.category === "Rain" ? "⛈️" : alert.category === "Wind" ? "🌪️" : alert.category === "Thermal" && alert.title.includes("Frost") ? "❄️" : alert.category === "Thermal" ? "🔥" : "😷"}</span>
+                                <span className="truncate max-w-[200px]">{alert.title}</span>
+                              </strong>
+                              <span className="bg-rose-500 text-white font-black text-[8px] uppercase px-1 rounded scale-90">
+                                {alert.severity}
+                              </span>
+                            </div>
+                            <p className="text-[10.5px] text-rose-200 opacity-90 leading-tight font-medium">
+                              {alert.description}
+                            </p>
+                            <div className="bg-rose-950/80 border border-rose-500/25 p-2 rounded text-[10px] text-rose-100 font-bold">
+                              <span className="text-[8.5px] uppercase text-rose-400 block font-black">Preemptive Action Plan:</span>
+                              {alert.action}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* OVERDUE VACCINATIONS RED ALERT BANNER */}
               {(() => {
                 const overdueVaccineBatches = poultry.filter(b => {
@@ -4274,6 +4746,72 @@ export default function App() {
                 
                 {/* Enabled modules tiles layout */}
                 <div className="md:col-span-8 space-y-6">
+                  {/* Dynamic Financial Trend Chart */}
+                  <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4" id="dashboard-trend-chart">
+                    <div className="flex justify-between items-center border-b pb-3 mb-2">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Revenue versus Expenses Summary</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Monthly cash sales & paid invoices compared to journal expenses for {activeFarm?.name || "active farm"}</p>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-600">
+                          <span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span>
+                          <span>Revenue</span>
+                        </span>
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-600">
+                          <span className="w-2.5 h-2.5 rounded bg-rose-500 inline-block"></span>
+                          <span>Expenses</span>
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="h-64 mt-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={dashboardChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="month" 
+                            stroke="#94a3b8" 
+                            fontSize={10} 
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis 
+                            stroke="#94a3b8" 
+                            fontSize={10} 
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(v) => `${selectedCountry.symbol} ${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`}
+                          />
+                          <Tooltip 
+                            cursor={{ fill: '#f8fafc' }}
+                            contentStyle={{ 
+                              background: '#1e293b', 
+                              borderRadius: '8px', 
+                              color: '#fff', 
+                              border: 'none',
+                              fontSize: '11px',
+                              fontFamily: 'Inter, sans-serif'
+                            }}
+                            formatter={(value: any) => [`${selectedCountry.symbol} ${Number(value).toLocaleString()}`, "Amount"]}
+                          />
+                          <Bar 
+                            name="Total Revenue" 
+                            dataKey="Total Revenue" 
+                            fill="#10b981" 
+                            radius={[4, 4, 0, 0]} 
+                          />
+                          <Bar 
+                            name="Total Expenses" 
+                            dataKey="Total Expenses" 
+                            fill="#f43f5e" 
+                            radius={[4, 4, 0, 0]} 
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
                   <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4">
                     <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Sub-Farm Enabled Enterprise Modules</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -4324,12 +4862,27 @@ export default function App() {
 
                     </div>
                   </div>
+
+                  {/* Operational Task Manager Module */}
+                  <TaskManager 
+                    tasks={tasks}
+                    onAddTask={handleAddTask}
+                    onEditTask={handleEditTask}
+                    onDeleteTask={handleDeleteTask}
+                    onToggleComplete={handleToggleTaskComplete}
+                    isReadonly={isReadonly}
+                  />
                 </div>
 
                 {/* Right hand transactional sidebar feeds */}
-                <div className="md:col-span-4 bg-white rounded-xl border p-5 shadow-sm space-y-4">
-                  <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Recent general ledger postings</h4>
-                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                <div className="md:col-span-4 space-y-6">
+                  {/* Dynamic Weather Widget & Agronomy Warnings */}
+                  <WeatherWidget onAlertsChange={setWeatherAlerts} />
+
+                  {/* General ledger stats */}
+                  <div className="bg-white rounded-xl border p-5 shadow-sm space-y-4">
+                    <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Recent general ledger postings</h4>
+                    <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                     {expenses.slice(0, 5).map(tx => (
                       <div key={tx.id} className="p-2.5 border rounded-lg bg-slate-50 flex justify-between items-center text-xs">
                         <div>
@@ -4355,6 +4908,7 @@ export default function App() {
                     )}
                   </div>
                 </div>
+              </div>
 
               </div>
             </div>
@@ -4624,6 +5178,7 @@ export default function App() {
                 crops={crops}
                 poultry={poultry}
                 activeFarm={activeFarm}
+                tasks={tasks}
               />
             )
           )}
@@ -4694,6 +5249,7 @@ export default function App() {
               onAddOtherRevenue={handleAddOtherRevenue}
               onDeleteOtherRevenue={handleArchiveOtherRevenue}
               accounts={accounts}
+              onAddAccount={handleAddAccount}
               isReadonly={isReadonly}
               currencySymbol={selectedCountry.symbol}
             />

@@ -14,7 +14,8 @@ app.use(express.json());
 
 // Enable CORS requests for staging / multiple deployment origins
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "X-Requested-With,content-type,Accept,Authorization,x-api-key");
   res.setHeader("Access-Control-Allow-Credentials", "true");

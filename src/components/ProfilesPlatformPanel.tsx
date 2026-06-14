@@ -1737,9 +1737,17 @@ export default function ProfilesPlatformPanel({
                                     FAILED
                                   </span>
                                   {tx.errorDetails && (
-                                    <span className="text-[8px] text-red-500 font-sans tracking-tight block max-w-[150px] truncate font-medium">
-                                      {tx.errorDetails}
-                                    </span>
+                                    <div className="mt-1 text-left">
+                                      <details className="group outline-none select-text cursor-pointer">
+                                        <summary className="text-[9px] text-rose-600 hover:text-rose-700 font-extrabold flex items-center justify-end gap-1 select-none transition-colors">
+                                          <span>Diagnostics Log</span>
+                                          <span className="text-[7px] transition-transform duration-200 group-open:rotate-180">▼</span>
+                                        </summary>
+                                        <div className="mt-1 p-2 bg-rose-50 text-[9px] text-rose-700 hover:bg-rose-100/75 transition-colors border border-rose-100 rounded-lg whitespace-pre-wrap break-all max-w-[200px] text-left leading-normal font-mono shadow-inner select-all">
+                                          {tx.errorDetails}
+                                        </div>
+                                      </details>
+                                    </div>
                                   )}
                                 </div>
                               )}
