@@ -2778,10 +2778,17 @@ export default function App() {
   }) => {
     // 1. Enforce pre-flight check in Firestore collection
     if (isConfigured && data.email) {
-      const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+      try {
+        const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+        }
+      } catch (err: any) {
+        console.warn("[Mabala Register Check] Bypassing pre-flight Firestore query error for guest/unauthenticated flow in handleRegister:", err.message || err);
+        if (err.message && err.message.includes("already linked")) {
+          throw err;
+        }
       }
     }
 
@@ -2906,10 +2913,17 @@ export default function App() {
   }) => {
     // 1. Enforce pre-flight check in Firestore collection
     if (isConfigured && data.email) {
-      const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+      try {
+        const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+        }
+      } catch (err: any) {
+        console.warn("[Mabala Register Check] Bypassing pre-flight Firestore query error for guest/unauthenticated flow in handleRegisterVendor:", err.message || err);
+        if (err.message && err.message.includes("already linked")) {
+          throw err;
+        }
       }
     }
 
@@ -5175,19 +5189,25 @@ export default function App() {
                       
                       <div className="p-3 bg-slate-50 border rounded-lg">
                         <span className="text-[10px] text-slate-400 font-bold block">Biomass biological valuation</span>
-                        <strong className="text-md block text-slate-900 mt-1">{selectedCountry.symbol} 32,500.00</strong>
+                        <strong className="text-md block text-slate-900 mt-1">
+                          {selectedCountry.symbol} {(accounts.find(a => a.code === "1440")?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
                         <span className="text-[9px] text-slate-400 block font-mono">Mapped from accounts code 1440</span>
                       </div>
 
                       <div className="p-3 bg-slate-50 border rounded-lg">
                         <span className="text-[10px] text-slate-400 font-bold block">Flocks stock inventory valuation</span>
-                        <strong className="text-md block text-slate-900 mt-1">{selectedCountry.symbol} 14,500.00</strong>
+                        <strong className="text-md block text-slate-900 mt-1">
+                          {selectedCountry.symbol} {(accounts.find(a => a.code === "1430")?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
                         <span className="text-[9px] text-slate-400 block font-mono">Mapped from accounts code 1430</span>
                       </div>
 
                       <div className="p-3 bg-slate-50 border rounded-lg">
                         <span className="text-[10px] text-slate-400 font-bold block">Herd stock asset valuation</span>
-                        <strong className="text-md block text-slate-900 mt-1">{selectedCountry.symbol} 52,000.00</strong>
+                        <strong className="text-md block text-slate-900 mt-1">
+                          {selectedCountry.symbol} {(accounts.find(a => a.code === "1420")?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
                         <span className="text-[9px] text-slate-400 block font-mono">Mapped from accounts code 1420</span>
                       </div>
 
