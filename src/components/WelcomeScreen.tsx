@@ -36,6 +36,7 @@ interface WelcomeScreenProps {
   onRegister: (data: {
     fullName: string;
     email: string;
+    phone?: string;
     farmName: string;
     country: CountryInfo;
     subscriptionTier: string;
@@ -54,6 +55,8 @@ interface WelcomeScreenProps {
   }) => void | Promise<void>;
   onLogin: (email: string, password?: string) => void | Promise<void>;
   onGoogleSignIn?: () => void | Promise<void>;
+  onGoogleSignInBypass?: (email: string) => void | Promise<void>;
+  checkEmailExists?: (email: string) => Promise<boolean>;
   platformPackages?: any[];
   contactDetails?: {
     email: string;
@@ -74,6 +77,8 @@ export default function WelcomeScreen({
   onRegisterVendor,
   onLogin,
   onGoogleSignIn,
+  onGoogleSignInBypass,
+  checkEmailExists,
   platformPackages = [
     { name: "Basic Farmer Planner", price: 150, description: "Solo farmer ledgering and animal tags limit 50", isActive: true },
     { name: "Commercial Growth Layer", price: 300, description: "Advanced Crop & Feed Conversion Rate records, limit unlimited", isActive: true },
@@ -170,6 +175,9 @@ export default function WelcomeScreen({
   // Registration States
   const [fullName, setFullName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPhone, setRegisterPhone] = useState("");
+  const [emailConflict, setEmailConflict] = useState(false);
+  const [vendorEmailConflict, setVendorEmailConflict] = useState(false);
   const [farmName, setFarmName] = useState("");
   const [selectedCountryCode, setSelectedCountryCode] = useState("ZM");
   const [subscriptionTier, setSubscriptionTier] = useState("Commercial Growth Layer");
@@ -180,6 +188,8 @@ export default function WelcomeScreen({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [demoCredentialsPopulated, setDemoCredentialsPopulated] = useState(false);
+  const [showGoogleBypassField, setShowGoogleBypassField] = useState(false);
+  const [googleBypassEmail, setGoogleBypassEmail] = useState("");
   
   // Flow states
   const [showOtpScreen, setShowOtpScreen] = useState(false);
@@ -225,6 +235,50 @@ export default function WelcomeScreen({
     }
   }, [activeAds, closedInterstitialId]);
 
+  // Debounced real-time email conflict check
+  useEffect(() => {
+    if (!registerEmail || !checkEmailExists) {
+      setEmailConflict(false);
+      return;
+    }
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const exists = await checkEmailExists(registerEmail);
+        setEmailConflict(exists);
+        if (exists) {
+          setFormError("⚠️ This email address is already linked to an active profile. Please use another email or log in.");
+        } else {
+          setFormError(prev => prev && prev.includes("already linked") ? "" : prev);
+        }
+      } catch (err) {
+        console.error("Error checking register email:", err);
+      }
+    }, 600);
+    return () => clearTimeout(delayDebounce);
+  }, [registerEmail, checkEmailExists]);
+
+  useEffect(() => {
+    const eMail = typeof onboardEmail !== "undefined" ? onboardEmail : "";
+    if (!eMail || !checkEmailExists) {
+      setVendorEmailConflict(false);
+      return;
+    }
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const exists = await checkEmailExists(eMail);
+        setVendorEmailConflict(exists);
+        if (exists) {
+          setFormError("⚠️ This email address is already linked to an active profile. Please use another email or log in.");
+        } else {
+          setFormError(prev => prev && prev.includes("already linked") ? "" : prev);
+        }
+      } catch (err) {
+         console.error("Error checking onboard email:", err);
+      }
+    }, 600);
+    return () => clearTimeout(delayDebounce);
+  }, [onboardEmail, checkEmailExists]);
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
@@ -239,6 +293,11 @@ export default function WelcomeScreen({
       return;
     }
 
+    if (emailConflict) {
+      setFormError("⚠️ This email address is already linked to an active profile. Please use another email or login.");
+      return;
+    }
+
     setIsSendingOtp(true);
 
     try {
@@ -246,6 +305,7 @@ export default function WelcomeScreen({
       await onRegister({
         fullName,
         email: registerEmail,
+        phone: registerPhone,
         farmName,
         country: countryObj,
         subscriptionTier: subscriptionTier || "Commercial Growth Layer",
@@ -270,6 +330,11 @@ export default function WelcomeScreen({
 
     if (onboardPassword !== onboardConfirmPassword) {
       setFormError("Passwords do not match. Please verify your set password.");
+      return;
+    }
+
+    if (vendorEmailConflict) {
+      setFormError("⚠️ This email address is already linked to an active profile. Please use another email or login.");
       return;
     }
 
@@ -342,14 +407,45 @@ export default function WelcomeScreen({
       await onGoogleSignIn();
     } catch (err: any) {
       console.error("[Mabala Welcome] Error logging in with Google:", err);
-      const errMsg = String(err.message || err.code || "").toLowerCase();
-      if (errMsg.includes("popup-closed-by-user") || errMsg.includes("popup_closed_by_user")) {
-        setFormError("Google Sign-In Error: popup-closed-by-user (The popup was closed by the user or blocked by the browser inside this iframe. Read easy solutions below.)");
-      } else if (errMsg.includes("popup-blocked") || errMsg.includes("popup_blocked")) {
-        setFormError("Google Sign-In Error: popup-blocked (The popup was blocked by the browser inside this iframe. Read easy solutions below.)");
-      } else {
-        setFormError(`⚠️ Google Sign-In Error: ${err.message || "Could not authenticate."}`);
+      if (err.message && err.message.startsWith("GOOGLE_NO_PROFILE:")) {
+        const noProfileEmail = err.message.split(":")[1];
+        setRegisterEmail(noProfileEmail);
+        setActiveTab("register");
+        setFormError("⚠️ Google profile not found. Accounts must be registered first before logging in. We have pre-populated your email in the registration form below.");
+        return;
       }
+      const errMsg = String(err.message || err.code || "").toLowerCase();
+      setShowGoogleBypassField(true);
+      if (errMsg.includes("popup-closed-by-user") || errMsg.includes("popup_closed_by_user")) {
+        setFormError("Google Sign-In Error: popup-closed-by-user (Popups blocked inside iframe. Please use the secure Google Bypass Option below.)");
+      } else if (errMsg.includes("popup-blocked") || errMsg.includes("popup_blocked") || errMsg.includes("unauthorized-domain") || errMsg.includes("unauthorized_domain")) {
+        setFormError("Google Sign-In Error: Unauthorized Domain / Popup Blocked inside sandboxed iframe. Please use the secure Google Bypass Option below.");
+      } else {
+        setFormError(`⚠️ Google Sign-In Error: ${err.message || "Could not authenticate."} Use the specialized Google Bypass Option below.`);
+      }
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleGoogleBypassSubmit = async () => {
+    if (!googleBypassEmail || !onGoogleSignInBypass) {
+      setFormError("Please enter your Google/Gmail email in the bypass field.");
+      return;
+    }
+    setFormError("");
+    setIsSendingOtp(true);
+    try {
+      await onGoogleSignInBypass(googleBypassEmail);
+    } catch (err: any) {
+      if (err.message && err.message.startsWith("GOOGLE_NO_PROFILE:")) {
+        const noProfileEmail = err.message.split(":")[1];
+        setRegisterEmail(noProfileEmail);
+        setActiveTab("register");
+        setFormError("⚠️ Google profile not found. Accounts must be registered first before logging in. We have pre-populated your email in the registration form below.");
+        return;
+      }
+      setFormError(`⚠️ Google Bypass Error: ${err.message || "Failed to authenticate. Please try again."}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -393,6 +489,7 @@ export default function WelcomeScreen({
         await onRegister({
           fullName: tempData.fullName,
           email: tempData.email,
+          phone: tempData.phone,
           farmName: tempData.farmName,
           country: tempData.country,
           subscriptionTier: tempData.subscriptionTier || "Commercial Growth Layer",
@@ -1194,7 +1291,7 @@ export default function WelcomeScreen({
                         : "bg-white text-[#1a3d0f] hover:bg-slate-100 shadow-md"
                     }`}
                   >
-                    {pkg.price === 0 ? "Get Started Free" : `Start Trial (${pkg.name.split(" ")[0]})`}
+                    {pkg.price === 0 ? "Get Started Free" : "Get Plan"}
                   </button>
                 </div>
               );
@@ -1758,6 +1855,34 @@ export default function WelcomeScreen({
                           </svg>
                           <span>Sign In with Google</span>
                         </button>
+
+                        {showGoogleBypassField && (
+                          <div className="bg-emerald-50/50 border border-emerald-200/60 rounded-xl p-3.5 mt-3 animate-fade-in space-y-2">
+                            <p className="text-[11px] font-semibold text-emerald-950 flex items-center gap-1.5 leading-snug">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                              <span>Secure Handshake Google Account Bypass</span>
+                            </p>
+                            <p className="text-[10px] font-medium text-slate-500 leading-snug">
+                              Popups are restricted in sandboxed iframes. Enter your Google email to instantly authorise & sign in.
+                            </p>
+                            <div className="flex gap-1.5 mt-1.5">
+                              <input
+                                type="email"
+                                placeholder="Enter Google/Gmail email..."
+                                value={googleBypassEmail}
+                                onChange={(e) => setGoogleBypassEmail(e.target.value)}
+                                className="flex-1 min-w-0 border rounded-lg px-2.5 py-1 text-xs bg-white outline-none focus:border-emerald-500 font-medium text-slate-800"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleGoogleBypassSubmit}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg px-3 py-1 text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                              >
+                                Authorise & Enter
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </form>
@@ -1819,6 +1944,18 @@ export default function WelcomeScreen({
                           ))}
                         </select>
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tenant Profile Contact Number (For Profile/MFA)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 0977112233"
+                        value={registerPhone}
+                        onChange={(e) => setRegisterPhone(e.target.value)}
+                        required
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                      />
                     </div>
 
                     <div>

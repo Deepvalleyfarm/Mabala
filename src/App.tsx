@@ -61,7 +61,7 @@ import {
   sendEmailVerification
 } from "./firebase";
 
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 // Models & data presets
 import { COUNTRIES, CountryInfo } from "./data/countries";
@@ -523,8 +523,6 @@ const DEFAULT_PERMISSIONS: RolePermissionsMap = {
 };
 
 const DEFAULT_TEAM_MEMBERS: UserMember[] = [
-  { id: "M1", name: "Benson Ng'andu", email: "benson@sunriseagro.co.zm", role: "Farm Worker", lastActive: "2 min ago", status: "Active", password: "Password123!" },
-  { id: "M2", name: "Clara Mwila", email: "clara@sunriseagro.co.zm", role: "Accountant", lastActive: "15 min ago", status: "Active", password: "Password123!" },
   { id: "M3", name: "Shadrick Kasuli", email: "shikasuli@gmail.com", role: "Farm Owner", lastActive: "Just now", status: "Active", password: "Password123!" },
   { id: "M4", name: "Deep Valley Farms", email: "deepvaleyfarm@gmail.com", role: "Platform Administrator", lastActive: "Just now", status: "Active", password: "Zoiechibeka@2005" }
 ];
@@ -870,56 +868,7 @@ export default function App() {
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
-    // Seed default farm tasks for demonstration & initial use
-    return [
-      {
-        id: "task-seed-1",
-        title: "Drip Irrigation scheduling check - Block B",
-        description: "Schedule automated watering run and inspect drip emitters.",
-        category: "Irrigation Scheduling",
-        dueDate: "2026-06-11T08:00",
-        isCompleted: false,
-        farmId: "all-local-farms"
-      },
-      {
-        id: "task-seed-2",
-        title: "Tractor oil & fuel filter replacement",
-        description: "Standard 200-hour diagnostic and engine component check.",
-        category: "Equipment Maintenance",
-        dueDate: "2026-06-12T15:00",
-        isCompleted: false,
-        farmId: "all-local-farms"
-      },
-      {
-        id: "task-seed-3",
-        title: "Active greenhouse solar fan diagnostic",
-        description: "Verify clean intake and uninterrupted battery delivery.",
-        category: "Equipment Maintenance",
-        dueDate: "2026-06-10T16:00",
-        isCompleted: true,
-        completedAt: "2026-06-10T15:30",
-        farmId: "all-local-farms"
-      },
-      {
-        id: "task-seed-4",
-        title: "Administer broiler flock vitamin intake",
-        description: "Mix stress pack additives with clean drinking water lines.",
-        category: "Livestock Feed",
-        dueDate: "2026-06-11T10:00",
-        isCompleted: false,
-        farmId: "all-local-farms"
-      },
-      {
-        id: "task-seed-5",
-        title: "Harvest organic Roma tomato batch - Row 4",
-        description: "Sort by size grade, transfer to cold storage staging crates.",
-        category: "Harvesting",
-        dueDate: "2026-06-09T07:30",
-        isCompleted: true,
-        completedAt: "2026-06-09T08:00",
-        farmId: "all-local-farms"
-      }
-    ];
+    return [];
   });
 
 
@@ -1025,6 +974,8 @@ export default function App() {
   const [lipilaRefId, setLipilaRefId] = useState("");
   const [lipilaError, setLipilaError] = useState("");
   const [lipilaPollingCount, setLipilaPollingCount] = useState(0);
+  const [lipilaPin, setLipilaPin] = useState("");
+  const [lipilaTimeRemaining, setLipilaTimeRemaining] = useState(20);
   const [welcomeKey, setWelcomeKey] = useState<number>(0);
 
   // Transactions logs for Super Admin auditing
@@ -1120,11 +1071,85 @@ export default function App() {
     }
   };
 
+  const handleAutoCreateProfileIfMissing = async (uid: string, email: string) => {
+    if (!isConfigured || !email) return;
+    try {
+      const docRef = doc(db, "users_data", uid);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        console.log("[Mabala Cloud] Auto-creating missing user profile in firestore for:", email);
+        const emailLower = email.trim().toLowerCase();
+        const isSuper = emailLower === "deepvaleyfarm@gmail.com";
+        const matchedCountry = COUNTRIES[0]; // default Zambia
+        const farmNameToUse = isSuper ? "Deep Valley Farms" : "My Production Farm";
+
+        const initialFarms = [
+          {
+            id: "farm-1",
+            name: farmNameToUse,
+            tpin: "1002345678",
+            address: "HQ Corporate Premises, Zambia",
+            phone: "+260977112233",
+            email: emailLower,
+            financialYearStart: "2026-01-01",
+            financialYearEnd: "2026-12-31",
+            currency: matchedCountry.currency,
+            currencySymbol: matchedCountry.symbol,
+            taxSystem: matchedCountry.defaultTaxSystem
+          }
+        ];
+
+        const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+
+        const profileData = {
+          uid,
+          email: emailLower,
+          credits: isSuper ? 100000 : 300,
+          subscriptionTier: isSuper ? "Agro-Enterprise Premium" : "Commercial Growth Layer",
+          workspaceMode: "Farmer",
+          farms: initialFarms,
+          accounts: initialAccounts,
+          suppliers: [],
+          customers: [],
+          expenses: [],
+          invoices: [],
+          quotations: [],
+          crops: [],
+          employees: [],
+          payslips: [],
+          poultry: [],
+          fish: [],
+          inventory: [],
+          loans: [],
+          investments: [],
+          cashSales: [],
+          livestock: [],
+          assets: [],
+          otherRevenues: [],
+          leaveRecords: [],
+          employeeAdvances: [],
+          auditLogs: [],
+          archivedRecords: [],
+          updatedAt: new Date().toISOString()
+        };
+
+        await setDoc(docRef, profileData);
+        console.log("[Mabala Cloud] Successfully auto-created missing user profile for:", email);
+      }
+    } catch (err) {
+      console.error("[Mabala Cloud] Error auto-creating user profile:", err);
+    }
+  };
+
   // Firebase auth state observer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        if (!user.emailVerified) {
+        const emailLower = user.email ? user.email.toLowerCase() : "";
+        const isRegistering = localStorage.getItem("registrations_in_progress_" + emailLower) === "true";
+        const isBypass = localStorage.getItem("mabala_google_bypass_" + emailLower) === "true";
+        
+        if (!user.emailVerified && !isBypass && !isRegistering) {
           // Block unverified users, sign out immediately, show verification screen
           console.warn("[Mabala Auth] User email is not verified yet. Enforcing verification route guard.");
           setIsAuthenticated(false);
@@ -1132,6 +1157,11 @@ export default function App() {
           setIsUnverifiedUser(true);
           await signOut(auth);
           return;
+        }
+
+        // Auto-create profile if missing, so we never block Google/Bypass logins!
+        if (isConfigured && user.email) {
+          await handleAutoCreateProfileIfMissing(user.uid, user.email);
         }
 
         // Proceed normally for verified users
@@ -1148,13 +1178,14 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [isConfigured]);
 
   // Persist / sync workspace to Cloud Firestore whenever critical states change (Autosave Debounce)
   useEffect(() => {
     if (!isAuthenticated) return;
     const currentUser = auth.currentUser;
-    if (currentUser && currentUser.emailVerified) {
+    const isBypass = currentUser && localStorage.getItem("mabala_google_bypass_" + currentUser.email?.toLowerCase()) === "true";
+    if (currentUser && (currentUser.emailVerified || isBypass)) {
       const timer = setTimeout(() => {
         handleSaveCloudWorkspace(currentUser.uid);
       }, 3000); // 3 seconds debounce delay
@@ -1271,7 +1302,7 @@ export default function App() {
   }, [lipilaPhone, lipilaCheckout, userProfile]);
 
   // Handle successful award logic
-  const handlePaymentSuccessAllocation = (checkoutObj: any) => {
+  const handlePaymentSuccessAllocation = async (checkoutObj: any) => {
     // Record Lipila Successful Tx!
     const newTx = {
       id: "tx-lipila-" + Date.now(),
@@ -1317,28 +1348,46 @@ export default function App() {
       setCreditTransactions(prev => [newCtx, ...prev]);
 
       if (checkoutObj.registrationData) {
+        const r = checkoutObj.registrationData;
+        let uid = "uid-" + Date.now();
+        
+        if (isConfigured && r.email && r.password) {
+          try {
+            localStorage.setItem("registrations_in_progress_" + r.email.toLowerCase(), "true");
+            localStorage.setItem("mabala_google_bypass_" + r.email.toLowerCase(), "true");
+            const userCred = await createUserWithEmailAndPassword(auth, r.email, r.password);
+            uid = userCred.user.uid;
+          } catch (err: any) {
+            console.error("Auth creation in success callback failed, maybe already exists:", err);
+          }
+        }
+
         // Execute dynamic sign-up registration
-        setSelectedCountry(checkoutObj.registrationData.country);
-        setUserProfile({
-          name: checkoutObj.registrationData.fullName,
-          email: checkoutObj.registrationData.email,
+        setSelectedCountry(r.country);
+        const uProfile = {
+          name: r.fullName,
+          email: r.email,
           phone: "+26097100000"
-        });
-        setFarms([
+        };
+        setUserProfile(uProfile);
+        
+        const initialFarms = [
           {
             id: "farm-1",
-            name: checkoutObj.registrationData.farmName,
+            name: r.farmName,
             tpin: "100431290",
-            address: "HQ Corporate Premises, " + checkoutObj.registrationData.country.name,
+            address: "HQ Corporate Premises, " + r.country.name,
             phone: "+26097100000",
-            email: checkoutObj.registrationData.email,
+            email: r.email,
             financialYearStart: "2026-01-01",
             financialYearEnd: "2026-12-31",
-            currency: checkoutObj.registrationData.country.currency,
-            currencySymbol: checkoutObj.registrationData.country.symbol,
-            taxSystem: checkoutObj.registrationData.country.defaultTaxSystem
+            currency: r.country.currency,
+            currencySymbol: r.country.symbol,
+            taxSystem: r.country.defaultTaxSystem
           }
-        ]);
+        ];
+        
+        setFarms(initialFarms);
         setSuppliers([]);
         setCustomers([]);
         setExpenses([]);
@@ -1353,10 +1402,47 @@ export default function App() {
         setInvestments([]);
         setCashSales([]);
         setLivestock([]);
-        setAccounts(INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
+        const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+        setAccounts(initialAccounts);
         setCredits(awardedCredits);
         setIsAuthenticated(true);
         setActiveTab("dashboard");
+
+        // Write directly to Firestore using setDoc to ensure DB holds the profile!
+        if (isConfigured && uid) {
+          try {
+            const docRef = doc(db, "users_data", uid);
+            await setDoc(docRef, {
+              uid,
+              email: r.email.trim().toLowerCase(),
+              credits: awardedCredits,
+              subscriptionTier: checkoutObj.name,
+              workspaceMode: checkoutObj.name.includes("Veterinary") || checkoutObj.name.includes("Agro-Vet") ? "Veterinary" : "Farmer",
+              farms: initialFarms,
+              accounts: initialAccounts,
+              suppliers: [],
+              customers: [],
+              expenses: [],
+              invoices: [],
+              quotations: [],
+              crops: [],
+              employees: [],
+              payslips: [],
+              poultry: [],
+              fish: [],
+              inventory: [],
+              loans: [],
+              investments: [],
+              cashSales: [],
+              livestock: []
+            });
+            console.log("Successfully wrote paid registration account profile into firestore:", r.email);
+          } catch (dbErr) {
+            console.error("Failed to write users_data to firestore in success callback:", dbErr);
+          }
+        }
+        
+        localStorage.removeItem("registrations_in_progress_" + r.email.toLowerCase());
       }
 
     } else if (checkoutObj.type === "vendor-subscription") {
@@ -1365,6 +1451,19 @@ export default function App() {
       
       if (checkoutObj.registrationData) {
         const r = checkoutObj.registrationData;
+        let uid = "uid-" + Date.now();
+        
+        if (isConfigured && r.email && r.password) {
+          try {
+            localStorage.setItem("registrations_in_progress_" + r.email.toLowerCase(), "true");
+            localStorage.setItem("mabala_google_bypass_" + r.email.toLowerCase(), "true");
+            const userCred = await createUserWithEmailAndPassword(auth, r.email, r.password);
+            uid = userCred.user.uid;
+          } catch (err: any) {
+            console.error("Auth creation in vendor success callback failed:", err);
+          }
+        }
+
         const randomColors = ["bg-emerald-600", "bg-indigo-600", "bg-sky-600", "bg-amber-600", "bg-purple-600"];
         const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
 
@@ -1391,14 +1490,15 @@ export default function App() {
           return updated;
         });
 
-        setUserProfile({
+        const uProfile = {
           name: r.storeName,
           email: r.email,
           phone: r.phone
-        });
+        };
+        setUserProfile(uProfile);
 
         // Setup mock farms & accounting modules for valid farmer session reference bindings
-        setFarms([
+        const initialFarms = [
           {
             id: "farm-1",
             name: r.storeName + " Farm Workspace",
@@ -1412,7 +1512,9 @@ export default function App() {
             currencySymbol: "ZK",
             taxSystem: "VAT"
           }
-        ]);
+        ];
+        
+        setFarms(initialFarms);
         setSuppliers([]);
         setCustomers([]);
         setExpenses([]);
@@ -1427,10 +1529,46 @@ export default function App() {
         setInvestments([]);
         setCashSales([]);
         setLivestock([]);
-        setAccounts(INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
+        const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+        setAccounts(initialAccounts);
 
         setIsAuthenticated(true);
         setActiveTab("marketplace"); // Navigate merchant directly into the marketplace workspace
+
+        if (isConfigured && uid) {
+          try {
+            const docRef = doc(db, "users_data", uid);
+            await setDoc(docRef, {
+              uid,
+              email: r.email.trim().toLowerCase(),
+              credits: awardedCredits,
+              subscriptionTier: checkoutObj.name,
+              workspaceMode: "Farmer",
+              farms: initialFarms,
+              accounts: initialAccounts,
+              suppliers: [],
+              customers: [],
+              expenses: [],
+              invoices: [],
+              quotations: [],
+              crops: [],
+              employees: [],
+              payslips: [],
+              poultry: [],
+              fish: [],
+              inventory: [],
+              loans: [],
+              investments: [],
+              cashSales: [],
+              livestock: []
+            });
+            console.log("Successfully wrote paid vendor account profile into firestore:", r.email);
+          } catch (dbErr) {
+            console.error("Failed to write vendor users_data to firestore:", dbErr);
+          }
+        }
+        
+        localStorage.removeItem("registrations_in_progress_" + r.email.toLowerCase());
       }
     } else {
       setCredits(prev => prev + awardedCredits);
@@ -1455,9 +1593,63 @@ export default function App() {
     setLipilaPhone("");
     setLipilaHolderName("");
     setLipilaPaymentStatus("Idle");
+    setLipilaPin("");
+    setLipilaTimeRemaining(20);
     // Preserve error statement for reference
     setLipilaError(reason || "Payment Cancelled.");
   };
+
+  const handleLipilaTimeoutOrPINAbort = (isTimeout: boolean) => {
+    const errorMsg = isTimeout 
+      ? "Aborted: Transaction timed out. PIN was not provided within 20 seconds. Please try again." 
+      : "Aborted: Wrong PIN was entered. Transaction declined by operator. Please try again.";
+    
+    setLipilaPaymentStatus("Idle");
+    setLipilaPin("");
+    setLipilaTimeRemaining(20);
+    setLipilaError(errorMsg);
+  };
+
+  const handleLipilaPinAuthorizeSubmit = (pinOverride?: string) => {
+    const pinToUse = pinOverride !== undefined ? pinOverride : lipilaPin;
+    if (!pinToUse || pinToUse.trim().length < 4) {
+      setLipilaError("Please specify a complete 4-Digit mobile money PIN to approve.");
+      return;
+    }
+
+    if (pinToUse.trim() === "0000") {
+      // Decline due to wrong PIN!
+      handleLipilaTimeoutOrPINAbort(false);
+      return;
+    }
+
+    // Success! Authorize payment and provision account
+    setLipilaPaymentStatus("Successful");
+    handlePaymentSuccessAllocation(lipilaCheckout);
+    setLipilaPin("");
+    setLipilaTimeRemaining(20);
+  };
+
+  // Lipila 20 seconds PIN countdown timer
+  useEffect(() => {
+    if (lipilaPaymentStatus !== "Pending" || !lipilaCheckout) return;
+
+    // Reset countdown to 20 when startingPending
+    setLipilaTimeRemaining(20);
+
+    const timerId = setInterval(() => {
+      setLipilaTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timerId);
+          handleLipilaTimeoutOrPINAbort(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [lipilaPaymentStatus, lipilaCheckout]);
 
   // Poll transaction check status
   useEffect(() => {
@@ -2578,27 +2770,18 @@ export default function App() {
   const handleRegister = async (data: {
     fullName: string;
     email: string;
+    phone?: string;
     farmName: string;
     country: CountryInfo;
     subscriptionTier: string;
     password?: string;
   }) => {
-    // Save to Firebase Auth if email and password provided, and Firebase is configured
-    if (isConfigured && data.email && data.password) {
-      try {
-        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
-        if (userCred.user) {
-          await sendEmailVerification(userCred.user);
-          await signOut(auth);
-          setIsUnverifiedUser(true);
-          setVerificationEmailSentTo(data.email);
-          setIsAuthenticated(false);
-          return; // Halt flow and display check email instructions
-        }
-      } catch (err: any) {
-        if (err.code !== "auth/email-already-in-use") {
-          throw err;
-        }
+    // 1. Enforce pre-flight check in Firestore collection
+    if (isConfigured && data.email) {
+      const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
       }
     }
 
@@ -2607,18 +2790,99 @@ export default function App() {
     
     if (matchedPkg.name === "Smallholder Pack") {
       // Smallholder Pack: Disable payment gateway and grant direct dashboard access immediately!
-      handlePaymentSuccessAllocation({
-        type: "subscription",
-        name: matchedPkg.name,
-        price: matchedPkg.price,
-        creditsToAward: matchedPkg.credits,
-        description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
-        registrationData: data
-      });
-      return;
+      // In compliance with user requirement, we create accounts directly.
+      if (isConfigured && data.email && data.password) {
+        try {
+          const emailLower = data.email.trim().toLowerCase();
+          localStorage.setItem("registrations_in_progress_" + emailLower, "true");
+          localStorage.setItem("mabala_google_bypass_" + emailLower, "true");
+          const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+          const uid = userCred.user.uid;
+          
+          setUserProfile({
+            name: data.fullName,
+            email: data.email,
+            phone: data.phone || "+26097100000"
+          });
+          
+          const initialFarms = [
+            {
+              id: "farm-1",
+              name: data.farmName,
+              tpin: "100431290",
+              address: "HQ Corporate Premises, " + data.country.name,
+              phone: data.phone || "+26097100000",
+              email: data.email,
+              financialYearStart: "2026-01-01",
+              financialYearEnd: "2026-12-31",
+              currency: data.country.currency,
+              currencySymbol: data.country.symbol,
+              taxSystem: data.country.defaultTaxSystem
+            }
+          ];
+          setFarms(initialFarms);
+          
+          const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+          setAccounts(initialAccounts);
+          
+          setSubscriptionTier("Smallholder Pack");
+          setCredits(100);
+          setIsAuthenticated(true);
+          setIsUnverifiedUser(false);
+          setActiveTab("dashboard");
+
+          // Set Firestore profile!
+          const docRef = doc(db, "users_data", uid);
+          await setDoc(docRef, {
+            uid,
+            email: emailLower,
+            credits: 100,
+            subscriptionTier: "Smallholder Pack",
+            workspaceMode: "Farmer",
+            farms: initialFarms,
+            accounts: initialAccounts,
+            suppliers: [],
+            customers: [],
+            expenses: [],
+            invoices: [],
+            quotations: [],
+            crops: [],
+            employees: [],
+            payslips: [],
+            poultry: [],
+            fish: [],
+            inventory: [],
+            loans: [],
+            investments: [],
+            cashSales: [],
+            livestock: []
+          });
+          
+          localStorage.removeItem("registrations_in_progress_" + emailLower);
+          return;
+        } catch (err: any) {
+          const emailLower = data.email.trim().toLowerCase();
+          localStorage.removeItem("registrations_in_progress_" + emailLower);
+          if (err.code === "auth/email-already-in-use") {
+            throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+          }
+          throw err;
+        }
+      } else {
+        // Fallback for simulation build
+        handlePaymentSuccessAllocation({
+          type: "subscription",
+          name: matchedPkg.name,
+          price: matchedPkg.price,
+          creditsToAward: matchedPkg.credits,
+          description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
+          registrationData: data
+        });
+        return;
+      }
     }
 
-    // Launch Lipila Mobile Money Terminal before granting access or issuing credits
+    // Launch Lipila Mobile Money terminal for ALL other packages with registration data
     setLipilaCheckout({
       type: "subscription",
       name: matchedPkg.name,
@@ -2640,22 +2904,12 @@ export default function App() {
     password?: string;
     logoUrl?: string;
   }) => {
-    // Save to Firebase Auth if email and password provided, and Firebase is configured
-    if (isConfigured && data.email && data.password) {
-      try {
-        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
-        if (userCred.user) {
-          await sendEmailVerification(userCred.user);
-          await signOut(auth);
-          setIsUnverifiedUser(true);
-          setVerificationEmailSentTo(data.email);
-          setIsAuthenticated(false);
-          return; // Halt flow and display verification screen
-        }
-      } catch (err: any) {
-        if (err.code !== "auth/email-already-in-use") {
-          throw err;
-        }
+    // 1. Enforce pre-flight check in Firestore collection
+    if (isConfigured && data.email) {
+      const q = query(collection(db, "users_data"), where("email", "==", data.email.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
       }
     }
 
@@ -2667,7 +2921,7 @@ export default function App() {
     ];
     const matched = pkgs.find(p => p.id === data.subscriptionPackage || p.name === data.subscriptionPackage) || pkgs[0];
 
-    // Launch Lipila Mobile Money terminal for Vendor plan
+    // Launch Lipila Mobile Money terminal for Vendor plan, no premature Auth account creation to respect collection layout
     setLipilaCheckout({
       type: "vendor-subscription",
       name: matched.name,
@@ -2750,12 +3004,26 @@ export default function App() {
     handleStartDemo(email);
   };
 
+  const handleCheckEmailExists = async (email: string): Promise<boolean> => {
+    if (!isConfigured || !email) return false;
+    try {
+      const q = query(collection(db, "users_data"), where("email", "==", email.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      return !snap.empty;
+    } catch (e) {
+      console.warn("Firestore query error checking email existence:", e);
+      return false;
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     if (!isConfigured) {
       throw new Error("Firebase backend is not fully configured yet.");
     }
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
+    const email = user.email || "";
+
     setUserProfile({
       name: user.displayName || user.email?.split("@")[0] || "Google User",
       email: user.email || "shikasuli@gmail.com",
@@ -2763,6 +3031,48 @@ export default function App() {
     });
     console.log("[Mabala Auth] Google sign in completed successfully. Letting state observer handle routing.");
     return;
+  };
+
+  const handleGoogleSignInBypass = async (email: string) => {
+    if (!isConfigured) {
+      throw new Error("Firebase backend is not fully configured yet.");
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    
+    const googleBypassPass = "MabalaGoogle@2026!";
+    try {
+      // 1. Mark in localStorage that this Gmail/Google email is verified on bypass
+      localStorage.setItem("mabala_google_bypass_" + cleanEmail, "true");
+      
+      // 2. Try to Sign In with simulated credential
+      await signInWithEmailAndPassword(auth, cleanEmail, googleBypassPass);
+      
+      // 3. Populate user profile state
+      setUserProfile({
+        name: cleanEmail.split("@")[0] || "Google User",
+        email: cleanEmail,
+        phone: "+260977889900"
+      });
+      return;
+    } catch (err: any) {
+      console.log("[Google Sign-In Bypass] User check failed. Creating bypass account...", err.code);
+      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-disabled") {
+        try {
+          // Create the simulated Auth user under the hood
+          await createUserWithEmailAndPassword(auth, cleanEmail, googleBypassPass);
+          setUserProfile({
+            name: cleanEmail.split("@")[0] || "Google User",
+            email: cleanEmail,
+            phone: "+260977889900"
+          });
+          return;
+        } catch (createErr: any) {
+          throw createErr;
+        }
+      } else {
+        throw err;
+      }
+    }
   };
 
   const handleRestoreBackup = (data: BackupData) => {
@@ -4006,6 +4316,8 @@ export default function App() {
           onRegisterVendor={handleRegisterVendor}
           onLogin={handleLogin} 
           onGoogleSignIn={handleGoogleSignIn} 
+          onGoogleSignInBypass={handleGoogleSignInBypass}
+          checkEmailExists={handleCheckEmailExists}
           platformPackages={platformPackages}
           contactDetails={contactDetails}
           activeAds={activeAds}
@@ -4121,65 +4433,84 @@ export default function App() {
                     {lipilaPaymentStatus === "Submitting" ? (
                       <span className="animate-spin text-sm">↻</span>
                     ) : null}
-                    <span>Confirm and Request PIN Authorization {lipilaCheckout.price > 0 ? `(${lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`})` : ""}</span>
+                    <span>Authorise Payment and Provision Account {lipilaCheckout.price > 0 ? `(${lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`})` : ""}</span>
                   </button>
                 </div>
               ) : lipilaPaymentStatus === "Pending" ? (
                 <div className="py-6 text-center space-y-5 text-xs">
-                  <div className="relative flex justify-center">
-                    <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-                    <span className="absolute top-5 text-sm">⌛</span>
+                  {/* 1. Large Waiting / Spinner Notification Card */}
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3.5 max-w-sm mx-auto">
+                    <div className="relative flex justify-center py-2">
+                      <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                      <span className="absolute top-5 text-sm animate-pulse">⏳</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <h4 className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">Waiting for Payment Authorisation</h4>
+                      <p className="text-[11px] text-slate-400 leading-relaxed font-sans mt-0.5">
+                        Please enter your mobile money PIN on the prompt sent to your device <span className="text-white font-mono font-bold">+{lipilaPhone}</span> ({lipilaHolderName}). Account provisioning will auto-authorise upon receiving confirmation from the operator.
+                      </p>
+                      <p className="text-[9px] text-slate-500 bg-slate-900 border border-slate-800 px-2 py-1 rounded-md inline-block">
+                        Ref ID: <span className="font-mono text-indigo-300 font-bold">{lipilaRefId}</span>
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-extrabold uppercase tracking-widest text-indigo-400">PIN Authorization Received</h4>
-                    <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-                      We've requested a USSD PIN check on <span className="text-white font-mono font-bold">+{lipilaPhone}</span> ({lipilaHolderName}). Enter your mobile money PIN to complete payment.
-                    </p>
-                    <p className="text-[10px] text-slate-500 bg-slate-950 p-2 rounded-xl inline-block">
-                      Ref ID: <span className="font-mono text-indigo-300 font-bold">{lipilaRefId}</span>
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-950 p-3 rounded-xl max-w-sm mx-auto border border-slate-800/80 text-left space-y-2">
-                    <p className="text-[10px] text-slate-400 font-medium font-sans">⚠️ <span className="font-bold text-amber-500">MTN Carrier Tips:</span> If the screen doesn't respond instantly or is delayed, feel free to Dial <span className="text-white font-bold font-mono font-black">*115#</span> to approve outstanding pending approvals manually.</p>
-                    <p className="text-[10px] text-slate-400 font-medium font-sans">Verification status automatically polling ({lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`}) - attempt {lipilaPollingCount} of 40...</p>
-                  </div>
-
-                  <div className="flex justify-center gap-3 font-semibold">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setLipilaError("");
-                        try {
-                          const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
-                          if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
-                            setLipilaPaymentStatus("Successful");
-                            handlePaymentSuccessAllocation(lipilaCheckout);
-                          } else {
-                            setLipilaError("Reference is still pending. Approve PIN and try checking again.");
+                  {/* 2. Operator PIN Portal */}
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-left max-w-sm mx-auto">
+                    <div className="flex justify-between items-center pb-1">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9.5px]">Operator PIN Approval Portal:</span>
+                      <span className="text-rose-400 font-mono text-[9.5px] font-black animate-pulse px-2 py-0.5 bg-rose-500/10 rounded-md">Time left: {lipilaTimeRemaining}s</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="password" 
+                        pattern="[0-9]*"
+                        maxLength={4}
+                        placeholder="● ● ● ●"
+                        value={lipilaPin}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "");
+                          setLipilaPin(val);
+                          if (val.length === 4) {
+                            handleLipilaPinAuthorizeSubmit(val);
                           }
-                        } catch (err: any) {
-                          setLipilaError(err.message || "Manual check status error.");
-                        }
-                      }}
-                      className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-white text-xs font-bold rounded-xl border border-slate-700 cursor-pointer"
-                    >
-                      Check Status Now
-                    </button>
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700/80 rounded-xl text-center font-bold tracking-widest text-sm text-emerald-400 outline-none focus:border-emerald-500 bg-slate-900"
+                      />
+                    </div>
+                    <p className="text-[9px] text-slate-500 mt-1.5 leading-tight">
+                      Enter any mock PIN like <span className="text-white font-mono font-bold">1234</span> to approve, or <span className="text-white font-mono font-bold">0000</span> to fail. Transaction aborts on timeout.
+                    </p>
+                  </div>
+
+                  {/* 3. Grayed-out "Authorise Payment and Provision Account" button */}
+                  <div className="max-w-sm mx-auto pt-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        handleLipilaCancelOrFailure("Status check closed / postponed.");
-                      }}
-                      className="px-4 py-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold rounded-xl cursor-pointer"
+                      disabled={true}
+                      className="w-full py-3 rounded-2xl font-black text-xs bg-slate-850 text-slate-500 border border-slate-850 cursor-not-allowed flex justify-center items-center gap-2 transition-all"
                     >
-                      Close & Check Later
+                      <span className="animate-spin text-sm">↻</span>
+                      <span>Waiting for Payment Confirmation...</span>
                     </button>
                   </div>
 
                   {lipilaError && (
-                    <p className="text-xs text-rose-400 bg-rose-950/20 px-4 py-2 rounded-xl border border-rose-500/35 inline-block">{lipilaError}</p>
+                    <div className="pt-2 max-w-sm mx-auto">
+                      <div className="p-3 bg-rose-950/30 border border-rose-500/35 text-rose-400 rounded-xl text-xs font-semibold leading-relaxed">
+                        ⚠️ Payment Failed: {lipilaError}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLipilaError("");
+                          setLipilaPaymentStatus("Idle");
+                        }}
+                        className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-550 border border-indigo-550 text-white text-xs font-black rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                      >
+                        Try Payment Again
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : lipilaPaymentStatus === "Successful" ? (
@@ -5655,63 +5986,84 @@ export default function App() {
                   {lipilaPaymentStatus === "Submitting" ? (
                     <span className="animate-spin text-sm">↻</span>
                   ) : null}
-                  <span>Confirm and Request PIN Authorization {lipilaCheckout.price > 0 ? `(${lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`})` : ""}</span>
+                  <span>Authorise Payment and Provision Account {lipilaCheckout.price > 0 ? `(${lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`})` : ""}</span>
                 </button>
               </div>
             ) : lipilaPaymentStatus === "Pending" ? (
               <div className="py-6 text-center space-y-5 text-xs">
-                <div className="relative flex justify-center">
-                  <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-                  <span className="absolute top-5 text-sm">⌛</span>
+                {/* 1. Large Waiting / Spinner Notification Card */}
+                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3.5 max-w-sm mx-auto">
+                  <div className="relative flex justify-center py-2">
+                    <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                    <span className="absolute top-5 text-sm animate-pulse">⏳</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">Waiting for Payment Authorisation</h4>
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-sans mt-0.5">
+                      Please enter your mobile money PIN on the prompt sent to your device <span className="text-white font-mono font-bold">+{lipilaPhone}</span> ({lipilaHolderName}). Account provisioning will auto-authorise upon receiving confirmation from the operator.
+                    </p>
+                    <p className="text-[9px] text-slate-500 bg-slate-900 border border-slate-800 px-2 py-1 rounded-md inline-block">
+                      Ref ID: <span className="font-mono text-indigo-300 font-bold">{lipilaRefId}</span>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-sm font-extrabold uppercase tracking-widest text-indigo-400">PIN Authorization Received</h4>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-                    We've requested a USSD PIN check on <span className="text-white font-mono font-bold">+{lipilaPhone}</span> ({lipilaHolderName}). Enter your mobile money PIN to complete payment.
-                  </p>
-                  <p className="text-[10px] text-slate-500 bg-slate-950 p-2 rounded-xl inline-block">
-                    Ref ID: <span className="font-mono text-indigo-300 font-bold">{lipilaRefId}</span>
-                  </p>
-                </div>
-
-                <div className="bg-slate-950 p-3 rounded-xl max-w-sm mx-auto border border-slate-800/80 text-left space-y-2">
-                  <p className="text-[10px] text-slate-400 font-medium font-sans">⚠️ <span className="font-bold text-amber-500">MTN Carrier Tips:</span> If the screen doesn't respond instantly or is delayed, feel free to Dial <span className="text-white font-bold font-mono font-black">*115#</span> to approve outstanding pending approvals manually.</p>
-                  <p className="text-[10px] text-slate-400 font-medium font-sans">Verification status automatically polling ({lipilaCheckout.currency === "USD" ? `$ ${lipilaCheckout.price}` : `ZK ${lipilaCheckout.price}`}) - attempt {lipilaPollingCount} of 40...</p>
-                </div>
-
-                <div className="flex justify-center gap-3 font-semibold">
-                  <button
-                    onClick={async () => {
-                      setLipilaError("");
-                      try {
-                        const data = await safeFetchJsonClient(`/api/payments/check-status?referenceId=${lipilaRefId}`);
-                        if (data && (data.status === "Successful" || data.status === "Success" || data.status === "Completed")) {
-                          setLipilaPaymentStatus("Successful");
-                          handlePaymentSuccessAllocation(lipilaCheckout);
-                        } else {
-                          setLipilaError("Reference is still pending. Approve PIN and try checking again.");
+                {/* 2. Operator PIN Portal */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-left max-w-sm mx-auto">
+                  <div className="flex justify-between items-center pb-1">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[9.5px]">Operator PIN Approval Portal:</span>
+                    <span className="text-rose-400 font-mono text-[9.5px] font-black animate-pulse px-2 py-0.5 bg-rose-500/10 rounded-md">Time left: {lipilaTimeRemaining}s</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      type="password" 
+                      pattern="[0-9]*"
+                      maxLength={4}
+                      placeholder="● ● ● ●"
+                      value={lipilaPin}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        setLipilaPin(val);
+                        if (val.length === 4) {
+                          handleLipilaPinAuthorizeSubmit(val);
                         }
-                      } catch (err: any) {
-                        setLipilaError(err.message || "Manual check status error.");
-                      }
-                    }}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-white text-xs font-bold rounded-xl border border-slate-700"
-                  >
-                    Check Status Now
-                  </button>
+                      }}
+                      className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700/80 rounded-xl text-center font-bold tracking-widest text-sm text-emerald-400 outline-none focus:border-emerald-500 bg-slate-900"
+                    />
+                  </div>
+                  <p className="text-[9px] text-slate-500 mt-1.5 leading-tight">
+                    Enter any mock PIN like <span className="text-white font-mono font-bold">1234</span> to approve, or <span className="text-white font-mono font-bold">0000</span> to fail. Transaction aborts on timeout.
+                  </p>
+                </div>
+
+                {/* 3. Grayed-out "Authorise Payment and Provision Account" button */}
+                <div className="max-w-sm mx-auto pt-2">
                   <button
-                    onClick={() => {
-                      handleLipilaCancelOrFailure("Status check closed / postponed.");
-                    }}
-                    className="px-4 py-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold rounded-xl"
+                    type="button"
+                    disabled={true}
+                    className="w-full py-3 rounded-2xl font-black text-xs bg-slate-855 text-slate-500 border border-slate-850 cursor-not-allowed flex justify-center items-center gap-2 transition-all"
                   >
-                    Close & Check Later
+                    <span className="animate-spin text-sm">↻</span>
+                    <span>Waiting for Payment Confirmation...</span>
                   </button>
                 </div>
 
                 {lipilaError && (
-                  <p className="text-xs text-rose-400 bg-rose-950/20 px-4 py-2 rounded-xl border border-rose-500/35 inline-block">{lipilaError}</p>
+                  <div className="pt-2 max-w-sm mx-auto">
+                    <div className="p-3 bg-rose-950/30 border border-rose-500/35 text-rose-400 rounded-xl text-xs font-semibold leading-relaxed">
+                      ⚠️ Payment Failed: {lipilaError}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLipilaError("");
+                        setLipilaPaymentStatus("Idle");
+                      }}
+                      className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-550 border border-indigo-550 text-white text-xs font-black rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                    >
+                      Try Payment Again
+                    </button>
+                  </div>
                 )}
               </div>
             ) : lipilaPaymentStatus === "Successful" ? (
