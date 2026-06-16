@@ -3490,7 +3490,7 @@ export default function LivestockPoultryPanel({
                                 <div className="h-44 w-full bg-white p-2.5 border rounded-xl border-rose-100 mt-1 flex flex-col justify-between">
                                   <div className="w-full h-full text-[9px]">
                                     <ResponsiveContainer width="100%" height="100%">
-                                      <LineChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                                      <LineChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                         <XAxis dataKey="date" stroke="#94a3b8" fontSize={8} minTickGap={5} tickLine={false} />
                                         <YAxis stroke="#475569" fontSize={8} allowDecimals={false} tickLine={false} />
@@ -5901,7 +5901,7 @@ export default function LivestockPoultryPanel({
                                     <div>
                                       <div className="h-60 w-full overflow-hidden text-xs">
                                         <ResponsiveContainer width="100%" height="100%">
-                                          <LineChart data={chartData} margin={{ top: 10, right: 10, left: -24, bottom: 0 }}>
+                                          <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                                             <XAxis dataKey="date" stroke="#64748b" tickStyle={{ fontSize: 9 }} />
                                             <YAxis stroke="#64748b" domain={[0, 100]} tickStyle={{ fontSize: 9 }} />
@@ -6499,7 +6499,7 @@ export default function LivestockPoultryPanel({
                                      </span>
                                      <div className="h-64 w-full bg-white p-1 text-[9px]">
                                        <ResponsiveContainer width="100%" height="100%">
-                                         <LineChart data={chartDataSingle} margin={{ top: 15, right: 15, left: -20, bottom: 5 }}>
+                                         <LineChart data={chartDataSingle} margin={{ top: 15, right: 15, left: 10, bottom: 5 }}>
                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                            <XAxis dataKey="label" stroke="#94a3b8" fontSize={8} tickLine={false} />
                                            <YAxis stroke="#475569" fontSize={8} label={{ value: 'Grams', angle: -90, position: 'insideLeft', offset: 10, fontSize: 8 }} tickLine={false} />

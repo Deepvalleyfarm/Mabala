@@ -1455,7 +1455,7 @@ export default function ReportsPanel({
 
                   return (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={yieldData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+                      <BarChart data={yieldData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
                         <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: 9, fontWeight: "bold" }} />
                         <YAxis stroke="#64748b" style={{ fontSize: 9 }} />
                         <Tooltip />
@@ -1496,7 +1496,7 @@ export default function ReportsPanel({
 
                   return (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={poultryData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+                      <BarChart data={poultryData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
                         <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: 9, fontWeight: "bold" }} />
                         <YAxis stroke="#64748b" style={{ fontSize: 9 }} />
                         <Tooltip />
@@ -1593,7 +1593,7 @@ export default function ReportsPanel({
 
                 return (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={rollingData} margin={{ top: 15, right: 20, left: -20, bottom: 5 }}>
+                    <LineChart data={rollingData} margin={{ top: 15, right: 20, left: 15, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                       <XAxis dataKey="dayLabel" stroke="#94a3b8" style={{ fontSize: 9, fontWeight: "semibold" }} />
                       <YAxis stroke="#94a3b8" style={{ fontSize: 9 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
@@ -1753,7 +1753,7 @@ export default function ReportsPanel({
                         { name: "Forecast M1", Projected: 95000 },
                         { name: "Forecast M2", Projected: 112000 },
                         { name: "Forecast M3", Projected: 124000 },
-                      ]} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+                      ]} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="name" style={{ fontSize: 9, fontWeight: "bold" }} />
                         <YAxis style={{ fontSize: 9 }} />

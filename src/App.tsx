@@ -5112,7 +5112,7 @@ export default function App() {
                     
                     <div className="h-64 mt-2">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <BarChart data={dashboardChartData} margin={{ top: 10, right: 10, left: 15, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                           <XAxis 
                             dataKey="month" 
