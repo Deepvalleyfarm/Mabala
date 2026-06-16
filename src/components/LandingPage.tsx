@@ -585,8 +585,8 @@ export default function LandingPage({
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-            <a href="#privacy" onClick={(e) => { e.preventDefault(); alert("Mabala SaaS Privacy Policy (v2.0 Zambia local compliance enforced) loaded offline successfully."); }} className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
-            <a href="#terms" onClick={(e) => { e.preventDefault(); alert("Mabala SaaS Terms of Service (v2.0 Zambia local compliance enforced) loaded offline successfully."); }} className="hover:text-emerald-400 transition-colors">Terms of Service</a>
+            <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
+            <a href="/terms-of-service.html" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition-colors">Terms of Service</a>
           </div>
 
           {/* Social media connections */}

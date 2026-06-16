@@ -596,7 +596,7 @@ export default function WelcomeScreen({
     if (!contactForm.name || !contactForm.email || !contactForm.message) return;
     
     // Log transmission securely to the destination gate
-    console.log(`[Mabala Secure Mail Gateway] Routing inquiry from ${contactForm.name} (${contactForm.email}) directly to deepvaleyfarm@gmail.com:\n"${contactForm.message}"`);
+    console.log(`[Mabala Secure Mail Gateway] Routing inquiry from ${contactForm.name} (${contactForm.email}) directly to support@mabala.com:\n"${contactForm.message}"`);
     
     setSubmittedContact(true);
     setTimeout(() => {
@@ -1413,7 +1413,7 @@ export default function WelcomeScreen({
               {submittedContact ? (
                 <div className="p-4 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 animate-fade-in text-center space-y-2">
                   <strong className="block text-xs uppercase font-extrabold text-emerald-900">✔ Message Dispatched</strong>
-                  <p className="text-[11px] leading-relaxed text-emerald-700">Your agricultural inquiry has been routed successfully to <strong>deepvaleyfarm@gmail.com</strong> via Mabala Secure Message Link. Expect an official response within 24 operational hours.</p>
+                  <p className="text-[11px] leading-relaxed text-emerald-700">Your agricultural inquiry has been routed successfully to <strong>support@mabala.com</strong> via Mabala Secure Message Link. Expect an official response within 24 operational hours.</p>
                 </div>
               ) : (
                 <>
@@ -1477,9 +1477,9 @@ export default function WelcomeScreen({
             </div>
 
             <div className="flex gap-4 font-bold text-[11px]">
-              <button onClick={() => setShowPolicyModal("privacy")} className="hover:text-white transition cursor-pointer pointer-events-auto">Privacy Policy</button>
+              <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="hover:text-white transition cursor-pointer pointer-events-auto">Privacy Policy</a>
               <span className="text-slate-800">|</span>
-              <button onClick={() => setShowPolicyModal("terms")} className="hover:text-white transition cursor-pointer pointer-events-auto">Terms of Service</button>
+              <a href="/terms-of-service.html" target="_blank" rel="noopener noreferrer" className="hover:text-white transition cursor-pointer pointer-events-auto">Terms of Service</a>
             </div>
 
             <div className="flex gap-3.5">
