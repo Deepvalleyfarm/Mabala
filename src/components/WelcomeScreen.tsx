@@ -1344,11 +1344,11 @@ export default function WelcomeScreen({
               </blockquote>
               <div className="flex items-center gap-3 pt-2">
                 <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-xs uppercase font-sans">
-                  ZK
+                  ZC
                 </span>
                 <div>
-                  <strong className="text-xs text-slate-950 block">Dr. Bwalya Kampamba</strong>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Senior Vet Partner · Lusaka Animal Hospital</span>
+                  <strong className="text-xs text-slate-950 block">Dr. Zoie K Chibeka</strong>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Senior Vet Partner · Deep Valley Animal Care</span>
                 </div>
               </div>
             </div>
@@ -1898,7 +1898,7 @@ export default function WelcomeScreen({
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Full Name</label>
                         <input
                           type="text"
-                          placeholder="Bwalya Kampamba"
+                          placeholder="Zoie Chibeka"
                           value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
                           required

@@ -519,7 +519,7 @@ app.get("/api/payments/lookup", async (req, res) => {
     if (phone === "26097100000" || phone === "260977112233" || phone.endsWith("112233") || phone.endsWith("100000")) {
       resolvedName = "Sula Shikasuli (Farmer Wallet)";
     } else if (phone === "260961888333" || phone.endsWith("888333")) {
-      resolvedName = "Dr. Bwalya Kampamba (Livestock Consultant)";
+      resolvedName = "Dr. Zoie K Chibeka (Livestock Consultant)";
     } else if (phone === "260771555555" || phone.endsWith("555555")) {
       resolvedName = "Benson Ng'andu (Sunrise Operator)";
     } else if (phone === "260971001155" || phone.endsWith("001155")) {
