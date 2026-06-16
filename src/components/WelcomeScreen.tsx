@@ -1254,7 +1254,7 @@ export default function WelcomeScreen({
                     <ul className="space-y-2 text-xs">
                       <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isPopular ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
                         <Zap className="w-3.5 h-3.5 fill-current animate-pulse shrink-0" />
-                        <span>{pkg.credits?.toLocaleString() || "100"} Operations Credits</span>
+                        <span>{pkg.credits?.toLocaleString() || "60"} Operations Credits</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />

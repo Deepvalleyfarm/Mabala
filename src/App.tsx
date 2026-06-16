@@ -1838,7 +1838,7 @@ export default function App() {
     return [];
   });
   const [platformPackages, setPlatformPackages] = useState<any[]>([
-    { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 100, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
+    { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 60, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
     { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
     { id: "pkg-3", name: "Enterprise Suite", duration: "1 Month", credits: 25000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Multi-farm nodes, 10 team users, advanced analytics, dedicated account manager, API access", isActive: true },
     { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true }
@@ -2833,7 +2833,7 @@ export default function App() {
           setAccounts(initialAccounts);
           
           setSubscriptionTier("Smallholder Pack");
-          setCredits(100);
+          setCredits(60);
           setIsAuthenticated(true);
           setIsUnverifiedUser(false);
           setActiveTab("dashboard");
@@ -2843,7 +2843,7 @@ export default function App() {
           await setDoc(docRef, {
             uid,
             email: emailLower,
-            credits: 100,
+            credits: 60,
             subscriptionTier: "Smallholder Pack",
             workspaceMode: "Farmer",
             farms: initialFarms,
@@ -4637,7 +4637,7 @@ export default function App() {
                 }
                 setIsAuthenticated(false);
                 setFarmStatus("ACTIVE");
-                setCredits(100);
+                setCredits(60);
               }}
               className="w-full py-2 bg-slate-800 hover:bg-slate-700 font-extrabold text-xs rounded-xl border border-slate-700 shadow-md transition-all cursor-pointer text-white"
             >
