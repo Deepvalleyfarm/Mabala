@@ -86,12 +86,12 @@ export default function WelcomeScreen({
   ],
   contactDetails = {
     email: "support@mabala.com",
-    phone: "+260 977 112233",
-    address: "Block G, Great East Road, Lusaka, Zambia",
+    phone: "+260 978 070734",
+    address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
     twitter: "https://twitter.com/mabala_saas",
     facebook: "https://facebook.com/mabala_saas",
     linkedin: "https://linkedin.com/company/mabala_saas",
-    whatsapp: "260977112233"
+    whatsapp: "260978070734"
   },
   activeAds = []
 }: WelcomeScreenProps) {
@@ -1549,7 +1549,7 @@ export default function WelcomeScreen({
 
         {/* WHATSAPP FLOATING SUPPORT BUTTON */}
         <a 
-          href={`https://wa.me/${contactDetails.whatsapp || "260977112233"}?text=Hi%2C%20I%27d%20like%20to%20know%20more%20about%20Mabala%20Farm%20Management`} 
+          href={`https://wa.me/${contactDetails.whatsapp || "260978070734"}?text=Hi%2C%20I%27d%20like%20to%20know%20more%20about%20Mabala%20Farm%20Management`} 
           target="_blank" 
           rel="noopener noreferrer" 
           className="fixed bottom-7 right-6 z-50 w-14 h-14 rounded-full bg-[#25D366] flex items-center justify-center shadow-lg hover:shadow-2xl hover:scale-110 active:scale-95 transition-all duration-200 group cursor-pointer"
@@ -1799,20 +1799,19 @@ export default function WelcomeScreen({
 
                     {formError && (
                       <div className="animate-fade-in">
-                        {formError.includes("popup-closed-by-user") || formError.includes("popup-blocked") ? (
+                        {formError.includes("popup-closed-by-user") || formError.includes("popup-blocked") || formError.includes("internal-error") || formError.includes("unauthorized-domain") || formError.includes("auth-domain") ? (
                           <div className="p-3.5 bg-rose-50/90 border border-rose-200 text-rose-950 rounded-xl text-xs font-semibold leading-relaxed space-y-2">
                             <div className="font-bold text-rose-800 flex items-center gap-1">
-                              <span>⚠️ Pop-up Blocked or Closed</span>
+                              <span>⚠️ Google Auth Iframe Restrictions</span>
                             </div>
                             <p className="text-slate-600 font-medium text-[11px] leading-normal">
-                              Because this workspace runs in an <strong>iframe</strong> inside Google AI Studio, your browser may block the Google Sign-In popup or its third-party authentication cookies.
+                              Because this workspace runs inside a sandboxed <strong>iframe</strong> within Google AI Studio, standard third-party popup authentication is heavily restricted by browser sandboxing.
                             </p>
-                            <div className="bg-white/90 p-2.5 rounded-lg border border-rose-100 font-medium text-[11px] space-y-1">
-                              <p className="font-bold text-emerald-800">💡 Easy Resolution Tactics:</p>
-                              <ul className="list-disc pl-4 space-y-1 text-slate-600">
-                                <li>Click the <strong>"Open in New Tab" (Pop out)</strong> button in the top-right corner of the preview toolbar, then click Google Sign-In there. It will work instantly!</li>
-                                <li>Enable pop-ups and accept third-party cookies for this preview.</li>
-                                <li>Alternatively, use the <strong>Mabala Demo Credentials</strong> loaded above for direct login inside the iframe.</li>
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-rose-150 font-medium text-[11px] space-y-1">
+                              <p className="font-bold text-emerald-800">💡 Instant Solutions:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-slate-600 font-medium">
+                                <li>Click the <strong>"Open in New Tab" (Pop out)</strong> button in the top-right corner of the preview toolbar, then log in there. It works instantly!</li>
+                                <li>Alternatively, use the <strong>Secure Handshake Google Account Bypass</strong> field below. Input your Google email and you will be signed in natively.</li>
                               </ul>
                             </div>
                           </div>
@@ -1855,6 +1854,19 @@ export default function WelcomeScreen({
                           </svg>
                           <span>Sign In with Google</span>
                         </button>
+
+                        <div className="text-center mt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowGoogleBypassField(!showGoogleBypassField);
+                              setFormError("");
+                            }}
+                            className="text-[10px] text-emerald-600 hover:text-emerald-700 font-bold underline transition-colors cursor-pointer"
+                          >
+                            {showGoogleBypassField ? "✕ Hide Bypass Google Field" : "🔑 Google login blocked? Click here for Secure Bypass"}
+                          </button>
+                        </div>
 
                         {showGoogleBypassField && (
                           <div className="bg-emerald-50/50 border border-emerald-200/60 rounded-xl p-3.5 mt-3 animate-fade-in space-y-2">
@@ -1950,7 +1962,7 @@ export default function WelcomeScreen({
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tenant Profile Contact Number (For Profile/MFA)</label>
                       <input
                         type="text"
-                        placeholder="e.g. 0977112233"
+                        placeholder="e.g. 0978070734"
                         value={registerPhone}
                         onChange={(e) => setRegisterPhone(e.target.value)}
                         required

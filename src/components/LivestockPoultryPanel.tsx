@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
+import EnterpriseLivestockManager from "./livestock/EnterpriseLivestockManager";
 import { PoultryBatch, LivestockRecord, Supplier, FeedFormula, VaccinationRecord, DefaultVaccineScheduleItem, PoultryHealthEvent, MedicationRegisterItem, EggSale, EggCollection } from "../types";
 import { FeedFormulationBuilder, DEFAULT_FORMULAS } from "./FeedFormulationBuilder";
 import PoultryFinancialDashboard from "./PoultryFinancialDashboard";
@@ -7022,6 +7023,25 @@ export default function LivestockPoultryPanel({
           {/* 3.1 FARMER WORKSPACE (Self-managed mode) */}
           {/* ========================================================= */}
           {livestockMode === "farmer" && (
+            <EnterpriseLivestockManager
+              records={records}
+              currencySymbol={currencySymbol}
+              onAddLivestockRecord={onAddLivestockRecord}
+              onAddLivestockHealthEvent={onAddLivestockHealthEvent}
+              onAddLivestockFeedingLog={onAddLivestockFeedingLog}
+              isReadonly={isReadonly}
+              accounts={accounts}
+              setAccounts={setAccounts}
+              customers={customers}
+              invoices={invoices}
+              onAddInvoice={onAddInvoice}
+              onMarkPaid={onMarkPaid}
+              onDeleteLivestockRecord={onDeleteLivestockRecord}
+              activeFarm={activeFarm}
+            />
+          )}
+
+          {livestockMode === "farmer_legacy" && (
             <div className="space-y-6">
               
               {/* Alert Indicator of deactivated service fees */}

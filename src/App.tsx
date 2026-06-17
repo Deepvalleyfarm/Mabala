@@ -11,6 +11,7 @@ import PayrollPanel from "./components/PayrollPanel";
 import InvoicesPanel from "./components/InvoicesPanel";
 import LivestockPoultryPanel from "./components/LivestockPoultryPanel";
 import AquaculturePanel from "./components/AquaculturePanel";
+import VeterinaryWorkspace from "./components/veterinary/VeterinaryWorkspace";
 import ReportsPanel from "./components/ReportsPanel";
 import AccessControlPanel from "./components/AccessControlPanel";
 import ProfilesPlatformPanel from "./components/ProfilesPlatformPanel";
@@ -537,7 +538,7 @@ export default function App() {
     return {
       name: "Shadrick Kasuli",
       email: "shikasuli@gmail.com",
-      phone: "+260977112233"
+      phone: "+260978070734"
     };
   });
 
@@ -603,17 +604,24 @@ export default function App() {
     const saved = localStorage.getItem("mabala_contact_details");
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed.phone === "+260 977 112233" || parsed.whatsapp === "260977112233" || parsed.address?.includes("Great East Road") || parsed.address === "Block G, Great East Road, Lusaka, Zambia") {
+          parsed.phone = "+260 978 070734";
+          parsed.whatsapp = "260978070734";
+          parsed.address = "Opp Oryx Filling Station, Mumbwa Road, Lusaka West";
+          localStorage.setItem("mabala_contact_details", JSON.stringify(parsed));
+        }
+        return parsed;
       } catch (e) {}
     }
     return {
       email: "support@mabala.com",
-      phone: "+260 977 112233",
-      address: "Block G, Great East Road, Lusaka, Zambia",
+      phone: "+260 978 070734",
+      address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
       twitter: "https://twitter.com/mabala_saas",
       facebook: "https://facebook.com/mabala_saas",
       linkedin: "https://linkedin.com/company/mabala_saas",
-      whatsapp: "260977112233"
+      whatsapp: "260978070734"
     };
   });
 
@@ -706,7 +714,26 @@ export default function App() {
   const [farms, setFarms] = useState<Farm[]>(() => {
     const cached = localStorage.getItem("mabala_farms");
     if (cached) {
-      try { return JSON.parse(cached); } catch (e) {}
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          let modified = false;
+          parsed.forEach(f => {
+            if (f.phone === "+260977112233" || f.phone === "+260 977 112233") {
+              f.phone = "+260978070734";
+              modified = true;
+            }
+            if (f.address === "Great East Road, Lusaka" || f.address === "Stand No 10, Great East Road, Lusaka" || f.address === "Stand No 14, Great East Road, Lusaka") {
+              f.address = "Opp Oryx Filling Station, Mumbwa Road, Lusaka West";
+              modified = true;
+            }
+          });
+          if (modified) {
+            localStorage.setItem("mabala_farms", JSON.stringify(parsed));
+          }
+        }
+        return parsed;
+      } catch (e) {}
     }
     return [
       {
@@ -714,8 +741,8 @@ export default function App() {
         name: "Sunrise Agro-Tech Farms",
         tpin: "1002345678",
         vatNumber: "ZM-123",
-        address: "Great East Road, Lusaka",
-        phone: "+260977112233",
+        address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
+        phone: "+260978070734",
         email: "info@sunriseagro.co.zm",
         financialYearStart: "2026-01-01",
         financialYearEnd: "2026-12-31",
@@ -1088,8 +1115,8 @@ export default function App() {
             id: "farm-1",
             name: farmNameToUse,
             tpin: "1002345678",
-            address: "HQ Corporate Premises, Zambia",
-            phone: "+260977112233",
+            address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
+            phone: "+260978070734",
             email: emailLower,
             financialYearStart: "2026-01-01",
             financialYearEnd: "2026-12-31",
@@ -1259,7 +1286,7 @@ export default function App() {
         if (active) {
           let resolvedName = "";
           const phone = formattedPhone;
-          if (phone === "26097100000" || phone === "260977112233" || phone.endsWith("112233") || phone.endsWith("100000")) {
+          if (phone === "26097100000" || phone === "260978070734" || phone.endsWith("070734") || phone.endsWith("100000")) {
             resolvedName = "Sula Shikasuli (Farmer Wallet)";
           } else if (phone === "260961888333" || phone.endsWith("888333")) {
             resolvedName = "Dr. Zoie K Chibeka (Livestock Consultant)";
@@ -2242,8 +2269,8 @@ export default function App() {
         name: farmNameToUse,
         tpin: "1002345678",
         vatNumber: "ZM-123",
-        address: "Stand No 10, Great East Road, Lusaka",
-        phone: "+260977112233",
+        address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
+        phone: "+260978070734",
         email: emailToUse,
         financialYearStart: "2026-01-01",
         financialYearEnd: "2026-12-31",
@@ -2290,7 +2317,7 @@ export default function App() {
     setUserProfile({
       name: role === "Farmer" ? "Shadrick Kampamba (Farmer)" : role === "Vet Practitioner" ? "Dr. Noah Mulenga (Clinical Vet)" : "Mabala Inputs Store",
       email: demoEmail,
-      phone: "+260977112233"
+      phone: "+260978070734"
     });
 
     const activeFarmName = role === "Farmer" ? "Mabala Demo Corporate Farm" : role === "Vet Practitioner" ? "Lusaka Veterinary Sanctuary" : "Mabala Central Trading Depot";
@@ -2300,8 +2327,8 @@ export default function App() {
         name: activeFarmName,
         tpin: "1002345678",
         vatNumber: "ZM-1234-VAT",
-        address: "Stand No 14, Great East Road, Lusaka",
-        phone: "+260977112233",
+        address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
+        phone: "+260978070734",
         email: demoEmail,
         financialYearStart: "2026-01-01",
         financialYearEnd: "2026-12-31",
@@ -2608,9 +2635,9 @@ export default function App() {
         id: "demo-vendor-1",
         name: "Mabala Demo Inputs & Agronomy",
         category: "Seeds & Agronomy" as any,
-        location: "Great East Rd, Lusaka - 5km",
+        location: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
         distanceKm: 5,
-        phone: "+260 977 112233",
+        phone: "+260 978 070734",
         email: demoEmail,
         subscriptionPackage: "Agro-Vet Clinical Suite",
         status: "Active" as any,
@@ -3808,6 +3835,55 @@ export default function App() {
     });
     setAccounts(updatedAccounts);
     deductCredits(3);
+  };
+
+  const handlePostVeterinaryServiceCharge = (
+    eventType: "Consultation Record" | "Laboratory Test",
+    amount: number,
+    clientName: string,
+    details: string
+  ) => {
+    // 1. Update Accounts: Debit Accounts Receivable (1100) and Credit Vet Clinical Service Revenue (4500)
+    const updatedAccounts = accounts.map(acc => {
+      let balance = acc.balance;
+      if (acc.code === "1100") {
+        balance += amount; // Asset increased by debit
+      }
+      if (acc.code === "4505" || acc.code === "4500") {
+        balance += amount; // Revenue increased by credit
+      }
+      return { ...acc, balance };
+    });
+    setAccounts(updatedAccounts);
+
+    // 2. Insert verified paid Invoice ledger posting record
+    const newInvoice: Invoice = {
+      id: "inv-vet-" + Math.floor(10000 + Math.random() * 90000),
+      invoiceNumber: "VET-INV-" + Math.floor(1000 + Math.random() * 9000),
+      date: new Date().toISOString().split("T")[0],
+      dueDate: new Date().toISOString().split("T")[0],
+      customerName: clientName,
+      taxAmount: 0,
+      subtotal: amount,
+      total: amount,
+      lines: [
+        {
+          description: `${eventType} - ${details}`,
+          quantity: 1,
+          unitPrice: amount,
+          amount: amount
+        }
+      ],
+      status: "Paid",
+      coaDebit: "1100",
+      coaCredit: "4500",
+      farmId: activeFarm?.id || "farm-1"
+    };
+
+    setInvoices(prev => [newInvoice, ...prev]);
+
+    // 3. Write Audit Log
+    writeAuditLog("CREATE", "Veterinary Suite", "Double-Entry Posting", `Automatically posted Service Charge of ${selectedCountry.symbol}${amount} for client ${clientName} (${eventType})`);
   };
 
   const handleAddQuotation = (qt: Quotation) => {
@@ -5407,6 +5483,15 @@ export default function App() {
                 activeFarm={activeFarm}
               />
             )
+          )}
+
+          {activeTab === "veterinary" && (
+            <VeterinaryWorkspace 
+              onAddAuditLog={(action, category, details) => writeAuditLog("CREATE", category, "Veterinary Record", `${action}: ${details}`)}
+              currencySymbol={selectedCountry.symbol}
+              onPostVeterinaryTransaction={handlePostVeterinaryServiceCharge}
+              accounts={accounts}
+            />
           )}
 
           {(activeTab === "livestock" || activeTab === "poultry") && (

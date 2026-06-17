@@ -377,7 +377,7 @@ app.get('/api/payments/lookup', async (req, res) => {
     let resolvedName = "";
     
     // Direct matches for prominent system demo users
-    if (phone === "26097100000" || phone === "260977112233" || phone.endsWith("112233") || phone.endsWith("100000")) {
+    if (phone === "26097100000" || phone === "260978070734" || phone.endsWith("070734") || phone.endsWith("100000")) {
       resolvedName = "Sula Shikasuli (Farmer Wallet)";
     } else if (phone === "260961888333" || phone.endsWith("888333")) {
       resolvedName = "Dr. Zoie K Chibeka (Livestock Consultant)";

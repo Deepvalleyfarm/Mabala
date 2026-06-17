@@ -1644,7 +1644,7 @@ export default function ReportsPanel({
                     name: activeFarm?.name || "My Production Farm",
                     tpin: activeFarm?.tpin || "1002345678",
                     vatNumber: activeFarm?.vatNumber || "ZM-123",
-                    phone: activeFarm?.phone || "+260977112233",
+                    phone: activeFarm?.phone || "+260978070734",
                     email: activeFarm?.email || "manager@localhost.zm",
                     currency: activeFarm?.currency || "ZMW"
                   }

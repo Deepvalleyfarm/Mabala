@@ -16,7 +16,7 @@ import {
 } from "../types";
 
 export const DEMO_SUPPLIERS: Supplier[] = [
-  { id: "S1", name: "Zambia Seed Company (Zamseed)", contactPerson: "Mabvuto Phiri", phone: "+260977112233", email: "sales@zamseed.co.zm", address: "Plot 311A, Cairo Road, Lusaka", tpin: "1002345678", category: "Seeds & Crop" },
+  { id: "S1", name: "Zambia Seed Company (Zamseed)", contactPerson: "Mabvuto Phiri", phone: "+260978070734", email: "sales@zamseed.co.zm", address: "Plot 311A, Cairo Road, Lusaka", tpin: "1002345678", category: "Seeds & Crop" },
   { id: "S2", name: "Tiger Feeds Agro", contactPerson: "Sarah Banda", phone: "+260966445566", email: "info@tigerfeeds.zm", address: "Stand 49, Mwembeshi Road, Lusaka", tpin: "1009876543", category: "Feed supplies" },
   { id: "S3", name: "Aller Aqua Zambia", contactPerson: "Chileshe Mwamba", phone: "+260955998877", email: "zambia@aller-aqua.com", address: "Siavonga Harbour Road, Siavonga", tpin: "1008761234", category: "Aquafeed" },
   { id: "S4", name: "Novatek Animal Feeds", contactPerson: "David Kruyt", phone: "+260977881122", email: "novatek@feed.com.zm", address: "Landless Corner, Chisamba", tpin: "1005544332", category: "Poultry feed" }

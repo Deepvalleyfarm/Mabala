@@ -1299,7 +1299,7 @@ export default function PayrollPanel({
                     {activeFarm?.address || "HQ Plot Area 45, Lusaka, Zambia"}
                   </p>
                   <p className="text-[9px] text-slate-400 font-mono">
-                    TPIN: {activeFarm?.tpin || "1009876543"} • Tel: {activeFarm?.phone || "+260 977 112233"} • Email: {activeFarm?.email || "billing@mabala.co.zm"}
+                    TPIN: {activeFarm?.tpin || "1009876543"} • Tel: {activeFarm?.phone || "+260 978 070734"} • Email: {activeFarm?.email || "billing@mabala.co.zm"}
                   </p>
                 </div>
 

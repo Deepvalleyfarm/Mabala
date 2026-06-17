@@ -19,7 +19,8 @@ import {
   Coins,
   Package,
   History,
-  Store
+  Store,
+  Heart
 } from "lucide-react";
 import { PredefinedRole, OptionalModulePermission } from "../types";
 
@@ -52,6 +53,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "veterinary", label: "Veterinary Suite", icon: Heart },
     { id: "marketplace", label: "Vendor Marketplace", icon: Store },
     { id: "accounts", label: "Chart of Accounts", icon: BookOpen },
     { id: "expenses", label: "Expenses Ledger", icon: Receipt },
@@ -76,8 +78,23 @@ export default function Sidebar({
     menuItems.push({ id: "platform-admin", label: "🏢 Switch to Platform Admin", icon: Settings });
   }
 
-  // Dynamically filter menu items based on assigned role permissions
+  // Dynamically filter menu items based on assigned role permissions and workspace mode selection
   const allowedMenuItems = menuItems.filter((item) => {
+    // If we are in Veterinary isolation mode, only show vet, profile, admin, backup and audit logging tabs 
+    if (workspaceMode === "Veterinary") {
+      return (
+        item.id === "veterinary" ||
+        item.id === "profile" ||
+        item.id === "platform-admin" ||
+        item.id === "backup-restore" ||
+        item.id === "audit-archive" ||
+        item.id === "permissions"
+      );
+    }
+
+    // Otherwise standard farmer mode, hide veterinary tab from farmers
+    if (item.id === "veterinary") return false;
+
     if (
       item.id === "dashboard" || 
       item.id === "permissions" || 

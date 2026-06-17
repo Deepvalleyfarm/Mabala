@@ -129,12 +129,12 @@ export default function ProfilesPlatformPanel({
   onTriggerCheckout,
   contactDetails = {
     email: "support@mabala.com",
-    phone: "+260 977 112233",
-    address: "Block G, Great East Road, Lusaka, Zambia",
+    phone: "+260 978 070734",
+    address: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
     twitter: "https://twitter.com/mabala_saas",
     facebook: "https://facebook.com/mabala_saas",
     linkedin: "https://linkedin.com/company/mabala_saas",
-    whatsapp: "260977112233"
+    whatsapp: "260978070734"
   },
   setContactDetails = () => {},
   activeAds = [],
