@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import WelcomeScreen from "./components/WelcomeScreen";
 import AiChatbot from "./components/AiChatbot";
+import AnimalRegistrationWizard from "./components/AnimalRegistrationWizard";
 
 // Sub-panels
 import AccountsPanel from "./components/AccountsPanel";
@@ -62,7 +63,7 @@ import {
   sendEmailVerification
 } from "./firebase";
 
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
 
 // Models & data presets
 import { COUNTRIES, CountryInfo } from "./data/countries";
@@ -545,10 +546,15 @@ export default function App() {
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentSessionId] = useState(() => Math.random().toString(36).substring(2) + Date.now().toString(36));
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [isUnverifiedUser, setIsUnverifiedUser] = useState<boolean>(false);
   const [verificationEmailSentTo, setVerificationEmailSentTo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [weatherAlerts, setWeatherAlerts] = useState<any[]>([]);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [isAnimalWizardOpen, setIsAnimalWizardOpen] = useState(false);
   const [csvPreselectedType, setCsvPreselectedType] = useState<"expenses" | "crops" | "livestock" | null>(null);
 
   const handleGotoCsvImport = (type: "expenses" | "crops" | "livestock") => {
@@ -1179,18 +1185,31 @@ export default function App() {
     }
   };
 
-  // Firebase auth state observer
+  // Firebase auth state observer & Active Session Enforcement
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const emailLower = user.email ? user.email.toLowerCase() : "";
-        const isRegistering = localStorage.getItem("registrations_in_progress_" + emailLower) === "true";
-        // Skip email verification block to let users log in directly
         const isBypass = true; // Always bypass to satisfy user requested login convenience
 
         // Auto-create profile if missing, so we never block Google/Bypass logins!
         if (isConfigured && user.email) {
           await handleAutoCreateProfileIfMissing(user.uid, user.email);
+        }
+
+        // Enforce Single-Session check on login: write currentSessionId to Firestore
+        if (isConfigured && user.email) {
+          try {
+            await setDoc(doc(db, "active_sessions", emailLower), {
+              sessionId: currentSessionId,
+              email: emailLower,
+              uid: user.uid,
+              lastActive: new Date().toISOString()
+            });
+            console.log(`[Mabala Session] Registered active session: ${currentSessionId} for ${emailLower}`);
+          } catch (err) {
+            console.warn("[Mabala Session] Warning setting active session in Firestore:", err);
+          }
         }
 
         // Proceed normally for verified users
@@ -1207,7 +1226,71 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [isConfigured]);
+  }, [isConfigured, currentSessionId]);
+
+  // Active session tracking effect to instantly force-logout if another login on the same email ID occurs
+  useEffect(() => {
+    if (!isAuthenticated || !auth.currentUser || !auth.currentUser.email) return;
+    const emailLower = auth.currentUser.email.toLowerCase();
+    
+    console.log(`[Mabala Session] Subscribing to active session for ${emailLower}...`);
+    const unsubscribe = onSnapshot(doc(db, "active_sessions", emailLower), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.sessionId && data.sessionId !== currentSessionId) {
+          console.warn("[Mabala Session] Session conflict detected! Logged in on another device or tab.");
+          setSessionError("You have been signed out because this email ID logged in from another browser tab or device.");
+          // Terminate active session locally and sign out
+          setIsAuthenticated(false);
+          signOut(auth);
+        }
+      }
+    }, (err) => {
+      console.warn("[Mabala Session] Session snapshot listen notice:", err);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentSessionId]);
+
+  // Auto-logout after 5 minutes of inactivity to protect farm workspace
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const logoutUser = () => {
+      console.warn("[Mabala Security] Session auto-expired due to 5 minutes of inactivity.");
+      setSessionError("You have been signed out due to 5 minutes of inactivity to secure your workspace.");
+      setIsAuthenticated(false);
+      signOut(auth).catch((err) => {
+        console.error("[Mabala Security] Error signing out on expiration:", err);
+      });
+    };
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(logoutUser, 5 * 60 * 1000); // 5 minutes inactivity limit
+    };
+
+    // Human activity events to listen to on window level
+    const activityEvents = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
+
+    // Initialize the inactivity countdown timer
+    resetTimer();
+
+    // Attach event listeners for user engagement
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetTimer);
+    });
+
+    // Cleanup listeners and clear timeout on disconnect, tab closing, or state change
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetTimer);
+      });
+    };
+  }, [isAuthenticated]);
 
   // Persist / sync workspace to Cloud Firestore whenever critical states change (Autosave Debounce)
   useEffect(() => {
@@ -2116,8 +2199,8 @@ export default function App() {
       const rawRev = mCashSales + mPaidInvoices;
       const rawExp = mExpenses;
 
-      const revenue = rawRev > 0 ? rawRev : item.baseRev;
-      const expense = rawExp > 0 ? rawExp : item.baseExp;
+      const revenue = rawRev;
+      const expense = rawExp;
 
       return {
         month: item.label,
@@ -2127,6 +2210,10 @@ export default function App() {
       };
     });
   }, [displayedCashSales, displayedInvoices, displayedExpenses]);
+
+  const hasChartData = useMemo(() => {
+    return dashboardChartData.some(d => d["Total Revenue"] > 0 || d["Total Expenses"] > 0);
+  }, [dashboardChartData]);
 
   // Synchronize dynamic Chart of Accounts balances by sub-farm node
   useEffect(() => {
@@ -2322,12 +2409,12 @@ export default function App() {
 
     const demoEmail = "mabalademo@mabala.cloud";
     setUserProfile({
-      name: role === "Farmer" ? "Shadrick Kampamba (Farmer)" : role === "Vet Practitioner" ? "Dr. Noah Mulenga (Clinical Vet)" : "Mabala Inputs Store",
+      name: role === "Farmer" ? "Farmer Workspace" : role === "Vet Practitioner" ? "Clinical Vet Workspace" : "Inputs Store Workspace",
       email: demoEmail,
       phone: "+260978070734"
     });
 
-    const activeFarmName = role === "Farmer" ? "Mabala Demo Corporate Farm" : role === "Vet Practitioner" ? "Lusaka Veterinary Sanctuary" : "Mabala Central Trading Depot";
+    const activeFarmName = role === "Farmer" ? "My Production Farm" : role === "Vet Practitioner" ? "Veterinary Clinic" : "Central Trading Depot";
     setFarms([
       {
         id: "farm-1",
@@ -2363,436 +2450,26 @@ export default function App() {
     setOtherRevenues([]);
     setLeaveRecords([]);
     setEmployeeAdvances([]);
+    setAuditLogs([]);
+    setArchivedRecords([]);
 
-    if (role === "Farmer") {
-      setSubscriptionTier("Commercial Growth Layer");
-      setWorkspaceMode("Farmer");
-      setCurrentRole("Farm Owner");
+    // Standard baseline charts of accounts with zero balances only, no active transactional balances
+    setAccounts(INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 })));
 
-      setSuppliers([
-        { id: "sup-1", name: "Zambia Seed Company (Zaseco)", email: "orders@zaseco.co.zm", phone: "+260977443322", address: "Cairo Road, Lusaka" },
-        { id: "sup-2", name: "National Milling Corporation", email: "info@nmc.zm", phone: "+260211223344", address: "Lumumba Road, Lusaka" }
-      ]);
-
-      const seedCustomers = [
-        { id: "cust-1", name: "Chisamba Dairy Cooperatives", email: "billing@chisambadairy.co.zm", phone: "+260966887766", address: "Chisamba, Central Province" },
-        { id: "cust-2", name: "Kalingalinga Poultry Depot", email: "manager@kalingalingachickens.zm", phone: "+260955332211", address: "Kalingalinga Market, Lusaka" }
-      ];
-      setCustomers(seedCustomers);
-
-      const demoAccounts = INITIAL_ACCOUNTS.map(a => {
-        if (a.code === "1010") return { ...a, balance: 145000 }; 
-        if (a.code === "1020") return { ...a, balance: 4200 };   
-        if (a.code === "1200") return { ...a, balance: 35000 };  
-        if (a.code === "1210") return { ...a, balance: 18000 };  
-        if (a.code === "4000") return { ...a, balance: 125000 }; 
-        if (a.code === "4100") return { ...a, balance: 68000 };  
-        if (a.code === "5000") return { ...a, balance: 15400 };  
-        if (a.code === "5100") return { ...a, balance: 22000 };  
-        return { ...a, balance: 0 };
-      });
-      setAccounts(demoAccounts);
-
-      setCrops([
-        {
-          id: "crop-1",
-          cropType: "Orange Maize (MH-12)",
-          plantingDate: "2026-01-05",
-          expectedHarvestDate: "2026-05-15",
-          fieldBlock: "Kafue East Block 2",
-          areaHectares: 25,
-          expectedYieldKg: 125000,
-          actualYieldKg: 127200,
-          status: "Harvested",
-          milestones: [
-            { id: "ms-1", name: "Land Tillage", startDate: "2026-01-01", endDate: "2026-01-04", isCompleted: true },
-            { id: "ms-2", name: "Sowing & Basal D-Compound Application", startDate: "2026-01-05", endDate: "2026-01-10", isCompleted: true },
-            { id: "ms-3", name: "Harvest & Bagging", startDate: "2026-05-10", endDate: "2026-05-15", isCompleted: true }
-          ],
-          expensesLinked: 35200,
-          revenueLinked: 115000,
-          farmId: "farm-1"
-        },
-        {
-          id: "crop-2",
-          cropType: "Water-efficient Soybeans",
-          plantingDate: "2026-02-18",
-          expectedHarvestDate: "2026-06-30",
-          fieldBlock: "Chisamba South Pivot 1",
-          areaHectares: 40,
-          expectedYieldKg: 180000,
-          status: "Active",
-          milestones: [
-            { id: "ms-4", name: "Sowing & Irrigation setup", startDate: "2026-02-18", endDate: "2026-02-22", isCompleted: true },
-            { id: "ms-5", name: "Weeding & Spraying (Glyphosate)", startDate: "2026-04-10", endDate: "2026-04-15", isCompleted: true }
-          ],
-          expensesLinked: 14200,
-          revenueLinked: 0,
-          farmId: "farm-1"
-        }
-      ]);
-
-      setEmployees([
-        { id: "emp-1", name: "Moses Chilufya", role: "Tractor Operator", contractRate: 3500, housingAllowance: 500, transportAllowance: 300, snapsaNumber: "NAP-9921445-B", snhimaNumber: "NHI-1200921", paymentMethod: "Bank Transfer", bankName: "ZANACO", bankAccount: "55001200941", bankBranch: "Cairo Road", status: "Active", country: "Zambia" },
-        { id: "emp-2", name: "Sarah Phiri", role: "Agronomist Assistant", contractRate: 5805, housingAllowance: 800, transportAllowance: 400, otherAllowance: 100, snapsaNumber: "NAP-8211029-A", snhimaNumber: "NHI-1499214", paymentMethod: "MTN MoMo", walletNumber: "+260966778899", status: "Active", country: "Zambia" },
-        { id: "emp-3", name: "John Banda", role: "Livestock Herder", contractRate: 2500, housingAllowance: 300, transportAllowance: 200, snapsaNumber: "NAP-3341029-C", snhimaNumber: "NHI-8899213", paymentMethod: "Airtel Money", walletNumber: "+260977889900", status: "Active", country: "Zambia" }
-      ]);
-
-      setLivestock([
-        {
-          id: "lv-1",
-          type: "Cattle",
-          species: "Bovine",
-          breed: "Brahman Bull",
-          tagId: "ZM-KLR-0012",
-          gender: "Male",
-          acquisitionType: "Bought",
-          source: "Zambia Breeders Corp",
-          dateAcquired: "2026-01-10",
-          purchasePrice: 18500,
-          currentValue: 24000,
-          healthEvents: [
-            { date: "2026-03-05", type: "Vaccination", details: "Lumpy Skin disease vaccine", cost: 120 },
-            { date: "2026-05-18", type: "Clinical treatment", details: "Wound debridement, antibiotic spray applied", cost: 350 }
-          ],
-          feedingLogs: [
-            { date: "2026-06-01", feedType: "Beef Finisher Concentrates", quantityKg: 5 }
-          ],
-          status: "Active",
-          farmId: "farm-1"
-        },
-        {
-          id: "lv-2",
-          type: "Goats",
-          species: "Caprine",
-          breed: "Kalahari Red Goat",
-          tagId: "ZM-KLR-0082",
-          gender: "Female",
-          acquisitionType: "Birthed",
-          source: "On-Farm Birth",
-          dateAcquired: "2026-02-14",
-          purchasePrice: 0,
-          currentValue: 1800,
-          healthEvents: [
-            { date: "2026-04-10", type: "Deworming", details: "Ivermectin 1% oral dose", cost: 45 }
-          ],
-          feedingLogs: [],
-          status: "Active",
-          farmId: "farm-1"
-        }
-      ]);
-
-      setPoultry([
-        {
-          id: "pb-1",
-          batchId: "BRO-2026-001",
-          batchName: "Kafue Broilers Cohort #4",
-          birdType: "Broilers (Meat)",
-          breed: "Cobb 500 Fast-Grow",
-          quantity: 3000,
-          currentCount: 2942,
-          sourceSupplier: "National Milling Hatcheries",
-          arrivalDate: "2026-05-01",
-          assignedShed: "Broiler Shed A (Standard Ground)",
-          status: "ACTIVE > GROWING",
-          notes: "Excellent FCR registered with minimal mortality rate.",
-          vaccinationCalendar: [
-            { ageDay: 1, vaccine: "Marek's vaccine", diseaseTarget: "Marek's disease", route: "Subcutaneous", isOverdue: false, status: "Completed", dateAdministered: "2026-05-01" },
-            { ageDay: 10, vaccine: "Gumboro vaccine", diseaseTarget: "Infectious Bursal Disease", route: "Drinking Water", isOverdue: false, status: "Completed", dateAdministered: "2026-05-10" },
-            { ageDay: 21, vaccine: "Newcastle vaccine", diseaseTarget: "Newcastle Disease ND", route: "Eye drop / Water", isOverdue: false, status: "Completed", dateAdministered: "2026-05-21" }
-          ],
-          feedLogs: [
-            { date: "2026-05-15", feedType: "Broiler Starter Mash", quantityKg: 150, cost: 1850, fedBy: "Sarah Phiri" },
-            { date: "2026-06-02", feedType: "Broiler Grower Pellets", quantityKg: 320, cost: 4100, fedBy: "Sarah Phiri" }
-          ],
-          mortalityLogs: [
-            { date: "2026-05-03", count: 18, cause: "Overcrowding shipping stress", probableCauseCategory: "feed" },
-            { date: "2026-05-20", count: 40, cause: "Sudden death syndrome (cold night draft)", probableCauseCategory: "disease" }
-          ],
-          salesLogs: [
-            { date: "2026-06-05", quantity: 500, amount: 37500, pricePerBird: 75, customerName: "Choithram Supermarket", paymentMethod: "Mobile Money", chargeType: "PER_BIRD" }
-          ],
-          eggCollections: [],
-          medications: [],
-          farmId: "farm-1"
-        }
-      ]);
-
-      setFish([
-        {
-          id: "fb-1",
-          batchId: "TIL-2026-01",
-          species: "Oreochromis niloticus (Nile Tilapia)",
-          strain: "Siavonga Kariba Strain",
-          productionSystem: "Pond",
-          pondName: "Tilapia Breeding Pond C-1",
-          stockingQuantity: 15000,
-          currentFishCount: 14850,
-          averageWeightStockingG: 5.5,
-          targetMarketWeightG: 350,
-          expectedHarvestDate: "2026-09-15",
-          status: "Grow-Out",
-          feedLogs: [
-            { date: "2026-05-10", quantityKg: 75, cost: 950, fedBy: "Sarah Phiri", brand: "Tiger Feeds" },
-            { date: "2026-06-01", quantityKg: 120, cost: 1600, fedBy: "Sarah Phiri", brand: "Tiger Feeds" }
-          ],
-          weightSamplings: [
-            { date: "2026-05-01", sampleSize: 100, totalWeightG: 550, avgWeightG: 5.5, uniformityPct: 92 },
-            { date: "2026-06-01", sampleSize: 100, totalWeightG: 12400, avgWeightG: 124, uniformityPct: 88 }
-          ],
-          waterReadings: [
-            { date: "2026-06-01", pH: 7.2, doLevel: 6.5, temp: 24.5, ammonia: 0.02, nitrite: 0.01 }
-          ],
-          mortalityLogs: [
-            { date: "2026-05-05", count: 150, cause: "Pond cleaning stocking shock" }
-          ],
-          harvests: [],
-          sales: [],
-          waterInterventions: [],
-          medications: [],
-          farmId: "farm-1"
-        }
-      ]);
-
-      setInvoices([
-        {
-          id: "inv-1",
-          invoiceNumber: "INV-2026-901",
-          date: "2026-05-10",
-          dueDate: "2026-06-10",
-          customerName: "Chisamba Dairy Cooperatives",
-          subtotal: 15000,
-          taxAmount: 2400,
-          total: 17400,
-          lines: [{ description: "Baling Straw Hay & Maize Bran concentrates", quantity: 150, unitPrice: 100, amount: 15000 }],
-          status: "Paid",
-          paidAmount: 17400,
-          coaDebit: "1010",
-          coaCredit: "4000",
-          farmId: "farm-1"
-        },
-        {
-          id: "inv-2",
-          invoiceNumber: "INV-2026-902",
-          date: "2026-06-01",
-          dueDate: "2026-07-01",
-          customerName: "Kalingalinga Poultry Depot",
-          subtotal: 45000,
-          taxAmount: 7200,
-          total: 52200,
-          lines: [{ description: "Live Broiler Chicken delivery (Grade A)", quantity: 600, unitPrice: 75, amount: 45000 }],
-          status: "Unpaid",
-          paidAmount: 0,
-          coaDebit: "1100",
-          coaCredit: "4100",
-          farmId: "farm-1"
-        }
-      ]);
-
-      setExpenses([
-        { id: "exp-1", date: "2026-05-02", description: "Basal D-Compound Fertilizer Delivery - 50 bags", category: "Fertilizer & Seeds COGS", code: "5000", supplierName: "Zambia Seed Company (Zaseco)", amount: 12500, total: 12500, subtotal: 12500, taxAmount: 0, taxSystem: "Exempt", rows: [], supplierId: "sup-1", farmId: "farm-1", paymentMethod: "Zanaco Transfer", status: "Paid", hasReceipt: true, isVatRegistered: true },
-        { id: "exp-2", date: "2026-05-15", description: "Direct Diesel Refueling - Massey Tractor", category: "Machinery Repairs & Fuel", code: "5400", supplierName: "National Milling Corporation", amount: 4800, total: 4800, subtotal: 4800, taxAmount: 0, taxSystem: "Exempt", rows: [], supplierId: "sup-2", farmId: "farm-1", paymentMethod: "Petty Cash", status: "Paid", hasReceipt: true, isVatRegistered: false }
-      ]);
-
-      setInventory([
-        { id: "inv-item-1", name: "D-Compound Basal Fertilizer (50kg)", category: "Fertilizer", quantity: 38, unit: "bag", unitCost: 350, totalValue: 13300, storageLocation: "Silo Shed B", lowStockAlertLevel: 10 },
-        { id: "inv-item-2", name: "Broiler Grower Mash tiger feeds", category: "Feed", quantity: 64, unit: "bag", unitCost: 280, totalValue: 17920, storageLocation: "Feed store C", lowStockAlertLevel: 15 },
-        { id: "inv-item-3", name: "D-Compound Seed Maize (10kg)", category: "Seeds", quantity: 4, unit: "bag", unitCost: 195, totalValue: 780, storageLocation: "Silo Shed B", lowStockAlertLevel: 5 }
-      ]);
-
-      setInvestments([
-        { id: "inv-invest-1", description: "Zambia Government Treasury Bill (Mabala Reserve)", amount: 45000, date: "2026-01-15", institution: "Bank of Zambia", investmentType: "Treasury Bill", rate: 18, status: "Active", farmId: "farm-1" }
-      ]);
-
-      setAssets([
-        { id: "ast-1", name: "Massey Ferguson Tractor 4WD", category: "Machinery & Equipment", purchasePrice: 285000, dateAcquired: "2024-03-12", currentValue: 245000, depreciationMethod: "Straight Line", annualRate: 10, serialNumber: "MS-F4WD-8812A", status: "Operational", farmId: "farm-1" },
-        { id: "ast-2", name: "Solar Borehole Water System 10HP", category: "Utility Infrastructures", purchasePrice: 42000, dateAcquired: "2025-11-20", currentValue: 39500, depreciationMethod: "Straight Line", annualRate: 5, serialNumber: "SOL-BH-10X99", status: "Operational", farmId: "farm-1" }
-      ]);
-
-    } else if (role === "Vet Practitioner") {
+    if (role === "Vet Practitioner") {
       setSubscriptionTier("Veterinary Doctor Practitioner");
       setWorkspaceMode("Veterinary");
       setCurrentRole("Veterinary Doctor");
-
-      const docClients = [
-        { id: "cust-1", name: "Chisamba Dairy Ltd", email: "chisambadairy@gmail.zm", phone: "+260977821102", address: "Chisamba District" },
-        { id: "cust-2", name: "Makeni Angus Stud", email: "makeniangus@yahoo.com", phone: "+260966321104", address: "Plot 10, Makeni, Lusaka" },
-        { id: "cust-3", name: "Kafue River Ranch", email: "manager@kafueriver.zm", phone: "+260955883204", address: "Kafue River Road" }
-      ];
-      setCustomers(docClients);
-
-      const clinicAccounts = INITIAL_ACCOUNTS.map(a => {
-        if (a.code === "1010") return { ...a, balance: 185000 }; 
-        if (a.code === "1020") return { ...a, balance: 6500 };   
-        if (a.code === "4500") return { ...a, balance: 34200 };  
-        if (a.code === "5300") return { ...a, balance: 9500 };   
-        return { ...a, balance: 0 };
-      });
-      setAccounts(clinicAccounts);
-
       localStorage.setItem("mabala_clinic_name", "Lusaka Metropolitan Veterinary Clinic");
       localStorage.setItem("mabala_clinic_license", "ZVC-CLINIC-9024X");
-
     } else if (role === "Input Supplier") {
       setSubscriptionTier("Commercial Growth Layer");
       setWorkspaceMode("Farmer");
       setCurrentRole("Farm Owner");
-
-      const demoVendorRec = {
-        id: "demo-vendor-1",
-        name: "Mabala Demo Inputs & Agronomy",
-        category: "Seeds & Agronomy" as any,
-        location: "Opp Oryx Filling Station, Mumbwa Road, Lusaka West",
-        distanceKm: 5,
-        phone: "+260 978 070734",
-        email: demoEmail,
-        subscriptionPackage: "Agro-Vet Clinical Suite",
-        status: "Active" as any,
-        joinedDate: "2026-06-01",
-        expiryDate: "2027-12-31",
-        credits: 800,
-        logoColor: "emerald"
-      };
-
-      setMarketplaceVendors([
-        demoVendorRec,
-        {
-          id: "v-2",
-          name: "Zam-Vet Pharmacy Store Ltd",
-          category: "Veterinary & Health" as any,
-          location: "Cairo Road, Lusaka - 1.2km",
-          distanceKm: 1.2,
-          phone: "+260 966 887766",
-          email: "sales@zamvet.zm",
-          subscriptionPackage: "Basic",
-          status: "Active" as any,
-          joinedDate: "2026-04-10",
-          logoColor: "blue"
-        }
-      ]);
-
-      const demoPid1 = "demo-prod-1";
-      const demoPid2 = "demo-prod-2";
-      const demoPid3 = "demo-prod-3";
-      const demoPid4 = "demo-prod-4";
-
-      const demoProducts = [
-        {
-          id: demoPid1,
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          name: "Premium D-Compound Fertilizer (50kg)",
-          category: "Seeds & Agronomy",
-          price: 360,
-          stock: 450,
-          description: "Zambia-formulated fertilizer high in Nitrogen & Phosphates for exceptional crop rooting performance.",
-          iconEmoji: "🌱",
-          unitOfMeasure: "bag",
-          vatApplicable: true,
-          productLocation: "Depot Store B - Lusaka",
-          isActive: true
-        },
-        {
-          id: demoPid2,
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          name: "Pioneer Hybrid Seed Maize PHC-09 (25kg)",
-          category: "Seeds & Agronomy",
-          price: 245,
-          stock: 120,
-          description: "High FCR crop drought-resistant hybrid seed maize tailored for medium-rainfall agroecological regions.",
-          iconEmoji: "🌽",
-          unitOfMeasure: "bag",
-          vatApplicable: true,
-          productLocation: "Depot Store B - Lusaka",
-          isActive: true
-        },
-        {
-          id: demoPid3,
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          name: "Premium Broiler Starter Feed (50kg)",
-          category: "Feeds & Formulations",
-          price: 310,
-          stock: 85,
-          description: "Complete broiler crumbling formula packed with crucial vitamins & amino acids to maximize day-old survival rates.",
-          iconEmoji: "🐔",
-          unitOfMeasure: "bag",
-          isActive: true
-        },
-        {
-          id: demoPid4,
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          name: "Bayer Bovine Tick Dip Deworm (5 Liters)",
-          category: "Veterinary & Health",
-          price: 850,
-          stock: 35,
-          description: "Exceptional clinical strength tick dip concentrate to safeguard herds against Corridor disease & heartwater ticks.",
-          iconEmoji: "🐂",
-          unitOfMeasure: "each",
-          vatApplicable: true,
-          productLocation: "Cold store registry C",
-          isActive: true
-        }
-      ];
-      setMarketplaceProducts(demoProducts);
-
-      setMarketplaceRiders([
-        { id: "rd-1", name: "Mutale Mwamba (Express)", phone: "+260977223344", rating: 4.8, vehicle: "Yamaha Motor Bike KX-90", avatarColor: "bg-emerald-500", status: "Available" },
-        { id: "rd-2", name: "Banda Chanda (Eco Delivery)", phone: "+260966112233", rating: 4.6, vehicle: "Bajaj Delivery Trike", avatarColor: "bg-blue-500", status: "On Delivery" }
-      ]);
-
-      setMarketplaceOrders([
-        {
-          id: "ord-10023",
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          buyerEmail: "chisambafarmer@gmail.com",
-          productId: demoPid1,
-          productName: "Premium D-Compound Fertilizer (50kg)",
-          quantity: 20,
-          priceAtPurchase: 360,
-          subtotal: 7200,
-          deliveryFee: 100,
-          commissionAmount: 720,
-          totalAmount: 7300,
-          recipientName: "Bwalya Tembo (Chisamba Co-op)",
-          recipientPhone: "+260966443322",
-          deliveryAddress: "Kalingalinga Market West Road, Plot 5",
-          riderId: "rd-1",
-          riderName: "Mutale Mwamba (Express)",
-          distanceKm: 20,
-          date: "2026-06-06",
-          status: "Processing" as any,
-          paymentProvider: "Airtel Money" as any,
-          paymentPhone: "+260977221199"
-        },
-        {
-          id: "ord-10024",
-          vendorId: "demo-vendor-1",
-          vendorName: "Mabala Demo Inputs & Agronomy",
-          buyerEmail: "chongwecoop@gmail.com",
-          productId: demoPid2,
-          productName: "Pioneer Hybrid Seed Maize PHC-09 (25kg)",
-          quantity: 5,
-          priceAtPurchase: 245,
-          subtotal: 1225,
-          deliveryFee: 25,
-          commissionAmount: 122.5,
-          totalAmount: 1250,
-          recipientName: "Agness Phiri",
-          recipientPhone: "+260955998811",
-          deliveryAddress: "Stand No 4, Chongwe West Depot",
-          riderId: "rd-2",
-          riderName: "Banda Chanda (Eco Delivery)",
-          distanceKm: 5,
-          date: "2026-06-07",
-          status: "Out For Delivery" as any,
-          paymentProvider: "MTN MoMo" as any,
-          paymentPhone: "+260966224488"
-        }
-      ]);
+    } else {
+      setSubscriptionTier("Commercial Growth Layer");
+      setWorkspaceMode("Farmer");
+      setCurrentRole("Farm Owner");
     }
 
     setCredits(800); 
@@ -4389,6 +4066,17 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <div className="relative min-h-screen">
+        {sessionError && (
+          <div className="bg-rose-50 text-rose-800 border-b border-rose-200/80 text-center py-3 px-4 text-xs font-semibold font-sans flex items-center justify-center gap-3 shadow-sm relative z-[101]">
+            <span>⚠️ {sessionError}</span>
+            <button 
+              onClick={() => setSessionError(null)} 
+              className="bg-rose-100 hover:bg-rose-200 text-rose-900 px-2 py-0.5 rounded text-[10px] font-black uppercase transition-all shadow-sm cursor-pointer"
+            >
+              Okay
+            </button>
+          </div>
+        )}
         <WelcomeScreen 
           key={welcomeKey}
           onStartDemo={handleStartDemo} 
@@ -4732,6 +4420,7 @@ export default function App() {
         subscriptionTier={subscriptionTier}
         workspaceMode={workspaceMode}
         activeFarmName={activeFarm.name}
+        onOpenAnimalWizard={() => setIsAnimalWizardOpen(true)}
       />
 
       {/* Main viewport Container */}
@@ -4955,6 +4644,147 @@ export default function App() {
             </div>
           </div>
 
+          {/* GLOBAL INTELLIGENT SEARCH BAR */}
+          <div className="relative mx-4 flex-1 max-w-sm hidden md:block font-sans">
+            <div className="relative flex items-center">
+              <Search className="absolute left-3 w-4.5 h-4.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Global Search (Tag, Employee, Invoice, Customer)..."
+                value={globalSearchQuery}
+                onChange={(e) => {
+                  setGlobalSearchQuery(e.target.value);
+                  setShowSearchResults(true);
+                }}
+                className="w-full text-xs font-bold pl-9 pr-8 py-2 bg-slate-100 placeholder-slate-400 text-slate-700 border border-slate-200 rounded-xl outline-none focus:border-slate-800 transition-all focus:bg-white"
+              />
+              {globalSearchQuery && (
+                <button 
+                  onClick={() => {
+                    setGlobalSearchQuery("");
+                    setShowSearchResults(false);
+                  }} 
+                  className="absolute right-2.5 p-0.5 hover:bg-slate-200 rounded-md text-slate-400 hover:text-slate-600 text-[10px] font-black"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* SEARCH RESULTS FLOATING BOX */}
+            {showSearchResults && globalSearchQuery && (
+              <>
+                <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowSearchResults(false)} />
+                <div className="absolute left-0 top-full mt-2 w-[420px] max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-3.5 animate-scale-up text-left">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block pb-1.5 border-b mb-1">
+                    Mabala Universal Index Matches
+                  </span>
+                  <div className="space-y-2.5 pt-1">
+                    {/* 1. Filter Animal matches */}
+                    {(() => {
+                      const matches = livestock.filter(a => 
+                        (a.tagId || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) || 
+                        (a.species || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        (a.breed || "").toLowerCase().includes(globalSearchQuery.toLowerCase())
+                      ).slice(0, 3);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="border-b border-slate-100 pb-2.5">
+                          <span className="text-[9px] font-black uppercase text-emerald-600 block pt-1 font-mono">🐂 Livestock Profile Matches</span>
+                          <div className="space-y-1 mt-1">
+                            {matches.map(a => (
+                              <button
+                                key={a.id}
+                                onClick={() => {
+                                  setActiveTab("livestock");
+                                  setGlobalSearchQuery("");
+                                  setShowSearchResults(false);
+                                }}
+                                className="w-full p-2 hover:bg-slate-50 rounded-lg text-left text-xs font-bold flex justify-between items-center cursor-pointer"
+                              >
+                                <span>Tag: {a.tagId} ({a.species} - {a.breed})</span>
+                                <span className="text-[9.5px] bg-slate-100 text-slate-600 px-1.5 rounded">{a.status}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 2. Filter Employee matches */}
+                    {(() => {
+                      const matches = employees.filter(e => 
+                        (e.name || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        (e.role || "").toLowerCase().includes(globalSearchQuery.toLowerCase())
+                      ).slice(0, 3);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="border-b border-slate-100 pb-2.5">
+                          <span className="text-[9px] font-black uppercase text-indigo-600 block pt-1 font-mono">👥 Employee Matches</span>
+                          <div className="space-y-1 mt-1">
+                            {matches.map(e => (
+                              <button
+                                key={e.id}
+                                onClick={() => {
+                                  setActiveTab("payroll");
+                                  setGlobalSearchQuery("");
+                                  setShowSearchResults(false);
+                                }}
+                                className="w-full p-2 hover:bg-slate-50 rounded-lg text-left text-xs font-bold flex justify-between items-center cursor-pointer"
+                              >
+                                <span>{e.name} ({e.role})</span>
+                                <span className="text-[9.5px] text-emerald-600">{selectedCountry.symbol}{e.contractRate.toLocaleString()}/mo</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 3. Filter Invoices */}
+                    {(() => {
+                      const matches = invoices.filter(inv => 
+                        (inv.invoiceNumber || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        (inv.customerName || "").toLowerCase().includes(globalSearchQuery.toLowerCase())
+                      ).slice(0, 3);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="border-b border-slate-100 pb-2.5">
+                          <span className="text-[9px] font-black uppercase text-amber-600 block pt-1 font-mono">📄 Invoice Matches</span>
+                          <div className="space-y-1 mt-1">
+                            {matches.map(inv => (
+                              <button
+                                key={inv.id}
+                                onClick={() => {
+                                  setActiveTab("invoices");
+                                  setGlobalSearchQuery("");
+                                  setShowSearchResults(false);
+                                }}
+                                className="w-full p-2 hover:bg-slate-50 rounded-lg text-left text-xs font-bold flex justify-between items-center cursor-pointer"
+                              >
+                                <span>{inv.invoiceNumber} - {inv.customerName}</span>
+                                <span className="text-[9.5px] font-black font-mono text-slate-800">{selectedCountry.symbol}{inv.total.toLocaleString()}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* No Match fallback */}
+                    {livestock.filter(a => (a.tagId || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) || (a.species || "").toLowerCase().includes(globalSearchQuery.toLowerCase())).length === 0 &&
+                     employees.filter(e => (e.name || "").toLowerCase().includes(globalSearchQuery.toLowerCase())).length === 0 &&
+                     invoices.filter(inv => (inv.invoiceNumber || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) || (inv.customerName || "").toLowerCase().includes(globalSearchQuery.toLowerCase())).length === 0 && (
+                      <div className="p-4 text-center text-[11px] text-slate-400 font-medium">
+                        No results match the query in current registry collections.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
               <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest leading-none pb-1">Compliance Tax engine</span>
@@ -4997,6 +4827,114 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* ANIMAL REGISTRATION WIZARD GLOBAL OVERLAY MODAL */}
+        <AnimalRegistrationWizard
+          isOpen={isAnimalWizardOpen}
+          onClose={() => setIsAnimalWizardOpen(false)}
+          onSave={handleAddLivestockRecord}
+          currencySymbol={selectedCountry.symbol}
+          existingCount={livestock.length}
+        />
+
+        {/* GLOBAL DYNAMIC QUICK ACTIONS HUB BANNER */}
+        <div className="bg-slate-900 border-b border-slate-800 px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-lg select-none" id="global-quick-actions-hub">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 font-mono">Operations Hub</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            
+            {/* 1. Register Animal */}
+            <button
+              onClick={() => {
+                setIsAnimalWizardOpen(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl shadow-md transition-all flex items-center gap-2 border-none outline-none cursor-pointer"
+            >
+              <span>🐂</span>
+              <span>Register Animal</span>
+            </button>
+
+            {/* 2. Register Flock */}
+            <button
+              onClick={() => {
+                setActiveTab("poultry");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>🐓</span>
+              <span>Register Flock</span>
+            </button>
+
+            {/* 3. Record Expense */}
+            <button
+              onClick={() => {
+                setActiveTab("expenses");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>🧾</span>
+              <span>Record Expense</span>
+            </button>
+
+            {/* 4. Record Income */}
+            <button
+              onClick={() => {
+                setActiveTab("sales");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>💰</span>
+              <span>Record Income</span>
+            </button>
+
+            {/* 5. Create Invoice */}
+            <button
+              onClick={() => {
+                setActiveTab("invoices");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>📄</span>
+              <span>Create Invoice</span>
+            </button>
+
+            {/* 6. Add Inventory */}
+            <button
+              onClick={() => {
+                setActiveTab("inventory");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>📦</span>
+              <span>Add Inventory</span>
+            </button>
+
+            {/* 7. Add Employee */}
+            <button
+              onClick={() => {
+                setActiveTab("payroll");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>👥</span>
+              <span>Add Employee</span>
+            </button>
+
+            {/* 8. Record Harvest */}
+            <button
+              onClick={() => {
+                setActiveTab("crops");
+              }}
+              className="bg-slate-850 hover:bg-slate-800 active:scale-95 text-slate-200 text-[10px] sm:text-[11px] font-black uppercase tracking-wider py-1.5 px-3.5 rounded-xl border border-slate-700/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>🌾</span>
+              <span>Record Harvest</span>
+            </button>
+
+          </div>
+        </div>
 
         {/* Warning banner when credit reserves are low */}
         {isReadonly && (
@@ -5170,8 +5108,14 @@ export default function App() {
                   <div className="bg-white rounded-xl border p-6 shadow-sm space-y-4" id="dashboard-trend-chart">
                     <div className="flex justify-between items-center border-b pb-3 mb-2">
                       <div>
-                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Revenue versus Expenses Summary</h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Monthly cash sales & paid invoices compared to journal expenses for {activeFarm?.name || "active farm"}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Revenue versus Expenses Summary</h4>
+                          <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>Self-Register Enabled</span>
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Monthly cash sales & paid invoices compared to journal expenses for {activeFarm?.name || "active farm"} — <span className="text-emerald-600 font-bold">New customers can self-register</span></p>
                       </div>
                       <div className="flex items-center gap-4 text-xs">
                         <span className="flex items-center gap-1.5 font-semibold text-slate-600">
@@ -5185,7 +5129,16 @@ export default function App() {
                       </div>
                     </div>
                     
-                    <div className="h-64 mt-2">
+                    <div className="h-64 mt-2 relative">
+                      {!hasChartData && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/70 backdrop-blur-[1px] rounded-xl z-10 border border-dashed border-slate-200">
+                          <span className="text-2xl mb-1 filter drop-shadow-xs">📊</span>
+                          <span className="text-slate-700 font-extrabold text-[11px] uppercase tracking-wider">No Transaction Activity Ledger</span>
+                          <span className="text-slate-400 text-[10px] text-center max-w-xs mt-1 leading-normal font-semibold">
+                            Create a crop sale, record cash sales, log paid invoices, or post expense vouchers to populate real-time activity trends.
+                          </span>
+                        </div>
+                      )}
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dashboardChartData} margin={{ top: 10, right: 10, left: 15, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
