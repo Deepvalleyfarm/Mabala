@@ -93,36 +93,7 @@ export function useVeterinaryNotifications(
       }
     });
 
-    // Add some default alerts for user experience if list is empty
-    if (generatedAlerts.length === 0) {
-      generatedAlerts.push({
-        id: "wit-demo-1",
-        type: "withdrawal_period",
-        animalId: "BOV-2019-Z29",
-        clientId: "cl-001",
-        clientName: "Mukuni Ranching Co-op",
-        farmerPhone: "0977461821",
-        title: "🥛 Milk Withdrawal Period Clears",
-        message: "Oxisolve 200 LA active residue withdrawal clears in 2 days. Milk safety verification required before distribution.",
-        dueDate: "2026-06-18",
-        daysRemaining: 2,
-        status: "Pending"
-      });
-      generatedAlerts.push({
-        id: "bst-demo-2",
-        type: "vaccination_booster",
-        animalId: "COW-DRY-38A",
-        clientId: "cl-002",
-        clientName: "Green Valley Dairy Farms",
-        farmerPhone: "0966382199",
-        title: "💉 Anthrax Spore Booster Due",
-        message: "Prophylactic booster campaign due in 3 days. Coordinate with assigned technician Sibeso Nalungwe.",
-        dueDate: "2026-06-19",
-        daysRemaining: 3,
-        status: "Pending"
-      });
-    }
-
+    // Set notifications directly
     setNotifications(generatedAlerts);
   }, [records, clients]);
 

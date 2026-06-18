@@ -27,6 +27,7 @@ export const GOAT_BREEDS = [
 export const SHEEP_BREEDS = ["Dorper", "Merino", "Suffolk", "Dorset", "Blackhead Persian", "Red Maasai"];
 export const PIG_BREEDS = ["Large White", "Landrace", "Duroc", "Pietrain", "Hampshire", "Berkshire"];
 export const POULTRY_BREEDS = ["Broilers", "Layers", "Indigenous Chickens", "Kuroiler", "Ducks", "Turkeys", "Geese", "Guinea Fowl", "Quail"];
+export const OTHER_BREEDS = ["Thoroughbred / Horse", "Boerpony", "Abyssinian Donkey", "Rottweiler Guard Dog", "German Shepherd Dog", "New Zealand White Rabbit", "Dromedary Camel", "Nile Tilapia (Fish)", "African Honeybee"];
 
 interface ManagerProps {
   records: LivestockRecord[];
@@ -139,13 +140,68 @@ export default function EnterpriseLivestockManager({
     return records.length > 0 ? records[0].tagId : "";
   });
 
+  // Registry Filters Search variables (Requirement 1 - actual functional filtering)
+  const [rfidSearch, setRfidSearch] = useState("");
+  const [earTagSearch, setEarTagSearch] = useState("");
+  const [speciesFilter, setSpeciesFilter] = useState("All Species");
+
+  // Registration Modal states (Requirement 4 - animal registry onboarding)
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regSpecies, setRegSpecies] = useState("Cattle");
+  const [customSpecies, setCustomSpecies] = useState("");
+  const [regBreed, setRegBreed] = useState("Boran");
+  const [customBreed, setCustomBreed] = useState("");
+  const [regSubBreed, setRegSubBreed] = useState("");
+  const [regGender, setRegGender] = useState<"Male" | "Female">("Female");
+  const [regDob, setRegDob] = useState("2204-06-16");
+  const [regColor, setRegColor] = useState("");
+  const [regWeight, setRegWeight] = useState(280);
+  const [regPurchaseValue, setRegPurchaseValue] = useState(12000);
+  const [regStatus, setRegStatus] = useState("Active");
+  const [regEarTag, setRegEarTag] = useState("");
+  const [regRfid, setRegRfid] = useState("");
+  const [regQrCode, setRegQrCode] = useState("");
+  const [regBarcode, setRegBarcode] = useState("");
+  const [regMicrochip, setRegMicrochip] = useState("");
+  const [regGovReg, setRegGovReg] = useState("");
+  const [regSire, setRegSire] = useState("");
+  const [regDam, setRegDam] = useState("");
+
+  // Custom added categories arrays by administrators
+  const [customSpeciesList, setCustomSpeciesList] = useState<string[]>(() => {
+    const cached = localStorage.getItem("mabala_custom_species");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [customBreedsList, setCustomBreedsList] = useState<{ [species: string]: string[] }>(() => {
+    const cached = localStorage.getItem("mabala_custom_breeds");
+    return cached ? JSON.parse(cached) : {};
+  });
+
+  // Multiple Photo states
+  const [photoProfileInput, setPhotoProfileInput] = useState("");
+  const [medicalPhotoInput, setMedicalPhotoInput] = useState("");
+  const [regMedicalPhotos, setRegMedicalPhotos] = useState<string[]>([]);
+  const [injuryPhotoInput, setInjuryPhotoInput] = useState("");
+  const [regInjuryPhotos, setRegInjuryPhotos] = useState<string[]>([]);
+  const [salePhotoInput, setSalePhotoInput] = useState("");
+  const [regSalePhotos, setRegSalePhotos] = useState<string[]>([]);
+
+  // Document states
+  const [docNameInput, setDocNameInput] = useState("");
+  const [docTypeInput, setDocTypeInput] = useState("Veterinary Certificate");
+  const [docUrlInput, setDocUrlInput] = useState("");
+  const [regDocuments, setRegDocuments] = useState<{ id: string; name: string; url: string; type: string; dateAdded: string }[]>([]);
+
+  // Valuation Inputs for dynamic appraisal engine
+  const [valHealthScore, setValHealthScore] = useState(8); // scale 1-10
+  const [valProductivity, setValProductivity] = useState("Normal"); // Normal, High, Excellent
+  const [valMarketPricePerKg, setValMarketPricePerKg] = useState(45); // default ZK per Kg rate
+
   // Local revaluation log list state
   const [valuationHistory, setValuationHistory] = useState<any[]>(() => {
     const cached = localStorage.getItem("mabala_valuation_deltas");
-    return cached ? JSON.parse(cached) : [
-      { id: "REV-9912", date: "2026-06-15", tagId: "CSD-202", species: "Cattle", breed: "Holstein-Friesian", oldValue: 22000, newValue: 25000, delta: 3000, weight: 540, health: "Excellent" },
-      { id: "REV-8114", date: "2026-06-14", tagId: "CSD-203", species: "Cattle", breed: "Holstein-Friesian", oldValue: 18500, newValue: 19500, delta: 1000, weight: 510, health: "Good" }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   const handleDownloadPDFPassport = (animal: any) => {
@@ -482,11 +538,7 @@ export default function EnterpriseLivestockManager({
   // Biosecurity states
   const [biosecurityLogs, setBiosecurityLogs] = useState(() => {
     const cached = localStorage.getItem("mabala_biosecurity_logs");
-    return cached ? JSON.parse(cached) : [
-      { id: "bio-1", date: "2026-06-10", type: "Visitor Entry", visitorName: "Dr. Noah Mulenga (ZVC)", description: "Checked quarantine heifer; complete footwear decontamination verified via sanitizing pool.", activeCheck: true },
-      { id: "bio-2", date: "2026-06-12", type: "Quarantine", visitorName: "Dam Cow #94", description: "Brought back from neighboring sector; Isolated for 14 days; FMD checks completed.", activeCheck: true },
-      { id: "bio-3", date: "2026-06-15", type: "Disinfectant Audit", visitorName: "Self-Audit", description: "Footbaths populated with fresh iodine solution; Wheelbarrow tracks sprayed.", activeCheck: true }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   // New biosecurity state helpers
@@ -525,11 +577,7 @@ export default function EnterpriseLivestockManager({
   // Dairy variables and daily milking yield tracker
   const [milkingLogs, setMilkingLogs] = useState(() => {
     const cached = localStorage.getItem("mabala_milking_logs");
-    return cached ? JSON.parse(cached) : [
-      { tagId: "CSD-202", date: "2026-06-16", morning: 14.2, afternoon: 9.5, evening: 6.3, cooperative: "Zammilk", pricePerLiter: 16.0 },
-      { tagId: "CSD-203", date: "2026-06-16", morning: 12.0, afternoon: 8.4, evening: 5.1, cooperative: "Parmalat", pricePerLiter: 15.5 },
-      { tagId: "CSD-204", date: "2026-06-16", morning: 15.1, afternoon: 10.0, evening: 7.2, cooperative: "Dairy Association Cooperatives", pricePerLiter: 16.5 }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   const [mTagId, setMTagId] = useState("");
@@ -575,10 +623,7 @@ export default function EnterpriseLivestockManager({
   // Breeding Event Logger
   const [breedingRegistry, setBreedingRegistry] = useState(() => {
     const cached = localStorage.getItem("mabala_breeding_registry");
-    return cached ? JSON.parse(cached) : [
-      { id: "br-1", tagId: "CSD-202", sireId: "ZM-KLR-0012", type: "Artificial Insemination", serviceDate: "2026-03-12", checkStatus: "Pregnant Verified", gestationDays: 95, expectedCalving: "2026-12-18", cost: 450 },
-      { id: "br-2", tagId: "CSD-203", sireId: "Boran Bull #01", type: "Natural Mating", serviceDate: "2026-04-05", checkStatus: "Pregnancy Checked", gestationDays: 71, expectedCalving: "2027-01-10", cost: 100 }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   const [brTag, setBrTag] = useState("");
@@ -626,9 +671,7 @@ export default function EnterpriseLivestockManager({
   // Mortality Register
   const [mortalityLogs, setMortalityLogs] = useState(() => {
     const cached = localStorage.getItem("mabala_mortality_logs");
-    return cached ? JSON.parse(cached) : [
-      { tagId: "CSD-102", date: "2026-04-12", species: "Sheep", breed: "Dorper", cause: "East Coast Fever outbreak", diagnosis: "Tickborne infection", disposal: "Buried on site with quicklime", lossValue: 1200, vetCert: "Vet Cert #V-882" }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   const [morTag, setMorTag] = useState("");
@@ -680,10 +723,7 @@ export default function EnterpriseLivestockManager({
   // Insurance Policies Register
   const [insurancePolicies, setInsurancePolicies] = useState(() => {
     const cached = localStorage.getItem("mabala_insurance_policies");
-    return cached ? JSON.parse(cached) : [
-      { id: "ins-1", policyNumber: "PICZ/AGR-88912/26", provider: "Professional Insurance Corp Zambia", coverValue: 150000, annualPremium: 4200, status: "Active", activeClaims: 0 },
-      { id: "ins-2", policyNumber: "MADISON/LS-22019/26", provider: "Madison General Insurance", coverValue: 90000, annualPremium: 2800, status: "Active", activeClaims: 1 }
-    ];
+    return cached ? JSON.parse(cached) : [];
   });
 
   const [insPolicy, setInsPolicy] = useState("");
@@ -821,10 +861,217 @@ export default function EnterpriseLivestockManager({
     alert(`Asset Revaluation Success! Biological Asset Account code [1420] adjusted by ${currencySymbol}${diffVal.toLocaleString()}. Balance Sheet adjusted automatically.`);
   };
 
+  // Dynamic Real-time Valuation Engine (Requirement 4 details)
+  const valuationOutputs = useMemo(() => {
+    const rawWeight = Number(regWeight) || 0;
+    const basePrice = Number(valMarketPricePerKg) || 0;
+    
+    // Breed factor multiplier
+    let breedFactor = 1.0;
+    const bUpper = (regBreed || "").toUpperCase();
+    if (bUpper.includes("HOLSTEIN") || bUpper.includes("FRIESIAN")) breedFactor = 1.25;
+    else if (bUpper.includes("BORAN") || bUpper.includes("BRAHMAN")) breedFactor = 1.15;
+    else if (bUpper.includes("BOER")) breedFactor = 1.20;
+
+    // Health Score factor multiplier: base 1.0 at score 8
+    const healthFactor = 0.5 + (Number(valHealthScore) * 0.0625);
+
+    // Productivity factor multiplier
+    let prodFactor = 1.0;
+    if (valProductivity === "High") prodFactor = 1.15;
+    else if (valProductivity === "Excellent") prodFactor = 1.35;
+
+    // Age calculation
+    let ageInMonths = 12;
+    if (regDob) {
+      try {
+        const bd = new Date(regDob);
+        const now = new Date();
+        const diffY = now.getFullYear() - bd.getFullYear();
+        const diffM = now.getMonth() - bd.getMonth();
+        ageInMonths = Math.max(0, diffY * 12 + diffM);
+      } catch (e) {
+        console.error("Age calculation error", e);
+      }
+    }
+
+    // Age pricing factor
+    let ageFactor = 1.0;
+    if (ageInMonths > 84) {
+      ageFactor = Math.max(0.4, 1.0 - (ageInMonths - 84) * 0.015);
+    } else if (ageInMonths < 12) {
+      ageFactor = 0.85;
+    }
+
+    // Math: weight * base price/kg * multipliers
+    const currentAssetVal = Math.round(rawWeight * basePrice * breedFactor * healthFactor * prodFactor * ageFactor);
+
+    // Depreciation or Growth calculated
+    const pCost = Number(regPurchaseValue) || 0;
+    const depreciationAmt = Math.max(0, pCost - currentAssetVal);
+    const growthAmt = Math.max(0, currentAssetVal - pCost);
+
+    // Fair Market Value is current asset value
+    const fairMarketVal = currentAssetVal;
+
+    // Insurance Value is Fair Market Value * 1.25
+    const insVal = Math.round(fairMarketVal * 1.25);
+
+    return {
+      currentAssetValue: currentAssetVal,
+      depreciation: depreciationAmt,
+      growthValue: growthAmt,
+      fairMarketValue: fairMarketVal,
+      insuranceValue: insVal,
+      ageInMonths: ageInMonths
+    };
+  }, [regWeight, valMarketPricePerKg, regBreed, valHealthScore, valProductivity, regDob, regPurchaseValue]);
+
+  // Form submission handler
+  const handleRegisterAnimalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const selectedSpeciesVal = regSpecies === "Other" ? (customSpecies.trim() || "Other") : regSpecies;
+    const selectedBreedVal = regBreed === "Other" ? (customBreed.trim() || "Other") : regBreed;
+
+    // Generate prefix-based sequence ID
+    const speciesUpper = selectedSpeciesVal.toUpperCase();
+    const prefix = `MBL-${speciesUpper}-`;
+    const count = localRecords.filter(r => (r.species || "").toUpperCase() === speciesUpper || (r.type || "").toUpperCase() === speciesUpper).length + 1;
+    const generatedUniqueId = `${prefix}${String(count).padStart(6, "0")}`;
+
+    const earTagFinal = regEarTag.trim() || generatedUniqueId;
+    const rfidFinal = regRfid.trim() || `RFID-ZAM-${Math.floor(Math.random() * 900000 + 100000)}`;
+
+    const newAnimal: LivestockRecord = {
+      id: "lv-registered-" + Date.now(),
+      type: selectedSpeciesVal,
+      species: selectedSpeciesVal,
+      breed: selectedBreedVal,
+      subBreed: regSubBreed.trim() || undefined,
+      tagId: earTagFinal,
+      gender: regGender,
+      acquisitionType: "Bought",
+      source: "Mabala Master Breeder Unit",
+      dateAcquired: regDob || "2026-06-16",
+      purchasePrice: Number(regPurchaseValue) || 0,
+      currentValue: valuationOutputs.currentAssetValue,
+      healthEvents: [],
+      feedingLogs: [],
+      status: regStatus,
+      farmId: "farm-1",
+      dob: regDob,
+      age: `${valuationOutputs.ageInMonths} months`,
+      color: regColor.trim() || undefined,
+      weight: Number(regWeight),
+      estimatedMarketValue: valuationOutputs.fairMarketValue,
+      insuranceValue: valuationOutputs.insuranceValue,
+      rfid: rfidFinal,
+      qrCode: regQrCode.trim() || `QR-${Math.floor(Math.random() * 900000 + 100000)}`,
+      barcode: regBarcode.trim() || `BC-${Math.floor(Math.random() * 900000 + 100000)}`,
+      microchip: regMicrochip.trim() || undefined,
+      govRegistration: regGovReg.trim() || undefined,
+      photos: {
+        profile: photoProfileInput.trim() || "https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=150",
+        medical: regMedicalPhotos,
+        injury: regInjuryPhotos,
+        sale: regSalePhotos
+      },
+      documents: regDocuments,
+      healthScore: valHealthScore,
+      productivity: valProductivity,
+      sire: regSire.trim() || undefined,
+      dam: regDam.trim() || undefined,
+      breedingSuccessRate: 85
+    };
+
+    // Save locally
+    const updated = [newAnimal, ...localRecords];
+    saveRecords(updated);
+
+    // Call onAddLivestockRecord callback to update the central App state!
+    if (onAddLivestockRecord) {
+      onAddLivestockRecord(newAnimal);
+    }
+
+    // Apply Double-Entry Accounting journal posting to update general ledgers
+    const diffVal = valuationOutputs.currentAssetValue;
+    if (diffVal > 0) {
+      const updatedAccounts = accounts.map(acc => {
+        let balance = acc.balance;
+        if (acc.code === "1420") balance += diffVal;
+        if (acc.code === "4400") balance += diffVal;
+        return { ...acc, balance };
+      });
+      setAccounts(updatedAccounts);
+    }
+
+    // Reset Form
+    setRegName("");
+    setRegSubBreed("");
+    setRegColor("");
+    setRegWeight(280);
+    setRegPurchaseValue(12000);
+    setRegEarTag("");
+    setRegRfid("");
+    setRegQrCode("");
+    setRegBarcode("");
+    setRegMicrochip("");
+    setRegGovReg("");
+    setRegSire("");
+    setRegDam("");
+    setPhotoProfileInput("");
+    setRegMedicalPhotos([]);
+    setRegInjuryPhotos([]);
+    setRegSalePhotos([]);
+    setRegDocuments([]);
+    setIsRegisterOpen(false);
+
+    alert(`Success! Onboarding Complete.\nAnimal ${earTagFinal} registered in Master Database.\nFinancial accounts adjusted automatically.`);
+  };
+
   // Calculated variables and computations
   const totalAssetsValue = useMemo(() => {
     return localRecords.reduce((sum, r) => sum + (r.status === "Active" ? r.currentValue : 0), 0);
   }, [localRecords]);
+
+  const filteredRecords = useMemo(() => {
+    return localRecords.filter(r => {
+      // 1. RFID filter
+      if (rfidSearch.trim()) {
+        const rfidVal = (r.rfid || "").toLowerCase();
+        if (!rfidVal.includes(rfidSearch.toLowerCase())) {
+          return false;
+        }
+      }
+      // 2. Ear Tag filter
+      if (earTagSearch.trim()) {
+        const tag = (r.tagId || "").toLowerCase();
+        if (!tag.includes(earTagSearch.toLowerCase())) {
+          return false;
+        }
+      }
+      // 3. Species filter
+      if (speciesFilter && speciesFilter !== "All Species") {
+        const s = (r.species || "").toLowerCase();
+        if (speciesFilter === "Cattle (Bovine)") {
+          if (s !== "cattle" && s !== "bovine") return false;
+        } else if (speciesFilter === "Goats (Caprine)") {
+          if (s !== "goats" && s !== "caprine") return false;
+        } else if (speciesFilter === "Sheep (Ovine)") {
+          if (s !== "sheep" && s !== "ovine") return false;
+        } else if (speciesFilter === "Pigs (Porcine)") {
+          if (s !== "pigs" && s !== "porcine") return false;
+        } else if (speciesFilter === "Poultry (Avian)") {
+          if (s !== "poultry" && s !== "avian") return false;
+        } else if (speciesFilter === "Other Animals") {
+          const list = ["cattle", "bovine", "goats", "caprine", "sheep", "ovine", "pigs", "porcine", "poultry", "avian"];
+          if (list.includes(s)) return false;
+        }
+      }
+      return true;
+    });
+  }, [localRecords, rfidSearch, earTagSearch, speciesFilter]);
 
   const feedCostPerKg = useMemo(() => {
     const totalPercent = ingredients.reduce((sum, ing) => sum + ing.percentage, 0);
@@ -960,7 +1207,13 @@ export default function EnterpriseLivestockManager({
               <p className="text-[11px] text-slate-400">Unified biometric index and historical lineage ledger for active herds.</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => handleDownloadDataset("csv")} className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-100 border text-xs font-bold rounded-xl flex items-center gap-1.5">
+              <button 
+                onClick={() => setIsRegisterOpen(true)} 
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Register New Animal
+              </button>
+              <button onClick={() => handleDownloadDataset("csv")} className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-100 border text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
                 <Download className="w-3.5 h-3.5 text-slate-500" /> Export CSV Census
               </button>
             </div>
@@ -1003,22 +1256,50 @@ export default function EnterpriseLivestockManager({
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">RFID Scan Input</label>
               <div className="flex gap-1.5 mt-1">
-                <input placeholder="Awaiting RFID scan..." readOnly text-xs className="w-full text-xs p-2 border bg-white rounded-lg select-none" />
-                <button className="px-3 bg-slate-900 text-white text-xs font-black rounded-lg">Scan</button>
+                <input 
+                  placeholder="Enter or scan RFID..." 
+                  value={rfidSearch} 
+                  onChange={(e) => setRfidSearch(e.target.value)} 
+                  className="w-full text-xs p-2 border bg-white rounded-lg outline-none font-semibold text-slate-800" 
+                />
+                <button 
+                  onClick={() => {
+                    const rids = localRecords.map(rec => rec.rfid).filter(Boolean);
+                    if (rids.length > 0) {
+                      setRfidSearch(rids[Math.floor(Math.random() * rids.length)] || "");
+                    } else {
+                      setRfidSearch(`RFID-ZAM-${Math.floor(Math.random() * 900000 + 100000)}`);
+                    }
+                  }}
+                  className="px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-lg cursor-pointer shrink-0"
+                >
+                  Scan
+                </button>
               </div>
             </div>
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Ear Tag Search</label>
-              <input placeholder="e.g. ZM-KLR-0012" className="mt-1 w-full text-xs p-2 border bg-white rounded-lg" />
+              <input 
+                placeholder="e.g. ZM-KLR-0012" 
+                value={earTagSearch} 
+                onChange={(e) => setEarTagSearch(e.target.value)} 
+                className="mt-1 w-full text-xs p-2 border bg-white rounded-lg outline-none font-semibold text-slate-800" 
+              />
             </div>
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Species Filter</label>
-              <select className="mt-1 w-full text-xs p-2 border bg-white rounded-lg font-bold">
+              <select 
+                value={speciesFilter} 
+                onChange={(e) => setSpeciesFilter(e.target.value)} 
+                className="mt-1 w-full text-xs p-2 border bg-white rounded-lg font-bold outline-none text-slate-800 focus:border-[#475569]"
+              >
                 <option>All Species</option>
                 <option>Cattle (Bovine)</option>
                 <option>Goats (Caprine)</option>
                 <option>Sheep (Ovine)</option>
                 <option>Pigs (Porcine)</option>
+                <option>Poultry (Avian)</option>
+                <option>Other Animals</option>
               </select>
             </div>
             <div>
@@ -1045,12 +1326,12 @@ export default function EnterpriseLivestockManager({
                   </tr>
                 </thead>
                 <tbody className="divide-y font-semibold text-slate-800">
-                  {localRecords.length === 0 ? (
+                  {filteredRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-5 text-center text-slate-400 italic">No biological assets registered yet.</td>
+                      <td colSpan={7} className="p-5 text-center text-slate-400 italic">No biological assets match the current filter selection.</td>
                     </tr>
                   ) : (
-                    localRecords.map(r => (
+                    filteredRecords.map(r => (
                       <tr key={r.id} className="hover:bg-slate-50/50">
                         <td className="p-4">
                           <span className="font-mono text-emerald-800 text-[11px] block">{r.tagId}</span>
@@ -1199,6 +1480,564 @@ export default function EnterpriseLivestockManager({
               </div>
             </div>
           </div>
+
+          {/* REGISTER NEW ANIMAL OVERLAY MODAL (Requirement 4) */}
+          {isRegisterOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
+              <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border border-slate-100">
+                {/* Modal Header */}
+                <div className="p-6 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                  <div>
+                    <span className="text-[9px] tracking-widest uppercase font-black text-emerald-400">Biological Asset Onboarding</span>
+                    <h4 className="text-base font-black uppercase tracking-tight">Onboard / Register Central Animal Profile</h4>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setIsRegisterOpen(false)}
+                    className="p-1 px-3.5 py-1.5 text-xs bg-white/10 hover:bg-white/20 hover:text-white rounded-xl font-bold cursor-pointer transition-all border-none outline-none"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+
+                {/* Form Container */}
+                <form onSubmit={handleRegisterAnimalSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+                  
+                  {/* SECTION 1: MASTER ID & IDENTIFIERS */}
+                  <div className="bg-slate-50 p-4.5 rounded-2xl border border-slate-200/60 space-y-3.5">
+                    <div className="flex items-center gap-1.5 pb-2 border-b">
+                      <span className="text-slate-900 text-xs font-black uppercase tracking-wider">🏷️ Biometric Identifiers & Universal Registries</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Ear Tag Number (Manual Override)</label>
+                        <input 
+                          placeholder="Leave blank for auto-generation" 
+                          value={regEarTag}
+                          onChange={(e) => setRegEarTag(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">RFID Tag Code</label>
+                        <input 
+                          placeholder="e.g. RFID-ZAM-99210" 
+                          value={regRfid}
+                          onChange={(e) => setRegRfid(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">QR Code Representation</label>
+                        <input 
+                          placeholder="Auto-generated if empty" 
+                          value={regQrCode}
+                          onChange={(e) => setRegQrCode(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Barcode Index Number</label>
+                        <input 
+                          placeholder="Auto-generated if empty" 
+                          value={regBarcode}
+                          onChange={(e) => setRegBarcode(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">RFID Microchip Number</label>
+                        <input 
+                          placeholder="e.g. MC-CATTLE-992" 
+                          value={regMicrochip}
+                          onChange={(e) => setRegMicrochip(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Government Registration Certificate ID No.</label>
+                        <input 
+                          placeholder="e.g. DVS-REG-99125/A" 
+                          value={regGovReg}
+                          onChange={(e) => setRegGovReg(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none focus:border-slate-800 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 2: BIOLOGICAL PROFILE */}
+                  <div className="bg-slate-50 p-4.5 rounded-2xl border border-slate-200/60 space-y-3.5">
+                    <div className="flex items-center gap-1.5 pb-2 border-b">
+                      <span className="text-slate-900 text-xs font-black uppercase tracking-wider">🐄 Biological Profile & Ancestry (Dam/Sire)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Species Category</label>
+                        <select 
+                          value={regSpecies}
+                          onChange={(e) => {
+                            setRegSpecies(e.target.value);
+                            // change default starting breed
+                            if (e.target.value === "Cattle") setRegBreed("Holstein-Friesian");
+                            else if (e.target.value === "Goats") setRegBreed("Boer");
+                            else if (e.target.value === "Sheep") setRegBreed("Dorper");
+                            else if (e.target.value === "Pigs") setRegBreed("Large White");
+                            else if (e.target.value === "Poultry") setRegBreed("Broilers");
+                            else setRegBreed("Other");
+                          }}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl bg-white font-bold text-slate-800 focus:border-slate-800"
+                        >
+                          <option value="Cattle">Cattle (Bovine)</option>
+                          <option value="Goats">Goats (Caprine)</option>
+                          <option value="Sheep">Sheep (Ovine)</option>
+                          <option value="Pigs">Pigs (Porcine)</option>
+                          <option value="Poultry">Poultry (Avian)</option>
+                          <option value="Other">Other Category</option>
+                        </select>
+                      </div>
+
+                      {regSpecies === "Other" && (
+                        <div>
+                          <label className="text-[10px] font-black uppercase text-amber-800">Add Custom Species Name</label>
+                          <input 
+                            placeholder="e.g. Camel, Fish, Bees" 
+                            value={customSpecies}
+                            onChange={(e) => setCustomSpecies(e.target.value)}
+                            className="mt-1 w-full text-xs p-2.5 border border-amber-300 rounded-xl outline-none focus:border-amber-500 bg-amber-50/20 font-bold"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Registered Breed</label>
+                        <select 
+                          value={regBreed}
+                          onChange={(e) => setRegBreed(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl bg-white font-bold text-slate-800 focus:border-slate-800"
+                        >
+                          {regSpecies === "Cattle" && CATTLE_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {regSpecies === "Goats" && GOAT_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {regSpecies === "Sheep" && SHEEP_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {regSpecies === "Pigs" && PIG_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {regSpecies === "Poultry" && POULTRY_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          {regSpecies === "Other" && OTHER_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                          <option value="Other">Add Custom Breed...</option>
+                        </select>
+                      </div>
+
+                      {regBreed === "Other" && (
+                        <div>
+                          <label className="text-[10px] font-black uppercase text-amber-800">Add Custom Breed Name</label>
+                          <input 
+                            placeholder="e.g. Brahman Hybrid" 
+                            value={customBreed}
+                            onChange={(e) => setCustomBreed(e.target.value)}
+                            className="mt-1 w-full text-xs p-2.5 border border-amber-300 rounded-xl outline-none focus:border-amber-500 bg-amber-50/20 font-bold"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Sub Breed / Strain Details</label>
+                        <input 
+                          placeholder="e.g. Red, Dairy Cross" 
+                          value={regSubBreed}
+                          onChange={(e) => setRegSubBreed(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Gender</label>
+                        <div className="mt-1 grid grid-cols-2 gap-2">
+                          <button 
+                            type="button" 
+                            onClick={() => setRegGender("Male")}
+                            className={`p-2.5 text-xs font-bold rounded-xl border cursor-pointer ${regGender === "Male" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+                          >
+                            Male
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setRegGender("Female")}
+                            className={`p-2.5 text-xs font-bold rounded-xl border cursor-pointer ${regGender === "Female" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+                          >
+                            Female
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Date of Birth (Calving Date)</label>
+                        <input 
+                          type="date"
+                          value={regDob}
+                          onChange={(e) => setRegDob(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none bg-white font-mono font-bold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Anatomic Color / Markings</label>
+                        <input 
+                          placeholder="e.g. Speckled Black" 
+                          value={regColor}
+                          onChange={(e) => setRegColor(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Sire Stud ID (Genealogy Father)</label>
+                        <input 
+                          placeholder="e.g. ZM-KLR-0012" 
+                          value={regSire}
+                          onChange={(e) => setRegSire(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Dam ID (Genealogy Mother)</label>
+                        <input 
+                          placeholder="e.g. ZM-FR-0094" 
+                          value={regDam}
+                          onChange={(e) => setRegDam(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border rounded-xl outline-none bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 3: IMMERSIVE APPRAISAL ENGINE VIEW */}
+                  <div className="bg-amber-50/45 border-amber-200 border-2 p-5 rounded-2xl grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div className="lg:col-span-12 pb-2.5 border-b border-amber-200/65 flex justify-between items-center">
+                      <span className="font-extrabold text-[12px] uppercase text-emerald-950 flex items-center gap-1">
+                        ⚙️ Dynamic Valuation Appraisal Engine
+                      </span>
+                      <span className="text-[8.5px] font-black text-amber-800 bg-amber-100/50 px-2 rounded-md uppercase font-mono">Calculates Real-Time ZMW Ledger Values</span>
+                    </div>
+
+                    {/* Valuation control inputs */}
+                    <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Liveweight (Kg)</label>
+                        <input 
+                          type="number"
+                          value={regWeight}
+                          onChange={(e) => setRegWeight(Math.max(1, Number(e.target.value)))}
+                          className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Base Market Price ({currencySymbol}/Kg)</label>
+                        <input 
+                          type="number"
+                          value={valMarketPricePerKg}
+                          onChange={(e) => setValMarketPricePerKg(Math.max(1, Number(e.target.value)))}
+                          className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Purchase Cost ({currencySymbol})</label>
+                        <input 
+                          type="number"
+                          value={regPurchaseValue}
+                          onChange={(e) => setRegPurchaseValue(Math.max(0, Number(e.target.value)))}
+                          className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Subjective Health Index Score ({valHealthScore}/10)</label>
+                        <div className="flex gap-2 items-center mt-1">
+                          <input 
+                            type="range"
+                            min="1"
+                            max="10"
+                            value={valHealthScore}
+                            onChange={(e) => setValHealthScore(Number(e.target.value))}
+                            className="w-full shrink h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                          />
+                          <span className="text-xs font-black text-slate-800 shrink-0 bg-white px-2 py-1 rounded-md border font-mono">{valHealthScore} pts</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Biological Productivity Output Rating</label>
+                        <select 
+                          value={valProductivity}
+                          onChange={(e) => setValProductivity(e.target.value)}
+                          className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-bold rounded-xl outline-none text-slate-800"
+                        >
+                          <option value="Normal">Normal Standard (1.0x)</option>
+                          <option value="High">High Feed Rate / Yield (1.15x)</option>
+                          <option value="Excellent">Excellent Prolific / Champion Stud (1.35x)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400">Current Lifecycle Status</label>
+                        <select 
+                          value={regStatus}
+                          onChange={(e) => setRegStatus(e.target.value)}
+                          className="mt-1 w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-black text-emerald-800 outline-none focus:border-slate-800"
+                        >
+                          <option value="Active">Active Census</option>
+                          <option value="Quarantined">Quarantined Isolation</option>
+                          <option value="Transferred">Transferred Herd</option>
+                          <option value="Sold">Sold Off</option>
+                          <option value="Dead">Dead (Deceased)</option>
+                          <option value="Slaughtered">Slaughtered</option>
+                          <option value="Missing">Reported Missing</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Real-time calculated Outputs card display */}
+                    <div className="lg:col-span-5 bg-slate-900 text-white rounded-2xl p-4.5 flex flex-col justify-between border border-slate-950/40">
+                      <span className="text-[8.5px] font-black tracking-widest text-[#a855f7] block uppercase font-mono">Live Real-time Valuation Ledger Impact</span>
+                      
+                      <div className="space-y-3.5 my-3">
+                        <div>
+                          <span className="text-[9.5px] text-slate-400 font-bold block">Current Appraisal Asset Value</span>
+                          <strong className="text-xl md:text-2xl text-emerald-400 block font-mono font-extrabold">{currencySymbol}{valuationOutputs.currentAssetValue.toLocaleString()}</strong>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          <div className="bg-slate-800/80 p-2 rounded-lg">
+                            <span className="text-slate-400 font-bold block">Depreciation Charge</span>
+                            <strong className="text-amber-500 block font-mono font-bold text-xs">{currencySymbol}{valuationOutputs.depreciation.toLocaleString()}</strong>
+                          </div>
+                          <div className="bg-slate-800/80 p-2 rounded-lg">
+                            <span className="text-slate-400 font-bold block">Growth Value Earned</span>
+                            <strong className="text-emerald-400 block font-mono font-bold text-xs">{currencySymbol}{valuationOutputs.growthValue.toLocaleString()}</strong>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-slate-800 pt-2.5 grid grid-cols-2 gap-2 text-[9px] text-slate-350">
+                          <div>
+                            <span>Fair Market Value:</span>
+                            <strong className="block text-white font-mono">{currencySymbol}{valuationOutputs.fairMarketValue.toLocaleString()}</strong>
+                          </div>
+                          <div>
+                            <span>Estimated Insurance Cover:</span>
+                            <strong className="block text-white font-mono">{currencySymbol}{valuationOutputs.insuranceValue.toLocaleString()}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-[8px] text-slate-500 font-bold italic text-center pt-1 leading-tight">Calculations dynamically parsed to Biological Assets [1420] and Revaluation Gain [4400] on registration.</p>
+                    </div>
+                  </div>
+
+                  {/* SECTION 4: MULTIPLE PHOTOS GALLERY UPLOADS */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <span className="font-extrabold text-[11px] uppercase text-slate-900 block pb-2 border-b">📸 Biometric Photo Archive Repository</span>
+                      <div className="space-y-3 mt-3">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400">Animal Profile Picture URL</label>
+                          <input 
+                            placeholder="e.g. https://images.unsplash.com/photo-..." 
+                            value={photoProfileInput}
+                            onChange={(e) => setPhotoProfileInput(e.target.value)}
+                            className="mt-1 w-full text-xs p-2 border bg-white rounded-lg outline-none focus:border-slate-800 text-slate-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 block">Medical Photos Archive ({regMedicalPhotos.length})</label>
+                          <div className="flex gap-2 mt-1">
+                            <input 
+                              placeholder="Enter medical photo URL..." 
+                              value={medicalPhotoInput}
+                              onChange={(e) => setMedicalPhotoInput(e.target.value)}
+                              className="w-full text-xs p-2 border bg-white rounded-lg outline-none focus:border-slate-800 text-slate-800"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (medicalPhotoInput) {
+                                  setRegMedicalPhotos([...regMedicalPhotos, medicalPhotoInput]);
+                                  setMedicalPhotoInput("");
+                                }
+                              }}
+                              className="px-3 bg-slate-950 text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-slate-800"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 block">Injury Images ({regInjuryPhotos.length})</label>
+                          <div className="flex gap-2 mt-1">
+                            <input 
+                              placeholder="Enter injury photo URL..." 
+                              value={injuryPhotoInput}
+                              onChange={(e) => setInjuryPhotoInput(e.target.value)}
+                              className="w-full text-xs p-2 border bg-white rounded-lg outline-none"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (injuryPhotoInput) {
+                                  setRegInjuryPhotos([...regInjuryPhotos, injuryPhotoInput]);
+                                  setInjuryPhotoInput("");
+                                }
+                              }}
+                              className="px-3 bg-slate-950 text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-slate-805"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 block">Sale & Auction Images ({regSalePhotos.length})</label>
+                          <div className="flex gap-2 mt-1">
+                            <input 
+                              placeholder="Enter sale photo URL..." 
+                              value={salePhotoInput}
+                              onChange={(e) => setSalePhotoInput(e.target.value)}
+                              className="w-full text-xs p-2 border bg-white rounded-lg outline-none"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (salePhotoInput) {
+                                  setRegSalePhotos([...regSalePhotos, salePhotoInput]);
+                                  setSalePhotoInput("");
+                                }
+                              }}
+                              className="px-3 bg-slate-950 text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-slate-800"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 5: LEGAL & VETERINARY DOCUMENTS STORAGE */}
+                    <div>
+                      <span className="font-extrabold text-[11px] uppercase text-slate-900 block pb-2 border-b">📂 Veterinary & Travel Document Repositories</span>
+                      <div className="space-y-3 mt-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400">Document Title</label>
+                            <input 
+                              placeholder="e.g. Foot/Mouth Cert" 
+                              value={docNameInput}
+                              onChange={(e) => setDocNameInput(e.target.value)}
+                              className="mt-1 w-full text-xs p-2 border bg-white rounded-lg outline-none font-semibold text-slate-800"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400">Permit Type</label>
+                            <select 
+                              value={docTypeInput}
+                              onChange={(e) => setDocTypeInput(e.target.value)}
+                              className="mt-1 w-full text-xs p-2 border bg-white rounded-lg font-bold outline-none text-slate-800"
+                            >
+                              <option value="Veterinary Certificate">Veterinary Certificate</option>
+                              <option value="Vaccination Card">Vaccination Card</option>
+                              <option value="Import Permit">Import Permit</option>
+                              <option value="Export Permit">Export Permit</option>
+                              <option value="Insurance Document">Insurance Document</option>
+                              <option value="Government Certificate">Government Certificate</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400">Mock Document Link / Attachment URL</label>
+                          <div className="flex gap-2">
+                            <input 
+                              placeholder="e.g. https://mock-drive.google.com/..." 
+                              value={docUrlInput}
+                              onChange={(e) => setDocUrlInput(e.target.value)}
+                              className="w-full text-xs p-2 border bg-white rounded-lg outline-none focus:border-slate-800 text-slate-805 font-mono text-[10px]"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (docNameInput) {
+                                  setRegDocuments([...regDocuments, {
+                                    id: "doc-" + Date.now(),
+                                    name: docNameInput,
+                                    type: docTypeInput,
+                                    url: docUrlInput || "https://example.com/mock-doc.pdf",
+                                    dateAdded: new Date().toISOString().split("T")[0]
+                                  }]);
+                                  setDocNameInput("");
+                                  setDocUrlInput("");
+                                } else {
+                                  alert("Please enter a name for the permit/document.");
+                                }
+                              }}
+                              className="px-3 bg-emerald-600 text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-emerald-500 shrink-0"
+                            >
+                              Attach
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Attachment list */}
+                        {regDocuments.length > 0 && (
+                          <div className="bg-white p-2.5 border rounded-lg max-h-24 overflow-y-auto space-y-1.5">
+                            {regDocuments.map((d, index) => (
+                              <div key={d.id} className="text-[10px] flex justify-between bg-slate-50 p-1.5 rounded border">
+                                <div className="truncate shrink">
+                                  <strong className="text-slate-800">{d.name}</strong> <span className="text-slate-400">({d.type})</span>
+                                </div>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setRegDocuments(regDocuments.filter((_, i) => i !== index))}
+                                  className="text-rose-600 font-extrabold hover:text-rose-850 px-1 cursor-pointer shrink-0"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-4 border-t flex justify-end gap-2.5 p-6 bg-slate-50 shrink-0">
+                    <button 
+                      type="button"
+                      onClick={() => setIsRegisterOpen(false)}
+                      className="px-4 py-2 text-xs bg-slate-200 hover:bg-slate-300 font-extrabold text-slate-700 rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit"
+                      className="px-5 py-2.5 text-xs bg-emerald-600 hover:bg-emerald-500 font-black text-white rounded-xl shadow-md cursor-pointer transition-all"
+                    >
+                      Onboard Asset & Post Double-Entry Journal
+                    </button>
+                  </div>
+
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

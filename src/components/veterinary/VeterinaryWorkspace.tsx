@@ -791,6 +791,7 @@ export default function VeterinaryWorkspace({
               credits={credits}
               subscriptionPlan={tenant.subscriptionPlan}
               transactions={transactions}
+              records={records}
               onTriggerModal={(mType) => {
                 if (mType === "subscribe" || mType === "recharge") {
                   setActiveTab2("billing");

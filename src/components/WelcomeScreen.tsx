@@ -99,8 +99,20 @@ export default function WelcomeScreen({
   const [showDemoRoleModal, setShowDemoRoleModal] = useState<boolean>(false);
   const [selectedDemoRole, setSelectedDemoRole] = useState<"Farmer" | "Vet Practitioner" | "Input Supplier">("Farmer");
   const [isLaunchingDemo, setIsLaunchingDemo] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor">("login");
+  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet">("login");
   const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
+  
+  // Veterinary onboarding states
+  const [vetClinicName, setVetClinicName] = useState("");
+  const [vetDirectorName, setVetDirectorName] = useState("");
+  const [vetEmail, setVetEmail] = useState("");
+  const [vetPassword, setVetPassword] = useState("");
+  const [vetConfirmPassword, setVetConfirmPassword] = useState("");
+  const [vetPhone, setVetPhone] = useState("");
+  const [vetDistrict, setVetDistrict] = useState("Lusaka");
+  const [vetProvince, setVetProvince] = useState("Lusaka Province");
+  const [vetSubMode, setVetSubMode] = useState<"PAYG" | "Monthly" | "Yearly">("PAYG");
+  const [selectedVetPaygBundleId, setSelectedVetPaygBundleId] = useState("vet-payg-starter");
   
   // Vendor registration states
   const [onboardVendorName, setOnboardVendorName] = useState("");
@@ -363,6 +375,52 @@ export default function WelcomeScreen({
     }
   };
 
+  const handleVetRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    setOtpError("");
+
+    if (!vetClinicName.trim() || !vetDirectorName.trim() || !vetEmail.trim() || !vetPassword.trim() || !vetConfirmPassword.trim() || !vetPhone.trim()) {
+      setFormError("Please fill in all veterinary clinic onboarding fields: Clinic Name, Vet Name, Email, Phone, and Password.");
+      return;
+    }
+
+    if (vetPassword !== vetConfirmPassword) {
+      setFormError("Passwords do not match. Please verify your set password.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+
+    try {
+      const countryObj = COUNTRIES.find(c => c.code === "ZM") || COUNTRIES[0];
+      const selectedTier = vetSubMode === "PAYG" 
+        ? (selectedVetPaygBundleId === "vet-payg-starter" 
+            ? "Veterinary PAYG Starter" 
+            : selectedVetPaygBundleId === "vet-payg-growth" 
+              ? "Veterinary PAYG Growth" 
+              : "Veterinary PAYG Expert") 
+        : vetSubMode === "Monthly"
+          ? "Agro-Vet Clinical Suite"
+          : "Veterinary Yearly Clinic Pro";
+
+      await onRegister({
+        fullName: vetDirectorName,
+        email: vetEmail,
+        phone: vetPhone,
+        farmName: vetClinicName,
+        country: countryObj,
+        subscriptionTier: selectedTier,
+        password: vetPassword
+      });
+    } catch (err: any) {
+      console.error("[Mabala Welcome] Error registering veterinary clinic:", err);
+      setFormError(`⚠️ Registration Error: ${err.message || "Failed to register clinic account."}`);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
   const verifyEmailCode = () => {
     setShowVerificationSent(false);
     setFormError("");
@@ -381,10 +439,6 @@ export default function WelcomeScreen({
 
     const cleanEmail = loginEmail.trim().toLowerCase();
     const cleanPassword = loginPassword.trim();
-    if (cleanEmail === "mabalademo@mabala.cloud" && (cleanPassword === "Mabala@2026" || cleanPassword === "Mabala@2026.")) {
-      setShowDemoRoleModal(true);
-      return;
-    }
 
     setIsSendingOtp(true);
 
@@ -762,12 +816,12 @@ export default function WelcomeScreen({
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-xl mx-auto">
               <button 
                 onClick={() => {
-                  setActiveTab("register");
+                  setActiveTab("register-vet");
                   setIsViewingLanding(false);
                 }}
-                className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-650/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-650/20 transition flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
               >
-                <span>Provision Secure Database</span>
+                <span>Register Veterinary Clinic</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
               
@@ -1213,7 +1267,7 @@ export default function WelcomeScreen({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {platformPackages.map((pkg, idx) => {
+            {platformPackages.filter(pkg => !pkg.id?.startsWith("vet-") && !pkg.name?.toLowerCase().includes("veterinary") && !pkg.name?.toLowerCase().includes("clinic") && pkg.name !== "Agro-Vet Clinical Suite").map((pkg, idx) => {
               const isPopular = pkg.name.toLowerCase().includes("farmer");
               return (
                 <div 
@@ -1702,14 +1756,14 @@ export default function WelcomeScreen({
           {!showOtpScreen && !showVerificationSent && (
             <div className="flex-1 flex flex-col justify-between pt-6">
               <div>
-                <div className="flex bg-slate-100 p-1 rounded-lg gap-2 mb-6">
+                <div className="flex bg-slate-100 p-1 rounded-lg gap-2 mb-6 flex-wrap">
                   <button
                     onClick={() => {
                       setActiveTab("login");
                       setFormError("");
                     }}
-                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "login" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    className={`flex-1 min-w-[70px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "login" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
                     Login
@@ -1719,22 +1773,33 @@ export default function WelcomeScreen({
                       setActiveTab("register");
                       setFormError("");
                     }}
-                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
-                    Create Organization
+                    Farmer Org
                   </button>
                   <button
                     onClick={() => {
                       setActiveTab("register-vendor");
                       setFormError("");
                     }}
-                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register-vendor" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    className={`flex-1 min-w-[100px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register-vendor" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
-                    Register as Vendor
+                    Agro-Vendor
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("register-vet");
+                      setFormError("");
+                    }}
+                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register-vet" ? "bg-indigo-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    🏥 Veterinary
                   </button>
                 </div>
 
@@ -1977,7 +2042,7 @@ export default function WelcomeScreen({
                         onChange={(e) => setSubscriptionTier(e.target.value)}
                         className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-850 cursor-pointer"
                       >
-                        {platformPackages.filter(p => p.isActive).map((p) => {
+                        {platformPackages.filter(p => p.isActive && !p.id?.startsWith("vet-") && !p.name?.toLowerCase().includes("veterinary") && !p.name?.toLowerCase().includes("clinic") && p.name !== "Agro-Vet Clinical Suite").map((p) => {
                           const isZm = selectedCountryCode === "ZM";
                           const rateLabel = isZm 
                             ? `ZK ${p.price}` 
@@ -2031,7 +2096,7 @@ export default function WelcomeScreen({
                       <span>{isSendingOtp ? "Provisioning..." : "Provision Tenant Database"}</span>
                     </button>
                   </form>
-                ) : (
+                ) : activeTab === "register-vendor" ? (
                   <form onSubmit={handleVendorRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800">
                     <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Mabala Self-Service Merchant Directory</h2>
                     <p className="text-xs text-slate-400 font-medium leading-normal">
@@ -2290,6 +2355,269 @@ export default function WelcomeScreen({
                     >
                       <UserPlus className="w-4 h-4" />
                       <span>{isSendingOtp ? "Provisioning..." : "PROCESS VENDOR SUBSCRIPTION & SELF-ONBOARD STORE"}</span>
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVetRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div>
+                      <h2 className="text-xl font-sans font-extrabold tracking-tight text-indigo-900">Veterinary Clinic Onboarding</h2>
+                      <p className="text-[11px] text-slate-400 font-medium">Verify your compliance standards & choose an operational ledger billing model.</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Owner / Veterinarian Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Dr. Shadrick Kasuli"
+                          value={vetDirectorName}
+                          onChange={(e) => setVetDirectorName(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Clinic / Practice Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Lusaka South Vet Clinic"
+                          value={vetClinicName}
+                          onChange={(e) => setVetClinicName(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Official Vet Email</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="doctor@vetclinic.com"
+                          value={vetEmail}
+                          onChange={(e) => setVetEmail(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Payment Contact Number (Momo)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g., 097XXXXXXXX"
+                          value={vetPhone}
+                          onChange={(e) => setVetPhone(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-medium text-indigo-700"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">District</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Lusaka District"
+                          value={vetDistrict}
+                          onChange={(e) => setVetDistrict(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Province</label>
+                        <select
+                          value={vetProvince}
+                          onChange={(e) => setVetProvince(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-semibold"
+                        >
+                          <option value="Lusaka Province">Lusaka</option>
+                          <option value="Southern Province">Southern</option>
+                          <option value="Copperbelt Province">Copperbelt</option>
+                          <option value="Central Province">Central</option>
+                          <option value="Eastern Province">Eastern</option>
+                          <option value="Northern Province">Northern</option>
+                          <option value="Western Province">Western</option>
+                          <option value="North-Western Province">North-Western</option>
+                          <option value="Muchinga Province">Muchinga</option>
+                          <option value="Luapula Province">Luapula</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Subscription Mode Selector Toggle Switch */}
+                    <div className="pt-2">
+                      <label className="text-[10px] uppercase font-extrabold text-[#475569] block pb-1">Choose Billing Ledger Model</label>
+                      <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setVetSubMode("PAYG")}
+                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
+                            vetSubMode === "PAYG" 
+                              ? "bg-indigo-600 text-white shadow-md scale-[1.01]" 
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          📦 Pay As You Go
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVetSubMode("Monthly")}
+                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
+                            vetSubMode === "Monthly" 
+                              ? "bg-indigo-700 text-white shadow-md scale-[1.01]" 
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          🏢 Monthly Suite
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVetSubMode("Yearly")}
+                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
+                            vetSubMode === "Yearly" 
+                              ? "bg-emerald-600 text-white shadow-md scale-[1.01]" 
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          🏆 Yearly Pro
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Conditional Packages Display */}
+                    {vetSubMode === "PAYG" ? (
+                      <div className="space-y-2 pt-1 animate-in fade-in duration-200">
+                        <span className="text-[9.5px] uppercase font-extrabold text-slate-400 block">Select PAYG Credit Pool Bundle:</span>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div 
+                            onClick={() => setSelectedVetPaygBundleId("vet-payg-starter")}
+                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all ${
+                              selectedVetPaygBundleId === "vet-payg-starter"
+                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
+                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
+                            }`}
+                          >
+                            <span className="text-[9px] font-black text-[#565f6c] block">Starter</span>
+                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">500 Credits</div>
+                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 150</span>
+                          </div>
+
+                          <div 
+                            onClick={() => setSelectedVetPaygBundleId("vet-payg-growth")}
+                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all ${
+                              selectedVetPaygBundleId === "vet-payg-growth"
+                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
+                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
+                            }`}
+                          >
+                            <span className="text-[9px] font-black text-[#565f6c] block">Growth</span>
+                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">1500 Credits</div>
+                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 400</span>
+                          </div>
+
+                          <div 
+                            onClick={() => setSelectedVetPaygBundleId("vet-payg-expert")}
+                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all relative overflow-hidden ${
+                              selectedVetPaygBundleId === "vet-payg-expert"
+                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
+                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
+                            }`}
+                          >
+                            <div className="absolute top-0 right-0 bg-yellow-400 text-slate-900 font-extrabold uppercase text-[7px] px-1 rounded-bl-md scale-[0.85]">VIP</div>
+                            <span className="text-[9px] font-black text-[#565f6c] block">Expert</span>
+                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">5000 Credits</div>
+                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 1200</span>
+                          </div>
+                        </div>
+                        <p className="text-[9.5px] text-slate-400 italic">Pay on demand with MTN/Airtel/Zamtel Mobile Money. No contract required.</p>
+                      </div>
+                    ) : vetSubMode === "Monthly" ? (
+                      <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-2xl flex justify-between items-start animate-in fade-in duration-200">
+                        <div className="space-y-1">
+                          <span className="text-[7.5px] bg-indigo-600 text-white font-black uppercase rounded px-1.5 py-0.5 inline-block">Professional Suite</span>
+                          <h4 className="text-xs font-black text-indigo-900">Agro-Vet Clinical Suite</h4>
+                          <ul className="text-[10px] text-slate-500 font-medium space-y-0.5 leading-tight pt-1">
+                            <li>✓ Full Veterinary clinic multi-practitioner tools</li>
+                            <li>✓ 10,000 Operations credits included monthly</li>
+                            <li>✓ Complete client directories & drug stock logs</li>
+                          </ul>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-black text-indigo-700 font-mono">ZK 600</div>
+                          <div className="text-[9px] text-slate-400 font-medium font-mono">bill monthly</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex justify-between items-start animate-in fade-in duration-200">
+                        <div className="space-y-1">
+                          <span className="text-[7.5px] bg-emerald-600 text-white font-black uppercase rounded px-1.5 py-0.5 inline-block">Best Value Plan</span>
+                          <h4 className="text-xs font-black text-emerald-900">Yearly Clinic Pro Suite</h4>
+                          <ul className="text-[10px] text-slate-500 font-medium space-y-0.5 leading-tight pt-1">
+                            <li>✓ Includes <strong>3,000 credits/month</strong> auto-replenish</li>
+                            <li>✓ Decoupled ledger reporting tools</li>
+                            <li>✓ Priority QR Movement passport signers</li>
+                          </ul>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-black text-emerald-700 font-mono">ZK 4,800</div>
+                          <div className="text-[9px] text-slate-400 font-medium font-mono">bill annually</div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={vetPassword}
+                          onChange={(e) => setVetPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Confirm Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={vetConfirmPassword}
+                          onChange={(e) => setVetConfirmPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    {formError && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-[10.5px] font-bold leading-relaxed animate-fade-in shadow-sm">
+                        ⚠️ {formError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSendingOtp}
+                      className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>
+                        {isSendingOtp 
+                          ? "Connecting to Lipila secure carrier gateway..." 
+                          : `AUTHORIZE & PAY ${
+                              vetSubMode === "PAYG" 
+                                ? selectedVetPaygBundleId === "vet-payg-starter"
+                                  ? "ZK 150"
+                                  : selectedVetPaygBundleId === "vet-payg-growth"
+                                    ? "ZK 400"
+                                    : "ZK 1,200"
+                                : "ZK 4,800"
+                            } VIA LIPILA`}
+                      </span>
                     </button>
                   </form>
                 )}

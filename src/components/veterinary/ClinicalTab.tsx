@@ -16,6 +16,8 @@ interface ClinicalTabProps {
   onDownloadPassport: (record: ClinicalRecord) => void;
   onDownloadPermitPdf: (mov: MovementCard) => void;
   currencySymbol: string;
+  inventory?: any[];
+  onDecrementInventoryAndExpense?: (medId: string, qty: number, clientName: string) => void;
 }
 
 export default function ClinicalTab({
@@ -27,11 +29,18 @@ export default function ClinicalTab({
   onAddMovementCard,
   onDownloadPassport,
   onDownloadPermitPdf,
-  currencySymbol
+  currencySymbol,
+  inventory = [],
+  onDecrementInventoryAndExpense
 }: ClinicalTabProps) {
   
   const [subTab, setSubTab] = useState<"consult" | "move" | "vaccine" | "surgery">("consult");
   const [searchTag, setSearchTag] = useState("");
+
+  // Medication and stock linking states
+  const [useInventory, setUseInventory] = useState(false);
+  const [selectedMedId, setSelectedMedId] = useState("");
+  const [medQty, setMedQty] = useState(1);
 
   // Consultation Form
   const [showConsultModal, setShowConsultModal] = useState(false);
@@ -75,6 +84,21 @@ export default function ClinicalTab({
       return;
     }
 
+    // Check inventory stock if linking
+    let linkedMedName = "";
+    if (useInventory && selectedMedId) {
+      const medItem = inventory.find(m => m.id === selectedMedId);
+      if (!medItem) {
+        setCError("Selected medicine not found in repository.");
+        return;
+      }
+      if (medItem.qtyAvailable < medQty) {
+        setCError(`Insufficient stocks in pharmacy cabinet! Only ${medItem.qtyAvailable} doses left, requested ${medQty}.`);
+        return;
+      }
+      linkedMedName = medItem.name;
+    }
+
     const success = onAddClinicalRecord({
       clientId: "cl-gen",
       clientName: cName,
@@ -82,7 +106,7 @@ export default function ClinicalTab({
       species,
       diagnosis,
       clinicalFindings: findings,
-      treatmentPlanned: treatment,
+      treatmentPlanned: treatment + (linkedMedName ? ` [Administered: ${medQty}x ${linkedMedName} from Pharmacy]` : ""),
       prescriptions: prescVal ? prescVal.split(",").map(p => p.trim()) : [],
       cost: Number(cost),
       status: cStatus,
@@ -91,6 +115,11 @@ export default function ClinicalTab({
     });
 
     if (success) {
+      // Trigger decrement & expense creation
+      if (useInventory && selectedMedId && onDecrementInventoryAndExpense) {
+        onDecrementInventoryAndExpense(selectedMedId, medQty, cName);
+      }
+
       setCName("");
       setAnimalTag("");
       setDiagnosis("");
@@ -98,6 +127,9 @@ export default function ClinicalTab({
       setTreatment("");
       setPrescVal("");
       setCError("");
+      setUseInventory(false);
+      setSelectedMedId("");
+      setMedQty(1);
       setShowConsultModal(false);
     }
   };
@@ -727,6 +759,64 @@ export default function ClinicalTab({
                     value={prescVal}
                     onChange={(e) => setPrescVal(e.target.value)}
                   />
+                </div>
+
+                {/* Pharmacy stock linking section */}
+                <div className="col-span-2 bg-slate-50 border border-slate-200 p-4.5 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-xs">Link & Decrement Pharmacy Stock</h4>
+                      <p className="text-[10px] text-slate-400">Directly deduct vaccines or medication used and post to general farm expenses</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={useInventory} 
+                        onChange={(e) => setUseInventory(e.target.checked)} 
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+
+                  {useInventory && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 animate-in fade-in duration-100">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase block pb-1">Select Medication / Vaccine</label>
+                        <select
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none font-bold text-slate-700"
+                          value={selectedMedId}
+                          onChange={(e) => {
+                            setSelectedMedId(e.target.value);
+                            const selectedItem = inventory.find(m => m.id === e.target.value);
+                            if (selectedItem) {
+                              setPrescVal(prev => prev ? `${prev}, ${selectedItem.name}` : selectedItem.name);
+                            }
+                          }}
+                          required={useInventory}
+                        >
+                          <option value="">-- Choose from Pharmacy cabinet --</option>
+                          {inventory.map(med => (
+                            <option key={med.id} value={med.id} disabled={med.qtyAvailable <= 0}>
+                              📦 {med.name} ({med.qtyAvailable} available) - Cost: {currencySymbol}{med.unitCost}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase block pb-1">Doses / Quantity Used</label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none font-bold"
+                          value={medQty}
+                          onChange={(e) => setMedQty(Math.max(1, Number(e.target.value)))}
+                          required={useInventory}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

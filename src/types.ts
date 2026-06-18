@@ -113,6 +113,27 @@ export interface CropCycle {
   expensesLinked: number;
   revenueLinked: number;
   farmId: string;
+  
+  // Custom enhanced fields for Plant Population, Survival & Revenue Forecasting engine
+  plantingMethod?: "Field" | "Bed";
+  measuredInKgOrUnits?: "Kg" | "Units";
+  harvestUnitName?: string; // (e.g. Cob, Head, Bulb, Plant, Fruit etc.)
+  expectedSellingPricePerUnit?: number;
+  expectedSellingPricePerKg?: number;
+  plantSpacingWithinRow?: number; // cm
+  rowSpacing?: number; // cm
+  bedWidth?: number; // meters
+  bedLength?: number; // meters
+  numberOfBeds?: number;
+  plantsPerBed?: number; // Auto calculated
+  totalExpectedPlantPopulation?: number; // Auto calculated
+  expectedSurvivalRate?: number; // %
+  expectedHarvestRate?: number; // %
+  avgHarvestUnitsPerPlant?: number;
+  averageWeightPerPlantKg?: number;
+  expectedRevenueProjection?: number; // Auto calculated
+  actualRevenueCollected?: number; // For actual vs planned variance
+  actualHarvestUnits?: number; // Actual harvested units
 }
 
 export interface Employee {
@@ -267,17 +288,47 @@ export interface LivestockRecord {
   type: "Cattle" | "Goats" | "Sheep" | "Pigs" | "Other" | string;
   species: string;
   breed: string;
+  subBreed?: string;
   tagId: string;
   gender: "Male" | "Female";
-  acquisitionType: "Bought" | "Birthed" | "Gifted";
+  acquisitionType: "Bought" | "Birthed" | "Gifted" | string;
   source: string;
   dateAcquired: string;
   purchasePrice: number;
   currentValue: number;
   healthEvents: { date: string; type: string; details: string; cost: number }[];
   feedingLogs: { date: string; feedType: string; quantityKg: number }[];
-  status: "Active" | "Sold" | "Deceased";
+  status: "Active" | "Sold" | "Deceased" | "Dead" | "Slaughtered" | "Missing" | "Transferred" | "Quarantined" | string;
   farmId: string;
+  dob?: string;
+  age?: string;
+  color?: string;
+  weight?: number;
+  estimatedMarketValue?: number;
+  insuranceValue?: number;
+  rfid?: string;
+  qrCode?: string;
+  barcode?: string;
+  microchip?: string;
+  govRegistration?: string;
+  photos?: {
+    profile?: string;
+    medical?: string[];
+    injury?: string[];
+    sale?: string[];
+  };
+  documents?: {
+    id: string;
+    name: string;
+    url: string;
+    type: string;
+    dateAdded: string;
+  }[];
+  healthScore?: number;
+  productivity?: string;
+  sire?: string;
+  dam?: string;
+  breedingSuccessRate?: number;
 }
 
 export interface StockHarvestRecord {

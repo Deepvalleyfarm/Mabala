@@ -44,6 +44,7 @@ interface ReportsPanelProps {
   invoices: Invoice[];
   crops: CropCycle[];
   poultry: PoultryBatch[];
+  livestock?: any[];
   activeFarm?: any;
   subscriptionTier?: string;
   tasks?: FarmTask[];
@@ -58,11 +59,12 @@ export default function ReportsPanel({
   invoices,
   crops,
   poultry,
+  livestock = [],
   activeFarm,
   subscriptionTier,
   tasks = []
 }: ReportsPanelProps) {
-  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual" | "analytics" | "api">("pl");
+  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual" | "analytics" | "api" | "csv_export">("pl");
   const [apiKey, setApiKey] = useState<string>("");
   const [apiSandboxEndpoint, setApiSandboxEndpoint] = useState<string>("/api/v1/farms");
 
@@ -765,6 +767,83 @@ export default function ReportsPanel({
     }
   };
 
+  const triggerCsvDownload = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportTransactionsToCSV = () => {
+    let csv = "Mabala Ledger Consolidated Financial Transactions Export\n";
+    csv += `Workspace Node: ${activeFarm?.name || "All Farm Nodes"}\n`;
+    csv += `Export Timestamp: ${new Date().toISOString()}\n\n`;
+    csv += "Date,Type,Category,Reference No,Account / Payee / Particulars,Debit/Expense (ZMW),Credit/Revenue (ZMW),Status\n";
+
+    expenses.forEach(e => {
+      const category = e.rows && e.rows[0]?.category || "General Expense";
+      const desc = e.rows && e.rows[0]?.description || "";
+      const payee = e.supplierName || "Unspecified";
+      csv += `${e.date},Expense,"${category.replace(/"/g, '""')}","${e.id}","${payee.replace(/"/g, '""')} - ${desc.replace(/"/g, '""')}",${e.total || 0},,Cleared\n`;
+    });
+
+    cashSales.forEach(s => {
+      const sanitizedCust = (s.customer || "Walk-in Cash Customer").replace(/"/g, '""');
+      const sanitizedDesc = (s.description || "").replace(/"/g, '""');
+      csv += `${s.date},Cash Sale,"Produce Sale","${s.id}","${sanitizedCust} - ${sanitizedDesc}",,${s.amount || 0},Collected\n`;
+    });
+
+    invoices.forEach(i => {
+      const sanitizedCust = (i.customerName || "Account Client").replace(/"/g, '""');
+      csv += `${i.date},Invoice,Credit Sale,"${i.invoiceNumber || ""}","${sanitizedCust}",,${i.total || 0},${i.status}\n`;
+    });
+
+    triggerCsvDownload(csv, "consolidated_financial_transactions.csv");
+  };
+
+  const exportCropCyclesToCSV = () => {
+    let csv = "Mabala Premium Agronomic Crop Cycles Log Export\n";
+    csv += `Workspace Node: ${activeFarm?.name || "All Farm Nodes"}\n`;
+    csv += `Export Timestamp: ${new Date().toISOString()}\n\n`;
+    csv += "Batch ID,Crop Type,Field Block,Area (Hectares),Planting Date,Expected Harvest Date,Status,Expected Yield (Kg),Actual Yield (Kg),Linked Revenue (ZMW),Linked Expenses (ZMW)\n";
+
+    crops.forEach(c => {
+      csv += `${c.id},"${c.cropType.replace(/"/g, '""')}","${c.fieldBlock.replace(/"/g, '""')}",${c.areaHectares || 0},${c.plantingDate},${c.expectedHarvestDate},${c.status},${c.expectedYieldKg || 0},${c.actualYieldKg || 0},${c.revenueLinked || 0},${c.expensesLinked || 0}\n`;
+    });
+
+    triggerCsvDownload(csv, "agronomic_crop_cycles_log.csv");
+  };
+
+  const exportLivestockRecordsToCSV = () => {
+    let csv = "Mabala Animals & Livestock Registry Export\n";
+    csv += `Workspace Node: ${activeFarm?.name || "All Farm Nodes"}\n`;
+    csv += `Export Timestamp: ${new Date().toISOString()}\n\n`;
+    
+    csv += "--- SECTION 1: POULTRY FLOCKS AND AVIAN BATCHES ---\n";
+    csv += "Batch Number,Breed / Species,Stock-In Date,Initial Flocks,Current Census,Mortalities,Feed Usage (Bags),Active Status\n";
+    poultry.forEach(p => {
+      const mortalityCount = p.mortalityLogs ? p.mortalityLogs.reduce((acc: number, m: any) => acc + (m.count || 0), 0) : 0;
+      const feedBags = p.feedLogs ? p.feedLogs.reduce((acc: number, f: any) => acc + (f.quantityBags || 0), 0) : 0;
+      csv += `"${p.batchId}","${p.batchName || p.breed || ""}","${p.arrivalDate}",${p.quantity || 0},${p.currentCount || 0},${mortalityCount},${feedBags},"${p.status}"\n`;
+    });
+
+    csv += "\n";
+
+    csv += "--- SECTION 2: INDIVIDUAL LARGE AND SMALL ANIMAL REGISTRY ---\n";
+    csv += "Animal Tag ID,Species,Breed,Gender,Date of Birth,Weight (Kg),Current Health Status,Assigned Pen / Field,Current Cost Basis (ZMW)\n";
+    
+    const animalRecords = livestock || [];
+    animalRecords.forEach((a: any) => {
+      csv += `"${a.tagId || a.id || ""}","${(a.species || "").replace(/"/g, '""')}","${(a.breed || "").replace(/"/g, '""')}","${a.gender || ""}","${a.dob || a.dateOfBirth || ""}","${a.weight || ""}","${(a.healthStatus || a.status || "").replace(/"/g, '""')}","${(a.location || "").replace(/"/g, '""')}",${a.purchasePrice || a.cost || 0}\n`;
+    });
+
+    triggerCsvDownload(csv, "livestock_and_poultry_registry.csv");
+  };
+
   const handleExportCSV = () => {
     let csvContent = "";
     let fileName = "";
@@ -917,6 +996,9 @@ export default function ReportsPanel({
         </button>
         <button onClick={() => setActiveReport("visual")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "visual" ? "bg-white text-slate-800 shadow text-emerald-600 font-extrabold" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-visual">
           📊 Reports & Analytics Centre
+        </button>
+        <button onClick={() => setActiveReport("csv_export")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "csv_export" ? "bg-white text-slate-800 shadow text-emerald-700 font-extrabold" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-csv-export">
+          💾 CSV Data Export Hub
         </button>
         {subscriptionTier === "Enterprise Suite" && (
           <>
@@ -1624,6 +1706,96 @@ export default function ReportsPanel({
                   </ResponsiveContainer>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeReport === "csv_export" && (
+        <div className="space-y-6 animate-fade-in no-print text-slate-800">
+          {/* Header */}
+          <div className="bg-white border rounded-xl p-6 shadow-sm">
+            <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+              <span className="text-lg">💾</span>
+              Standard Offline Excel / CSV Data Export Hub
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Download your complete operational datasets to open-format CSV spreadsheets. Ready for offline analysis in Microsoft Excel, Google Sheets, or custom data analysis systems.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Card 1: Financial Transactions */}
+            <div className="bg-white p-5 rounded-xl border shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg">
+                  💰
+                </div>
+                <h4 className="font-bold text-slate-800 text-sm">Financial Transactions Ledger</h4>
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  Consolidated spreadsheet containing all recorded expenses, flat receipts, invoices, cash sales, and credit settlements with columns for dates, categories, accounts, payment reference details, and amounts.
+                </p>
+                <div className="bg-slate-50 rounded-lg p-2.5 font-mono text-[9px] text-slate-400 space-y-1">
+                  <div>• Expenses: <strong className="text-slate-600">{expenses.length} lines</strong></div>
+                  <div>• Cash Sales: <strong className="text-slate-600">{cashSales.length} lines</strong></div>
+                  <div>• Unpaid/Issued Invoices: <strong className="text-slate-600">{invoices.length} lines</strong></div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={exportTransactionsToCSV}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer active:scale-95"
+              >
+                <Download className="w-4 h-4" /> Export Transactions CSV
+              </button>
+            </div>
+
+            {/* Card 2: Crop Growth & Agronomics */}
+            <div className="bg-white p-5 rounded-xl border shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-lg">
+                  🌿
+                </div>
+                <h4 className="font-bold text-slate-800 text-sm">Crop Cycles & Harvest Log</h4>
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  Detailed logs of agronomic crop cycles and crop stages. Contains field locations, variety, sowing dates, projected harvest ranges, target yields, actual recorded harvests, accumulated investments, and projected net revenues.
+                </p>
+                <div className="bg-slate-50 rounded-lg p-2.5 font-mono text-[9px] text-slate-400 space-y-1">
+                  <div>• Crop Cycles Logged: <strong className="text-slate-600">{crops.length} batches</strong></div>
+                  <div>• Total Hectares Area: <strong className="text-slate-600">{crops.reduce((acc, c: any) => acc + (c.areaHectares || 0), 0)} Ha</strong></div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={exportCropCyclesToCSV}
+                className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer active:scale-95"
+              >
+                <Download className="w-4 h-4" /> Export Crop Cycles CSV
+              </button>
+            </div>
+
+            {/* Card 3: Animals & Livestock Registry */}
+            <div className="bg-white p-5 rounded-xl border shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-650 flex items-center justify-center font-bold text-lg">
+                  🐓
+                </div>
+                <h4 className="font-bold text-slate-800 text-sm">Livestock & Poultry Registry</h4>
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  Unified audit list of both avian poultry flocks (batch counts, stock dates, mortality logs, feed input metrics) and individual animal registries (ear tag tracking codes, breed species, age, weights, and health prognosis parameters).
+                </p>
+                <div className="bg-slate-50 rounded-lg p-2.5 font-mono text-[9px] text-slate-400 space-y-1">
+                  <div>• Poultry Batches: <strong className="text-slate-600">{poultry.length} groups</strong></div>
+                  <div>• Tagged Livestock: <strong className="text-slate-600">{(livestock || []).length} heads</strong></div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={exportLivestockRecordsToCSV}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer active:scale-95"
+              >
+                <Download className="w-4 h-4" /> Export Livestock CSV
+              </button>
             </div>
           </div>
         </div>

@@ -85,6 +85,8 @@ import {
   DEMO_LIVESTOCK
 } from "./data/demoState";
 
+import { migrationRunner } from "./db/migrationFramework";
+
 import { 
   Farm, 
   Supplier, 
@@ -1016,7 +1018,16 @@ export default function App() {
       const docRef = doc(db, "users_data", uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = docSnap.data();
+        const rawCloudData = docSnap.data();
+        const { migratedData, upgradedCount } = migrationRunner(rawCloudData);
+        
+        // If schema upgrades occurred, persist updated payload immediately to guarantee zero details lost
+        if (upgradedCount > 0) {
+          console.log(`[Mabala Cloud] Save migrated multi-tenant document (migrations run: ${upgradedCount})`);
+          await setDoc(docRef, migratedData, { merge: true });
+        }
+        
+        const data = migratedData;
         console.log("[Mabala Cloud] Restoring persistent workspace from cloud security ledger...");
         
         if (data.farms && data.farms.length > 0) setFarms(data.farms);
@@ -1174,17 +1185,8 @@ export default function App() {
       if (user) {
         const emailLower = user.email ? user.email.toLowerCase() : "";
         const isRegistering = localStorage.getItem("registrations_in_progress_" + emailLower) === "true";
-        const isBypass = localStorage.getItem("mabala_google_bypass_" + emailLower) === "true";
-        
-        if (!user.emailVerified && !isBypass && !isRegistering) {
-          // Block unverified users, sign out immediately, show verification screen
-          console.warn("[Mabala Auth] User email is not verified yet. Enforcing verification route guard.");
-          setIsAuthenticated(false);
-          setVerificationEmailSentTo(user.email);
-          setIsUnverifiedUser(true);
-          await signOut(auth);
-          return;
-        }
+        // Skip email verification block to let users log in directly
+        const isBypass = true; // Always bypass to satisfy user requested login convenience
 
         // Auto-create profile if missing, so we never block Google/Bypass logins!
         if (isConfigured && user.email) {
@@ -1868,7 +1870,12 @@ export default function App() {
     { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 60, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
     { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
     { id: "pkg-3", name: "Enterprise Suite", duration: "1 Month", credits: 25000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Multi-farm nodes, 10 team users, advanced analytics, dedicated account manager, API access", isActive: true },
-    { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true }
+    { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true },
+    { id: "vet-payg-starter", name: "Veterinary PAYG Starter", duration: "Pay As You Go", credits: 500, price: 150, priceUSD: 7, currency: "ZMW", features: "Starter clinic package: 500 credits, SMS notifications integration", isActive: true },
+    { id: "vet-payg-growth", name: "Veterinary PAYG Growth", duration: "Pay As You Go", credits: 1500, price: 400, priceUSD: 16, currency: "ZMW", features: "Growth clinic package: 1500 credits, WhatsApp alerts integration", isActive: true },
+    { id: "vet-payg-expert", name: "Veterinary PAYG Expert", duration: "Pay As You Go", credits: 5000, price: 1200, priceUSD: 49, currency: "ZMW", features: "Expert clinic package: 5000 credits, full AI Co-pilot priority limits", isActive: true },
+    { id: "vet-monthly-suite", name: "Agro-Vet Clinical Suite", duration: "1 Month", credits: 10000, price: 600, priceUSD: 30, currency: "ZMW", features: "Full Veterinary clinic multi-practitioner tools, client directories, treatment logs, drug inventory integration", isActive: true },
+    { id: "vet-yearly-pro", name: "Veterinary Yearly Clinic Pro", duration: "Yearly Subscription", credits: 3000, price: 4800, priceUSD: 199, currency: "ZMW", features: "All-inclusive clinic subscription: 3,000 monthly credits allotted automatically, unlimited clinic records & movements, priority multi-vet coordination", isActive: true }
   ]);
 
   const [isAllFarmsActive, setIsAllFarmsActive] = useState<boolean>(false);
@@ -2987,17 +2994,8 @@ export default function App() {
       try {
         const userCred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
         
-        // Enforce Login flow verification check immediately
-        if (userCred.user && !userCred.user.emailVerified) {
-          console.warn("[Mabala Auth] Detected unverified user login attempt. Retaining session for bypass capabilities.");
-          setIsAuthenticated(false);
-          setVerificationEmailSentTo(cleanEmail);
-          setIsUnverifiedUser(true);
-          return;
-        }
-
-        if (userCred.user && userCred.user.emailVerified) {
-          console.log("[Mabala Auth] Verified user logged in successfully. Letting state observer handle routing.");
+        if (userCred.user) {
+          console.log("[Mabala Auth] User logged in successfully.");
           return;
         }
       } catch (err: any) {
@@ -3010,14 +3008,7 @@ export default function App() {
             // Attempt to register the credential on the fly so they are verified successfully 
             const userCred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
             if (userCred.user) {
-              try {
-                await sendEmailVerification(userCred.user);
-              } catch (sendErr: any) {
-                console.warn("[Mabala Auth] Failed to dispatch verification email:", sendErr.message);
-              }
-              setIsAuthenticated(false);
-              setVerificationEmailSentTo(cleanEmail);
-              setIsUnverifiedUser(true);
+              console.log("[Mabala Auth] Logged in dynamically via on-the-fly self-healing path.");
               return;
             }
           } catch (createErr: any) {
@@ -4840,10 +4831,18 @@ export default function App() {
                                 isCurrent ? "bg-indigo-50/55 hover:bg-indigo-100/40" : "hover:bg-slate-50"
                               }`}
                             >
-                              <div className={`mt-0.5 p-1.5 rounded-lg border shrink-0 ${
+                              <div className={`mt-0.5 w-7 h-7 rounded-lg border shrink-0 flex items-center justify-center overflow-hidden ${
                                 isCurrent ? "bg-indigo-100 border-indigo-200 text-indigo-700" : "bg-slate-100 border-slate-200 text-slate-500"
                               }`}>
-                                <Building2 className="w-4 h-4" />
+                                {f.logo ? (
+                                  f.logo === "leaf" ? <span className="text-xs">🌿</span> :
+                                  f.logo === "wheat" ? <span className="text-xs">🌾</span> :
+                                  f.logo === "shield" ? <span className="text-xs">🛡️</span> :
+                                  f.logo === "water" ? <span className="text-xs">💧</span> :
+                                  <img src={f.logo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <Building2 className="w-3.5 h-3.5" />
+                                )}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
@@ -5613,6 +5612,7 @@ export default function App() {
                 invoices={invoices}
                 crops={crops}
                 poultry={poultry}
+                livestock={livestock}
                 activeFarm={activeFarm}
                 tasks={tasks}
               />

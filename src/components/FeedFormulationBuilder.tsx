@@ -115,6 +115,33 @@ export const FeedFormulationBuilder: React.FC<FeedFormulationBuilderProps> = ({
   batches,
   onUpdatePoultryBatch
 }) => {
+  // Region ingredients library state with custom price modifications support
+  const [ingredientsLib, setIngredientsLib] = useState(() => {
+    const cached = localStorage.getItem("mabala_feed_ingredients_library");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error("Error reading cached ingredients library", e);
+      }
+    }
+    return ZAMBIAN_INGREDIENTS_LIBRARY;
+  });
+
+  const handleUpdateBasePrice = (index: number, newPrice: number) => {
+    const updated = [...ingredientsLib];
+    updated[index] = {
+      ...updated[index],
+      defaultCostPerKg: newPrice
+    };
+    setIngredientsLib(updated);
+    localStorage.setItem("mabala_feed_ingredients_library", JSON.stringify(updated));
+    if (Number(selectedLibIngredientIdx) === index) {
+      setLibPriceInput(newPrice);
+    }
+  };
+
   // Current active working formula state
   const [selectedStage, setSelectedStage] = useState<"Starter" | "Grower" | "Finisher" | "Layer Mash">("Starter");
   const [formulaName, setFormulaName] = useState("Custom Starter Formula");
@@ -169,7 +196,7 @@ export const FeedFormulationBuilder: React.FC<FeedFormulationBuilderProps> = ({
 
   // Add library ingredient
   const handleAddLibraryIngredient = () => {
-    const libItem = ZAMBIAN_INGREDIENTS_LIBRARY[selectedLibIngredientIdx];
+    const libItem = ingredientsLib[selectedLibIngredientIdx];
     if (!libItem) return;
 
     // Check if food already in current recipe
@@ -784,11 +811,11 @@ export const FeedFormulationBuilder: React.FC<FeedFormulationBuilderProps> = ({
 
   // Update library index prices of selected library element
   useEffect(() => {
-    const libItem = ZAMBIAN_INGREDIENTS_LIBRARY[selectedLibIngredientIdx];
+    const libItem = ingredientsLib[selectedLibIngredientIdx];
     if (libItem) {
       setLibPriceInput(libItem.defaultCostPerKg);
     }
-  }, [selectedLibIngredientIdx]);
+  }, [selectedLibIngredientIdx, ingredientsLib]);
 
   return (
     <div className="space-y-6">
@@ -1236,7 +1263,7 @@ export const FeedFormulationBuilder: React.FC<FeedFormulationBuilderProps> = ({
                       onChange={(e) => setSelectedLibIngredientIdx(Number(e.target.value))}
                       className="border p-2 bg-white rounded-lg font-bold text-slate-750 font-sans truncate w-full"
                     >
-                      {ZAMBIAN_INGREDIENTS_LIBRARY.map((item, index) => (
+                      {ingredientsLib.map((item, index) => (
                         <option key={index} value={index}>
                           {item.name} (CP: {item.crudeProteinPct}%)
                         </option>
@@ -1268,7 +1295,33 @@ export const FeedFormulationBuilder: React.FC<FeedFormulationBuilderProps> = ({
                 </div>
 
                 <div className="bg-white/80 p-2.5 rounded-lg border text-[10px] text-slate-450 leading-relaxed italic">
-                  {ZAMBIAN_INGREDIENTS_LIBRARY[selectedLibIngredientIdx]?.description}
+                  {ingredientsLib[selectedLibIngredientIdx]?.description}
+                </div>
+
+                {/* Interactive Ingredient Base Prices Controller (Requirement 3) */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex justify-between items-center text-[9.5px] uppercase tracking-wide">
+                    <span className="font-extrabold text-slate-900">⚖️ Configure Ingredient Base Prices ({currencySymbol}/Kg)</span>
+                    <span className="text-[8px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 rounded uppercase">Default Reference Library</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {ingredientsLib.map((item, idx) => (
+                      <div key={idx} className="bg-white p-2 rounded-lg border flex flex-col justify-between">
+                        <span className="font-bold text-slate-650 truncate text-[9px] w-full" title={item.name}>{item.name}</span>
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 font-mono font-bold">{currencySymbol}</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={item.defaultCostPerKg}
+                            onChange={(e) => handleUpdateBasePrice(idx, Math.max(0.1, Number(e.target.value)))}
+                            className="w-full text-xs font-bold font-mono px-1.5 py-0.5 border rounded bg-slate-50 focus:bg-white text-slate-800 outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <button

@@ -7,7 +7,7 @@ import {
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, AreaChart, Area
 } from "recharts";
-import { VetClient, VetAppointment, DiseaseOutbreak, VetWalletTx } from "./types";
+import { VetClient, VetAppointment, DiseaseOutbreak, VetWalletTx, ClinicalRecord } from "./types";
 import { VetNotification } from "./useVeterinaryNotifications";
 
 interface DashboardTabProps {
@@ -19,6 +19,7 @@ interface DashboardTabProps {
   transactions: VetWalletTx[];
   onTriggerModal: (modalType: string) => void;
   currencySymbol: string;
+  records?: ClinicalRecord[];
   // Notification hook integration
   notifications?: VetNotification[];
   onTriggerInApp?: (id: string) => void;
@@ -38,6 +39,7 @@ export default function DashboardTab({
   transactions,
   onTriggerModal,
   currencySymbol,
+  records = [],
   notifications = [],
   onTriggerInApp,
   onTriggerWhatsApp,
@@ -577,6 +579,178 @@ export default function DashboardTab({
           ))}
         </div>
 
+      </div>
+
+      {/* 4. Veterinary Doctor Activity Radar Widget */}
+      <div className="bg-slate-50 border border-slate-200/80 p-6 rounded-3xl space-y-5 shadow-sm" id="doctor-activity-radar">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-1.5 pb-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-ping inline-block" />
+              <h2 className="text-sm font-extrabold text-indigo-950 uppercase tracking-wide">Veterinary Doctor's Hub: Unified Activity & Compliance Radar</h2>
+            </div>
+            <p className="text-xs text-slate-500">Scheduled clinical operations, treatment history, and active veterinary alert dispatches.</p>
+          </div>
+          <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 text-[10px] rounded-full uppercase tracking-wider">
+            🩺 Doctor Role Dashboard Connected
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Col 1: Upcoming Scheduled Appointments */}
+          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3.5">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <h3 className="font-extrabold text-[#111822] text-xs flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-indigo-600" /> Upcoming Scheduled Appointments
+              </h3>
+              <span className="bg-amber-100 text-amber-800 font-extrabold text-[9px] px-2 py-0.5 rounded-full">
+                {appointments.filter(a => a.status === "Pending").length} Pending
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-[290px] overflow-y-auto pr-1">
+              {appointments.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-[11px] italic">No scheduled appointments logged.</div>
+              ) : (
+                appointments.slice(0, 5).map(apt => (
+                  <div key={apt.id} className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-2 text-[11px] transition-all hover:border-slate-300">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-bold text-slate-800 block">{apt.clientName}</span>
+                        <span className="text-[10px] text-slate-500">Client Ref: <strong className="font-semibold text-slate-600">{apt.clientId}</strong></span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase ${
+                        apt.status === "Completed" 
+                          ? "bg-emerald-100 text-emerald-800" 
+                          : apt.status === "Cancelled" 
+                            ? "bg-rose-100 text-rose-800" 
+                            : "bg-amber-100 text-amber-800"
+                      }`}>
+                        {apt.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-400 font-semibold font-mono font-medium">
+                      <div className="flex items-center gap-1 col-span-2">
+                        <Clock className="w-3 h-3 text-slate-400" /> {apt.dateTime}
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-[#4a5668] bg-slate-100/50 p-1 rounded-md text-center font-bold">
+                      {apt.type} ({apt.category})
+                    </div>
+
+                    {apt.status === "Pending" && (
+                      <div className="flex gap-1.5 pt-1.5">
+                        <button 
+                          onClick={() => onUpdateAppointment && onUpdateAppointment(apt.id, { status: "Completed" })}
+                          className="flex-1 py-1 bg-emerald-500 hover:bg-emerald-600 font-bold text-white rounded-lg text-[9.5px] cursor-pointer"
+                        >
+                          Complete
+                        </button>
+                        <button 
+                          onClick={() => onUpdateAppointment && onUpdateAppointment(apt.id, { status: "Cancelled" })}
+                          className="px-2 py-1 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 font-bold text-slate-400 rounded-lg text-[9.5px] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Col 2: Recent Health & Treatment Logs */}
+          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3.5">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <h3 className="font-extrabold text-[#111822] text-xs flex items-center gap-1.5">
+                <HardDrive className="w-4 h-4 text-emerald-600" /> Recent Diagnosis & Therapy Logs
+              </h3>
+              <span className="bg-emerald-100 text-emerald-800 font-extrabold text-[9px] px-2 py-0.5 rounded-full">
+                {records.length} Recorded
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-[290px] overflow-y-auto pr-1">
+              {records.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-[11px] italic">No therapy runs recorded. Clear a consultation to log data.</div>
+              ) : (
+                records.slice(0, 5).map(record => (
+                  <div key={record.id} className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-1.5 text-[11px] transition-all hover:border-slate-300">
+                    <div className="flex justify-between items-center">
+                      <span className="font-extrabold text-slate-800">Tag: {record.animalId}</span>
+                      <span className="text-[9px] font-mono text-slate-500 font-bold">{record.date || "2026-06-17"}</span>
+                    </div>
+
+                    <div className="text-[10px] space-y-0.5">
+                      <div><span className="text-slate-400 font-bold uppercase">Diagnosis:</span> <strong className="text-rose-700 font-bold">{record.diagnosis || "Post-mortem investigation"}</strong></div>
+                      <div><span className="text-slate-400 font-bold uppercase">Prognosis:</span> <span className="font-semibold text-slate-600">{record.status || "In therapy"}</span></div>
+                    </div>
+
+                    <div className="border-t border-slate-200/80 pt-1 text-[10px] text-slate-500 font-semibold leading-snug">
+                      📄 <span className="italic">{record.treatmentPlanned || "Surgical recovery monitoring only"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Col 3: Critical Treatment Booster Alerts */}
+          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3.5">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <h3 className="font-extrabold text-[#111822] text-xs flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-rose-500" /> 3-Day Vaccination Booster Targets
+              </h3>
+              <span className="bg-rose-100 text-rose-800 font-extrabold text-[9px] px-2 py-0.5 rounded-full">
+                {notifications.filter(n => n.type === "vaccination_booster" || n.type === "withdrawal_period").length} Active
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-[290px] overflow-y-auto pr-1">
+              {notifications.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-[11px] italic">No upcoming booster targets. All animals compliant.</div>
+              ) : (
+                notifications.slice(0, 5).map(notif => (
+                  <div key={notif.id} className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl space-y-2 text-[11px] transition-all hover:border-slate-300">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-bold text-slate-800 block">{notif.title}</span>
+                        <span className="text-[10.5px] text-rose-600 font-black">{notif.type === "vaccination_booster" ? "Booster Target" : "Withdrawal Window"}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 font-bold">{notif.dueDate}</span>
+                    </div>
+
+                    <p className="text-[10px] leading-relaxed text-slate-500 bg-white p-1.5 rounded-lg border border-slate-100">
+                      {notif.message}
+                    </p>
+
+                    <div className="flex gap-1.5 pt-1.5">
+                      <button 
+                        onClick={() => onTriggerInApp && onTriggerInApp(notif.id)}
+                        className={`flex-1 py-1 transition text-[9px] font-bold rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer select-none ${
+                          notif.status === "Sent_InApp" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                        }`}
+                      >
+                        {notif.status === "Sent_InApp" ? "✓ App Alert" : "🔔 App Alert"}
+                      </button>
+                      <button 
+                        onClick={() => triggerDirectWhatsApp(notif)}
+                        className={`flex-1 py-1 transition text-[9px] font-bold rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer select-none ${
+                          notif.status === "Sent_WhatsApp" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
+                        }`}
+                      >
+                        {notif.status === "Sent_WhatsApp" ? "✓ WhatsApp Dispatched" : "💬 dispatch WhatsApp"}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 6. Traditional Analytics Grid */}
