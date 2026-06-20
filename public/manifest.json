@@ -1,0 +1,24 @@
+{
+  "name": "Mabala Farm Management Platform",
+  "short_name": "Mabala",
+  "description": "Offline-First Farm Management & Accounting SaaS for Zambia",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#0ea5e9",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "assets/logo_light.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/logo_light.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

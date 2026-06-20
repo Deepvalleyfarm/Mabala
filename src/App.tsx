@@ -3,6 +3,7 @@ import Sidebar from "./components/Sidebar";
 import WelcomeScreen from "./components/WelcomeScreen";
 import AiChatbot from "./components/AiChatbot";
 import AnimalRegistrationWizard from "./components/AnimalRegistrationWizard";
+import { useSuperAdmin } from "./hooks/useSuperAdmin";
 
 // Sub-panels
 import AccountsPanel from "./components/AccountsPanel";
@@ -37,6 +38,7 @@ import AuditArchivePanel from "./components/AuditArchivePanel";
 import CsvImportPanel from "./components/CsvImportPanel";
 import MarketplacePanel from "./components/MarketplacePanel";
 import GlobalConfirmModal from "./components/GlobalConfirmModal";
+import OfftakerPanel from "./components/offtaker/OfftakerPanel";
 
 import {
   INITIAL_VENDORS,
@@ -690,17 +692,38 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<PredefinedRole>("Farm Owner");
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_PERMISSIONS);
 
+  const { isSuperAdmin, isLoading: isSuperAdminLoading } = useSuperAdmin();
+
+  useEffect(() => {
+    if (activeTab === "platform-admin" && !isSuperAdminLoading) {
+      const isAuthorized = isSuperAdmin || currentRole === "Platform Administrator";
+      if (!isAuthorized) {
+        console.warn("Direct navigation to platform-admin denied. Redirecting to tenant dashboard.");
+        setActiveTab("dashboard");
+      }
+    }
+  }, [activeTab, isSuperAdmin, isSuperAdminLoading, currentRole]);
+
   const [teamMembers, setTeamMembers] = useState<UserMember[]>(DEFAULT_TEAM_MEMBERS);
 
   const [subscriptionTier, setSubscriptionTier] = useState<string>(() => {
     return localStorage.getItem("mabala_subscription_tier") || "Commercial Growth Layer";
   });
-  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary">(() => {
+  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary" | "Offtaker">(() => {
     return (localStorage.getItem("mabala_workspace_mode") as any) || "Farmer";
   });
   const [vetFeeActivation, setVetFeeActivation] = useState<boolean>(() => {
     return localStorage.getItem("mabala_vet_fee_activation") !== "false";
   });
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const addNotification = (message: string, type: "success" | "warning" | "info" | "error" = "info") => {
+    const id = "notif-" + Date.now() + Math.random().toString(36).substr(2, 5);
+    setNotifications(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  };
 
   // Multi-Country and Currency Localization states
   const [selectedCountry, setSelectedCountry] = useState<CountryInfo>(COUNTRIES[0]); // Default Zambia
@@ -1251,6 +1274,16 @@ export default function App() {
 
     return () => unsubscribe();
   }, [isAuthenticated, currentSessionId]);
+
+  // Offtaker Role Enforcement Guard - prevents offtakers from accessing unauthorized sections
+  useEffect(() => {
+    if (isAuthenticated && (workspaceMode === "Offtaker" || subscriptionTier === "Free Offtaker")) {
+      const allowed = ["offtaker-marketplace", "profile", "backup-restore", "audit-archive"];
+      if (!allowed.includes(activeTab)) {
+        setActiveTab("offtaker-marketplace");
+      }
+    }
+  }, [isAuthenticated, workspaceMode, subscriptionTier, activeTab]);
 
   // Auto-logout after 5 minutes of inactivity to protect farm workspace
   useEffect(() => {
@@ -2611,6 +2644,115 @@ export default function App() {
     });
   };
 
+  const handleRegisterOfftaker = async (data: {
+    legalName: string;
+    pacraNumber: string;
+    sector: string;
+    tpin: string;
+    contactPhone: string;
+    depotLocation: string;
+    email: string;
+    password?: string;
+  }) => {
+    if (isConfigured && data.email && data.password) {
+      try {
+        const emailLower = data.email.trim().toLowerCase();
+        
+        // 1. Pre-flight check in Firestore
+        try {
+          const q = query(collection(db, "users_data"), where("email", "==", emailLower));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+          }
+        } catch (err: any) {
+          if (err.message && err.message.includes("already linked")) {
+            throw err;
+          }
+        }
+
+        localStorage.setItem("registrations_in_progress_" + emailLower, "true");
+        localStorage.setItem("mabala_google_bypass_" + emailLower, "true");
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const uid = userCred.user.uid;
+        
+        setUserProfile({
+          name: data.legalName,
+          email: data.email,
+          phone: data.contactPhone
+        });
+        
+        setSubscriptionTier("Free Offtaker");
+        setCredits(100);
+        setIsAuthenticated(true);
+        setIsUnverifiedUser(false);
+        setActiveTab("offtaker-marketplace");
+
+        const initialFarms: any[] = [];
+        setFarms(initialFarms);
+        const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+        setAccounts(initialAccounts);
+
+        const docRef = doc(db, "users_data", uid);
+        await setDoc(docRef, {
+          uid,
+          email: emailLower,
+          credits: 100,
+          subscriptionTier: "Free Offtaker",
+          workspaceMode: "Offtaker",
+          tenantType: "offtaker",
+          role: "offtaker",
+          offtaker_profile: {
+            legalName: data.legalName,
+            pacraNumber: data.pacraNumber,
+            sector: data.sector,
+            tpin: data.tpin,
+            contactPhone: data.contactPhone,
+            depotLocation: data.depotLocation
+          },
+          farms: initialFarms,
+          accounts: initialAccounts,
+          suppliers: [],
+          customers: [],
+          expenses: [],
+          invoices: [],
+          quotations: [],
+          crops: [],
+          employees: [],
+          payslips: [],
+          poultry: [],
+          fish: [],
+          inventory: [],
+          loans: [],
+          investments: [],
+          cashSales: [],
+          livestock: []
+        });
+        
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        addNotification("Free Offtaker Account Registered Successfully!", "success");
+      } catch (err: any) {
+        const emailLower = data.email.trim().toLowerCase();
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        if (err.code === "auth/email-already-in-use") {
+          throw new Error("This email is already linked to an active profile. Please use another email.");
+        }
+        throw err;
+      }
+    } else {
+      // Offline/Simulation Flow fallback
+      setUserProfile({
+        name: data.legalName,
+        email: data.email,
+        phone: data.contactPhone
+      });
+      setSubscriptionTier("Free Offtaker");
+      setIsAuthenticated(true);
+      setActiveTab("offtaker-marketplace");
+      addNotification("Free Offtaker Account Initialized Successfully in Offline Sandbox!", "success");
+    }
+  };
+
   const handleRegisterVendor = async (data: {
     storeName: string;
     category: "Seeds & Agronomy" | "Veterinary & Health" | "Equipment & Tech" | "Feeds & Formulations";
@@ -3411,6 +3553,39 @@ export default function App() {
     deductCredits(1); // LIGHT write operation
   };
 
+  const handleAddLedgerEntryFromOfftaker = (
+    date: string,
+    desc: string,
+    debit: string,
+    credit: string,
+    amount: number,
+    module: string
+  ) => {
+    if (isReadonly) return;
+    const tx: ExpenseTransaction = {
+      id: "tx-offtaker-" + Date.now(),
+      supplierId: "supp-offtaker-system",
+      supplierName: "Offtaker Settlement",
+      date,
+      taxSystem: "VAT Exempt",
+      taxAmount: 0,
+      subtotal: amount,
+      total: amount,
+      farmId: activeFarm?.id || "farm-1",
+      rows: [
+        {
+          category: desc,
+          description: `Disbursement under settlement system — debit coa ${debit}, credit coa ${credit}`,
+          quantity: 1,
+          unitPrice: amount,
+          amount,
+          coaCode: debit || "5010"
+        }
+      ]
+    };
+    handleAddExpense(tx);
+  };
+
   const handleAddExpense = (tx: ExpenseTransaction) => {
     if (isReadonly) return;
     setExpenses(prev => [tx, ...prev]);
@@ -4083,6 +4258,7 @@ export default function App() {
           onInitDemoWorkspace={handleInitDemoWorkspace}
           onRegister={handleRegister} 
           onRegisterVendor={handleRegisterVendor}
+          onRegisterOfftaker={handleRegisterOfftaker}
           onLogin={handleLogin} 
           onGoogleSignIn={handleGoogleSignIn} 
           onGoogleSignInBypass={handleGoogleSignInBypass}
@@ -5140,7 +5316,7 @@ export default function App() {
                         </div>
                       )}
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardChartData} margin={{ top: 10, right: 10, left: 15, bottom: 0 }}>
+                        <BarChart data={hasChartData ? dashboardChartData : []} margin={{ top: 10, right: 10, left: 15, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                           <XAxis 
                             dataKey="month" 
@@ -5196,7 +5372,8 @@ export default function App() {
                         { id: "invoices", name: "Invoices & Quotes", desc: "1-click quotation transform" },
                         { id: "livestock", name: "Poultry & Livestock", desc: "Egg tracking limits & health" },
                         { id: "aquaculture", name: "Aquaculture Systems", desc: "Dissolved DO water parameters" },
-                        { id: "reports", name: "Financial Reports", desc: "GAAP & IAS quarterly returns" }
+                        { id: "reports", name: "Financial Reports", desc: "GAAP & IAS quarterly returns" },
+                        { id: "offtaker-marketplace", name: "Sell to Offtakers", desc: "Liquidate harvests to certified aggregators" }
                       ].map(m => (
                         <button
                           key={m.id}
@@ -5593,6 +5770,20 @@ export default function App() {
               userEmail={userProfile.email}
               platformPackages={platformPackages}
               setPlatformPackages={setPlatformPackages}
+            />
+          )}
+
+          {activeTab === "offtaker-marketplace" && (
+            <OfftakerPanel 
+              currentTenantId={userProfile.email}
+              currentRole={currentRole}
+              userEmail={userProfile.email}
+              onAddLedgerEntry={handleAddLedgerEntryFromOfftaker}
+              cropCycles={crops}
+              setCropCycles={setCrops}
+              addNotification={addNotification}
+              isOnline={true}
+              workspaceMode={workspaceMode}
             />
           )}
 

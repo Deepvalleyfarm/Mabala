@@ -746,3 +746,120 @@ export interface FarmTask {
   farmId: string;
 }
 
+// -----------------------------------------------------
+// Offtaker Portal Database Schemas
+// -----------------------------------------------------
+
+export interface Offtaker {
+  id: string;
+  tenantId: string;
+  legalName: string;
+  registrationNumber: string;
+  tpin: string;
+  sector: "grain" | "dairy" | "cotton" | "tobacco" | "livestock" | "other";
+  depotLocations: string[]; // array of strings
+  status: "active" | "suspended";
+  createdAt: string;
+}
+
+export interface OfftakerProduct {
+  id: string;
+  offtakerId: string;
+  productName: string;
+  unit: string; // kg, litre, head, bale, etc.
+  defaultUnitPrice: number;
+  gradeTags: string[]; // array
+  active: boolean;
+}
+
+export interface FarmerOfftakerLink {
+  id: string;
+  farmerId: string; // FK to Farmer
+  offtakerId: string; // FK to Offtaker
+  status: "pending" | "active" | "revoked";
+  initiatedBy: "farmer" | "offtaker";
+  linkedAt: string;
+  respondedAt?: string;
+}
+
+export interface DeliveryNote {
+  id: string;
+  dnNumber: string; // unique, sequential PER offtaker (e.g. DN-2026-001)
+  farmerId: string;
+  farmerName?: string; // cached helper
+  offtakerId: string;
+  productId: string;
+  productName?: string; // cached helper
+  quantity: number;
+  unit: string;
+  gradeTag: string;
+  unitPrice: number;
+  totalValue: number;
+  cropCycleId?: string | null; // FK to existing CropCycle (nullable)
+  status: "pending_confirmation" | "confirmed" | "disputed";
+  confirmationDeadline?: string;
+  confirmedAt?: string;
+  paymentStatus: "unpaid" | "paid";
+  payoutId?: string | null;
+  recordedByUserId: string;
+  createdAt: string;
+}
+
+export interface AdjustmentNote {
+  id: string;
+  originalDnId: string;
+  reason: string;
+  fieldChanges: {
+    quantity?: { from: number; to: number };
+    unitPrice?: { from: number; to: number };
+    gradeTag?: { from: string; to: string };
+  };
+  createdBy: string;
+  approvedBy: string;
+  createdAt: string;
+}
+
+export interface OfftakerWallet {
+  id: string;
+  offtakerId: string;
+  balance: number;
+  currency: string; // 'ZMW' by default
+  lastFundedAt?: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  walletId: string;
+  type: "fund" | "debit" | "fee" | "reversal";
+  amount: number;
+  lipilaReference: string;
+  createdAt: string;
+}
+
+export interface Payout {
+  id: string;
+  offtakerId: string;
+  farmerId: string;
+  deliveryNoteIds: string[]; // can be multiple DNs in one payout
+  grossAmount: number;
+  offtakerFeeAmount: number;
+  farmerFeeAmount: number;
+  netAmountToFarmer: number;
+  payoutMethod: "mobile_money" | "bank_transfer";
+  lipilaReference: string;
+  status: "initiated" | "processing" | "completed" | "failed" | "reversed";
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface FeeConfig {
+  id: string;
+  side: "farmer" | "offtaker";
+  ratePercent: number; // decimal (e.g., 2.8)
+  flatFee: number; // decimal ZMW (e.g., 15.00)
+  effectiveFrom: string;
+  setByUserId: string;
+  createdAt: string;
+}
+
+

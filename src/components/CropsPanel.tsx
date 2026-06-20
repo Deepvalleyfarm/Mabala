@@ -265,6 +265,23 @@ export default function CropsPanel({
   const [activeTab, setActiveTab] = useState<"batches" | "forecaster">("batches");
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedCropIds, setSelectedCropIds] = useState<string[]>([]);
+  const [deliveryNotes, setDeliveryNotes] = useState<any[]>([]);
+  const [cardTabs, setCardTabs] = useState<Record<string, "milestones" | "sales_margin">>({});
+
+  useEffect(() => {
+    const loadNotes = async () => {
+      try {
+        const { getAllFromOfflineStore } = await import("../db/offline_db");
+        const dns = await getAllFromOfflineStore("delivery_notes");
+        if (dns && dns.length > 0) {
+          setDeliveryNotes(dns);
+        }
+      } catch (e) {
+        console.warn("Failed loading delivery notes in CropsPanel:", e);
+      }
+    };
+    loadNotes();
+  }, [crops]);
   
   // Custom states for templates and dynamically calculated fields
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -1081,28 +1098,135 @@ export default function CropsPanel({
                     </div>
                   </div>
 
-                  {/* Progressive Milestones list */}
-                  <div className="p-6 bg-slate-50/50">
-                    <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-3 tracking-widest">Progressive Farm Cycle Milestones Checklist</span>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      {crop.milestones && crop.milestones.map(m => (
-                        <div key={m.id} className={`p-3 rounded-xl border flex flex-col justify-between h-20 transition-all ${
-                          m.isCompleted ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-white border-slate-200 text-slate-600"
-                        }`}>
-                          <div className="flex justify-between items-start">
-                            <span className="text-[11px] font-black leading-tight line-clamp-2">{m.name}</span>
-                            <input 
-                              type="checkbox"
-                              checked={m.isCompleted}
-                              onChange={e => onUpdateMilestone(crop.id, m.id, e.target.checked)}
-                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4"
-                            />
-                          </div>
-                          <span className="text-[9px] font-mono text-slate-400 block uppercase">Season Checklist</span>
+                  {/* Card Section Tabs */}
+                  {(() => {
+                    const activeCardTab = cardTabs[crop.id] || "milestones";
+                    const linkedDNs = deliveryNotes.filter(dn => dn.cropCycleId === crop.id && (dn.status === "Confirmed" || dn.status === "confirmed"));
+                    const revenue_recognised = linkedDNs.reduce((acc, dn) => acc + (dn.totalValue || 0), 0);
+                    const cost_to_date = crop.expensesLinked || 0;
+                    const gross_margin = revenue_recognised - cost_to_date;
+                    const totalGrossPct = revenue_recognised > 0 ? (gross_margin / revenue_recognised) * 100 : 0;
+
+                    return (
+                      <>
+                        <div className="px-6 py-2 pb-0 border-b border-slate-100 bg-slate-50/30 flex gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setCardTabs(prev => ({ ...prev, [crop.id]: "milestones" }))}
+                            className={`pb-1.5 text-[11px] font-black uppercase tracking-wider relative transition-colors cursor-pointer ${
+                              activeCardTab === "milestones" ? "text-slate-900 border-b-2 border-slate-900" : "text-slate-400 hover:text-slate-600"
+                            }`}
+                          >
+                            📋 Growth Milestones
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCardTabs(prev => ({ ...prev, [crop.id]: "sales_margin" }))}
+                            className={`pb-1.5 text-[11px] font-black uppercase tracking-wider relative transition-colors cursor-pointer ${
+                              activeCardTab === "sales_margin" ? "text-emerald-700 border-b-2 border-emerald-700" : "text-slate-400 hover:text-slate-600"
+                            }`}
+                          >
+                            💰 Sales & Margins (Offtaker Deliveries)
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+
+                        {activeCardTab === "milestones" ? (
+                          <div className="p-6 bg-slate-50/50">
+                            <span className="text-[10px] font-extrabold uppercase text-slate-400 block mb-3 tracking-widest">Progressive Farm Cycle Milestones Checklist</span>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              {crop.milestones && crop.milestones.map(m => (
+                                <div key={m.id} className={`p-3 rounded-xl border flex flex-col justify-between h-20 transition-all ${
+                                  m.isCompleted ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-white border-slate-200 text-slate-600"
+                                }`}>
+                                  <div className="flex justify-between items-start">
+                                    <span className="text-[11px] font-black leading-tight line-clamp-2">{m.name}</span>
+                                    <input 
+                                      type="checkbox"
+                                      checked={m.isCompleted}
+                                      onChange={e => onUpdateMilestone(crop.id, m.id, e.target.checked)}
+                                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                                    />
+                                  </div>
+                                  <span className="text-[9px] font-mono text-slate-400 block uppercase">Season Checklist</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 bg-slate-50/50 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block mb-1">Revenue Recognised</span>
+                                <span className="text-lg font-black text-emerald-700 font-mono">
+                                  {currencySymbol}{revenue_recognised.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block mt-1 font-semibold leading-none font-mono">Status: Confirmed DNs</span>
+                              </div>
+
+                              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block mb-1">Cost To Date (COGS)</span>
+                                <span className="text-lg font-black text-rose-600 font-mono">
+                                  {currencySymbol}{cost_to_date.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block mt-1 font-semibold leading-none font-mono">Direct expense lines</span>
+                              </div>
+
+                              <div className={`p-4 rounded-xl border ${gross_margin >= 0 ? "bg-emerald-50/50 border-emerald-100" : "bg-rose-50/50 border-rose-100"}`}>
+                                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block mb-1">Gross Cycle Margin</span>
+                                <span className={`text-lg font-black font-mono ${gross_margin >= 0 ? "text-emerald-800" : "text-rose-800"}`}>
+                                  {currencySymbol}{gross_margin.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block mt-1 font-semibold leading-none font-mono">Margin: {(totalGrossPct).toFixed(1)}%</span>
+                              </div>
+                            </div>
+
+                            {/* Display underlying delivery notes support */}
+                            <div className="bg-white rounded-xl border border-slate-200/85 overflow-hidden">
+                              <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                <span className="text-[10.5px] font-bold text-slate-600 uppercase">Supporting Delivery Accruals</span>
+                                <span className="text-[10px] uppercase bg-slate-200 px-1.5 py-0.5 font-bold rounded font-mono text-slate-700">
+                                  {linkedDNs.length} record{linkedDNs.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+
+                              {linkedDNs.length === 0 ? (
+                                <div className="p-4 text-center text-xs italic text-slate-400">
+                                  No confirmed delivery notes linked to this crop cycle yet. Record deliveries at Offtaker portal and project margins.
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left border-collapse text-[11.5px]">
+                                    <thead>
+                                      <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase text-slate-400">
+                                        <th className="p-2.5">DN Ref</th>
+                                        <th className="p-2.5">Buyer (Offtaker)</th>
+                                        <th className="p-2.5">Quantity</th>
+                                        <th className="p-2.5">Grade</th>
+                                        <th className="p-2.5">Unit Price</th>
+                                        <th className="p-2.5 text-right">Total Amount</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {linkedDNs.map((dn: any) => (
+                                        <tr key={dn.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                          <td className="p-2.5 font-bold text-slate-800 font-mono">{dn.dnNumber}</td>
+                                          <td className="p-2.5 text-slate-600 font-semibold">{dn.offtakerName || "Certified Aggregator"}</td>
+                                          <td className="p-2.5 font-semibold text-slate-700">{dn.quantity || dn.qty} {dn.unit}</td>
+                                          <td className="p-2.5 font-bold text-slate-500 font-mono">{dn.gradeTag || dn.grade}</td>
+                                          <td className="p-2.5 font-semibold text-slate-700 font-mono">{currencySymbol}{(dn.unitPrice || 0).toFixed(2)}</td>
+                                          <td className="p-2.5 text-right font-bold text-emerald-800 font-mono">{currencySymbol}{(dn.totalValue || 0).toFixed(2)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               );
             })}

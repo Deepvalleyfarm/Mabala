@@ -53,6 +53,16 @@ interface WelcomeScreenProps {
     password?: string;
     logoUrl?: string;
   }) => void | Promise<void>;
+  onRegisterOfftaker?: (data: {
+    legalName: string;
+    pacraNumber: string;
+    sector: string;
+    tpin: string;
+    contactPhone: string;
+    depotLocation: string;
+    email: string;
+    password?: string;
+  }) => void | Promise<void>;
   onLogin: (email: string, password?: string) => void | Promise<void>;
   onGoogleSignIn?: () => void | Promise<void>;
   onGoogleSignInBypass?: (email: string) => void | Promise<void>;
@@ -75,6 +85,7 @@ export default function WelcomeScreen({
   onInitDemoWorkspace,
   onRegister, 
   onRegisterVendor,
+  onRegisterOfftaker,
   onLogin,
   onGoogleSignIn,
   onGoogleSignInBypass,
@@ -99,9 +110,20 @@ export default function WelcomeScreen({
   const [showDemoRoleModal, setShowDemoRoleModal] = useState<boolean>(false);
   const [selectedDemoRole, setSelectedDemoRole] = useState<"Farmer" | "Vet Practitioner" | "Input Supplier">("Farmer");
   const [isLaunchingDemo, setIsLaunchingDemo] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet">("login");
+  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet" | "register-offtaker">("login");
   const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
   
+  // Offtaker onboarding states
+  const [offtakerLegalName, setOfftakerLegalName] = useState("");
+  const [offtakerPacraNumber, setOfftakerPacraNumber] = useState("");
+  const [offtakerSector, setOfftakerSector] = useState("Grain");
+  const [offtakerTpin, setOfftakerTpin] = useState("");
+  const [offtakerContactPhone, setOfftakerContactPhone] = useState("");
+  const [offtakerDepotLocation, setOfftakerDepotLocation] = useState("");
+  const [offtakerEmail, setOfftakerEmail] = useState("");
+  const [offtakerPassword, setOfftakerPassword] = useState("");
+  const [offtakerConfirmPassword, setOfftakerConfirmPassword] = useState("");
+
   // Veterinary onboarding states
   const [vetClinicName, setVetClinicName] = useState("");
   const [vetDirectorName, setVetDirectorName] = useState("");
@@ -212,6 +234,11 @@ export default function WelcomeScreen({
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpError, setOtpError] = useState("");
   const [formError, setFormError] = useState("");
+
+  // Google Sign-In Screen States
+  const [showGoogleAccountScreen, setShowGoogleAccountScreen] = useState<boolean>(false);
+  const [selectedGoogleEmail, setSelectedGoogleEmail] = useState<string>("shikasuli@gmail.com");
+  const [isEditingGoogleEmail, setIsEditingGoogleEmail] = useState<boolean>(false);
 
   // Recovery States
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -326,6 +353,44 @@ export default function WelcomeScreen({
     } catch (err: any) {
       console.error("[Mabala Welcome] Error registering:", err);
       setFormError(`⚠️ Registration Error: ${err.message || "Failed to register."}`);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleOfftakerRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    setOtpError("");
+
+    if (!offtakerLegalName.trim() || !offtakerPacraNumber.trim() || !offtakerTpin.trim() || !offtakerContactPhone.trim() || !offtakerDepotLocation.trim() || !offtakerEmail.trim() || !offtakerPassword.trim() || !offtakerConfirmPassword.trim()) {
+      setFormError("Please fill in all organization fields.");
+      return;
+    }
+
+    if (offtakerPassword !== offtakerConfirmPassword) {
+      setFormError("Passwords do not match. Please verify your set password.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+
+    try {
+      if (onRegisterOfftaker) {
+        await onRegisterOfftaker({
+          legalName: offtakerLegalName,
+          pacraNumber: offtakerPacraNumber,
+          sector: offtakerSector,
+          tpin: offtakerTpin,
+          contactPhone: offtakerContactPhone,
+          depotLocation: offtakerDepotLocation,
+          email: offtakerEmail,
+          password: offtakerPassword
+        });
+      }
+    } catch (err: any) {
+      console.error("[Mabala Welcome] Error registering offtaker:", err);
+      setFormError(`⚠️ Registration Error: ${err.message || "Failed to register offtaker organizational account."}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -452,31 +517,30 @@ export default function WelcomeScreen({
     }
   };
 
-  const handleGoogleSignInClick = async () => {
-    if (!onGoogleSignIn) return;
+  const handleGoogleSignInClick = () => {
     setFormError("");
     setOtpError("");
+    setShowGoogleAccountScreen(true);
+  };
+
+  const handleGoogleScreenContinue = async () => {
+    if (!onGoogleSignInBypass) return;
+    setFormError("");
     setIsSendingOtp(true);
     try {
-      await onGoogleSignIn();
+      await onGoogleSignInBypass(selectedGoogleEmail);
     } catch (err: any) {
-      console.error("[Mabala Welcome] Error logging in with Google:", err);
+      console.error("[Mabala Welcome] Error during Google custom sign in continue:", err);
       if (err.message && err.message.startsWith("GOOGLE_NO_PROFILE:")) {
         const noProfileEmail = err.message.split(":")[1];
         setRegisterEmail(noProfileEmail);
         setActiveTab("register");
         setFormError("⚠️ Google profile not found. Accounts must be registered first before logging in. We have pre-populated your email in the registration form below.");
+        setShowGoogleAccountScreen(false);
         return;
       }
-      const errMsg = String(err.message || err.code || "").toLowerCase();
-      setShowGoogleBypassField(true);
-      if (errMsg.includes("popup-closed-by-user") || errMsg.includes("popup_closed_by_user")) {
-        setFormError("Google Sign-In Error: popup-closed-by-user (Popups blocked inside iframe. Please use the secure Google Bypass Option below.)");
-      } else if (errMsg.includes("popup-blocked") || errMsg.includes("popup_blocked") || errMsg.includes("unauthorized-domain") || errMsg.includes("unauthorized_domain")) {
-        setFormError("Google Sign-In Error: Unauthorized Domain / Popup Blocked inside sandboxed iframe. Please use the secure Google Bypass Option below.");
-      } else {
-        setFormError(`⚠️ Google Sign-In Error: ${err.message || "Could not authenticate."} Use the specialized Google Bypass Option below.`);
-      }
+      setFormError(`⚠️ Google Sign-In Error: ${err.message || "Failed to authenticate."}`);
+      setShowGoogleAccountScreen(false);
     } finally {
       setIsSendingOtp(false);
     }
@@ -1801,10 +1865,156 @@ export default function WelcomeScreen({
                   >
                     🏥 Veterinary
                   </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("register-offtaker");
+                      setFormError("");
+                    }}
+                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register-offtaker" ? "bg-emerald-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    🌾 Offtaker
+                  </button>
                 </div>
 
                 {activeTab === "login" ? (
-                  <form onSubmit={handleLoginSubmit} className="space-y-4 font-semibold text-xs text-slate-800">
+                  showGoogleAccountScreen ? (
+                    <div className="space-y-6 bg-white p-6 rounded-2xl border border-slate-150 shadow-sm animate-fade-in font-sans text-slate-800 text-xs">
+                      {/* Google Sign-In Header */}
+                      <div className="flex justify-start mb-1 text-slate-400">
+                        {/* Beautiful Google Mini logo */}
+                        <svg className="w-5 h-5 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                          <path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.22-.66-.35-1.36-.35-2.1z" fill="#FBBC05"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                      </div>
+
+                      <h2 className="text-xl sm:text-2xl font-normal text-[#202124] tracking-tight leading-tight select-none">
+                        You're signing back in to Mabala
+                      </h2>
+
+                      {/* Interactive Email Badge */}
+                      <div className="py-2 flex">
+                        {isEditingGoogleEmail ? (
+                          <div className="flex gap-2 items-center animate-fade-in w-full">
+                            <input
+                              type="email"
+                              value={selectedGoogleEmail}
+                              onChange={(e) => setSelectedGoogleEmail(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  setIsEditingGoogleEmail(false);
+                                }
+                              }}
+                              className="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/10 outline-none font-medium"
+                              placeholder="Enter Google account email..."
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingGoogleEmail(false)}
+                              className="text-[10px] px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setIsEditingGoogleEmail(true)}
+                            className="inline-flex items-center gap-2 border border-[#dadce0] rounded-full py-1 pl-1 pr-3 hover:bg-slate-50 transition-all cursor-pointer select-none bg-white font-medium max-w-full truncate shadow-sm hover:shadow"
+                            title="Click to use a different Google Account"
+                          >
+                            <div className="w-5 h-5 rounded-full bg-indigo-650 text-white flex items-center justify-center font-bold text-[10px] shrink-0 font-mono">
+                              {selectedGoogleEmail ? selectedGoogleEmail.charAt(0).toUpperCase() : "G"}
+                            </div>
+                            <span className="text-[11px] text-[#3c4043] font-medium truncate">{selectedGoogleEmail}</span>
+                            <svg className="w-3 h-3 text-slate-400 shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Google guidelines & Privacy links */}
+                      <div className="space-y-4 text-[11px] font-normal leading-relaxed text-[#3c4043] text-left select-none">
+                        <p>
+                          Review Mabala's{" "}
+                          <button
+                            type="button"
+                            onClick={() => setShowPolicyModal("privacy")}
+                            className="text-[#1a73e8] hover:underline font-medium cursor-pointer"
+                          >
+                            Privacy Policy
+                          </button>{" "}
+                          and{" "}
+                          <button
+                            type="button"
+                            onClick={() => setShowPolicyModal("terms")}
+                            className="text-[#1a73e8] hover:underline font-medium cursor-pointer"
+                          >
+                            Terms of Service
+                          </button>{" "}
+                          to understand how Mabala will process and protect your data.
+                        </p>
+                        <p>
+                          To make changes at any time, go to your{" "}
+                          <a
+                            href="https://myaccount.google.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1a73e8] hover:underline font-medium"
+                          >
+                            Google Account
+                          </a>
+                          .
+                        </p>
+                        <p>
+                          Learn more about{" "}
+                          <a
+                            href="https://support.google.com/accounts/answer/11249876"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1a73e8] hover:underline font-medium"
+                          >
+                            Sign in with Google
+                          </a>
+                          .
+                        </p>
+                      </div>
+
+                      {/* Google sign-in status message */}
+                      {isSendingOtp && (
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 animate-pulse justify-center py-1 font-sans">
+                          <span className="w-2 h-2 rounded-full bg-[#1a73e8] animate-pulse"></span>
+                          <span>Authorising Google credentials...</span>
+                        </div>
+                      )}
+
+                      {/* Action Pill Buttons */}
+                      <div className="flex gap-3 pt-4 border-t border-slate-100">
+                        <button
+                          type="button"
+                          disabled={isSendingOtp}
+                          onClick={() => setShowGoogleAccountScreen(false)}
+                          className="flex-1 py-2.5 px-4 border border-[#dadce0] rounded-full text-xs font-semibold text-[#1a73e8] hover:bg-[#1a73e8]/5 disabled:opacity-50 transition-all cursor-pointer text-center select-none font-sans"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSendingOtp}
+                          onClick={handleGoogleScreenContinue}
+                          className="flex-1 py-2.5 px-4 border border-[#dadce0] rounded-full text-xs font-semibold text-[#1a73e8] hover:bg-[#1a73e8]/5 disabled:opacity-50 transition-all cursor-pointer text-center select-none shadow-sm flex items-center justify-center gap-1.5 font-sans"
+                        >
+                          <span>{isSendingOtp ? "Authenticating..." : "Continue"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleLoginSubmit} className="space-y-4 font-semibold text-xs text-slate-800">
                     <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Sign In to Your Tenant</h2>
                     <p className="text-xs text-slate-400 font-medium leading-normal">
                       Access your multi-farm data structure, payroll localized books, and inventories.
@@ -1963,6 +2173,7 @@ export default function WelcomeScreen({
                       </>
                     )}
                   </form>
+                )
                 ) : activeTab === "register" ? (
                   <form onSubmit={handleRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800">
                     <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Register Organization Tenant</h2>
@@ -2355,6 +2566,146 @@ export default function WelcomeScreen({
                     >
                       <UserPlus className="w-4 h-4" />
                       <span>{isSendingOtp ? "Provisioning..." : "PROCESS VENDOR SUBSCRIPTION & SELF-ONBOARD STORE"}</span>
+                    </button>
+                  </form>
+                ) : activeTab === "register-offtaker" ? (
+                  <form onSubmit={handleOfftakerRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div>
+                      <h2 className="text-xl font-sans font-extrabold tracking-tight text-emerald-950">Offtaker Self-Registration (Free)</h2>
+                      <p className="text-[11px] text-slate-500 font-medium leading-normal">
+                        Register your warehouse and corporate profile. Zero upfront signup fee. Wallet funding as needed via Lipila.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Organization Legal Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Kasama Milling Ltd"
+                          value={offtakerLegalName}
+                          onChange={(e) => setOfftakerLegalName(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-550 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">PACRA Registration Number</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. LCO-291039-AZ"
+                          value={offtakerPacraNumber}
+                          onChange={(e) => setOfftakerPacraNumber(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Zambian Sector Category</label>
+                        <select
+                          value={offtakerSector}
+                          onChange={(e) => setOfftakerSector(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        >
+                          <option value="Grain">Grain & Maize Millers</option>
+                          <option value="Dairy">Dairy Processors</option>
+                          <option value="Cotton">Cotton Ginners</option>
+                          <option value="Tobacco">Tobacco Aggregators</option>
+                          <option value="Livestock">Meat & Poultry Packers</option>
+                          <option value="Other">Other Agro-processors</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Tax Registration PIN (TPIN)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 1004928172"
+                          value={offtakerTpin}
+                          onChange={(e) => setOfftakerTpin(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Corporate Contact Mobile</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 0977283401"
+                          value={offtakerContactPhone}
+                          onChange={(e) => setOfftakerContactPhone(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Physical Depot / Collection Point</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Plot 12, Mpika Industrial Rail Depot"
+                          value={offtakerDepotLocation}
+                          onChange={(e) => setOfftakerDepotLocation(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block">Corporate Registered Email</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="buyer@organisation.com"
+                        value={offtakerEmail}
+                        onChange={(e) => setOfftakerEmail(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Secure Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={offtakerPassword}
+                          onChange={(e) => setOfftakerPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Confirm Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={offtakerConfirmPassword}
+                          onChange={(e) => setOfftakerConfirmPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    {formError && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-800 rounded-xl text-[11px] font-bold leading-relaxed animate-fade-in shadow-xs">
+                        ⚠️ {formError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSendingOtp}
+                      className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-550 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{isSendingOtp ? "Initializing..." : "REGISTER FREE OFFTAKER ORG"}</span>
                     </button>
                   </form>
                 ) : (

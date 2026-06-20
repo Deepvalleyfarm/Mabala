@@ -27,6 +27,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { PredefinedRole, OptionalModulePermission } from "../types";
+import { useSuperAdmin } from "../hooks/useSuperAdmin";
 
 interface SidebarProps {
   activeTab: string;
@@ -38,7 +39,7 @@ interface SidebarProps {
   rolePermissions: { [moduleId: string]: OptionalModulePermission };
   userEmail: string;
   subscriptionTier: string;
-  workspaceMode: "Farmer" | "Veterinary";
+  workspaceMode: "Farmer" | "Veterinary" | "Offtaker";
   activeFarmName: string;
   onOpenAnimalWizard?: () => void;
 }
@@ -109,7 +110,8 @@ export default function Sidebar({
       icon: Store,
       subItems: [
         { id: "sales", label: "Sales & Customers" },
-        { id: "marketplace", label: "Vendor Marketplace" }
+        { id: "marketplace", label: "Vendor Marketplace" },
+        { id: "offtaker-marketplace", label: "Sell to Offtakers" }
       ]
     },
     {
@@ -161,9 +163,32 @@ export default function Sidebar({
     }
   ];
 
-  // If Platform Administrator, append Platform Admin category
-  const isAdmin = userEmail === "deepvaleyfarm@gmail.com" || currentRole === "Platform Administrator";
-  const displayedCategories = [...categories];
+  // Specific Offtaker Categories list
+  const offtakerCategories = [
+    {
+      id: "offtaker-marketplace-group",
+      label: "Offtaker Marketplace",
+      icon: Tractor,
+      tabId: "offtaker-marketplace"
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: Settings,
+      subItems: [
+        { id: "profile", label: "User & Depot Settings" },
+        { id: "backup-restore", label: "Data Backup & Restore" },
+        { id: "audit-archive", label: "Audit Trails" }
+      ]
+    }
+  ];
+
+  const { isSuperAdmin } = useSuperAdmin();
+  const isAdmin = isSuperAdmin || currentRole === "Platform Administrator";
+  const displayedCategories = workspaceMode === "Offtaker" 
+    ? [...offtakerCategories] 
+    : [...categories];
+
   if (isAdmin) {
     displayedCategories.push({
       id: "platform-admin-group",
@@ -175,6 +200,17 @@ export default function Sidebar({
 
   // Check sub-item filtering based on permissions & isolations
   const isTabAllowed = (tabId: string) => {
+    // If in offtaker view, restrict strictly
+    if (workspaceMode === "Offtaker") {
+      return (
+        tabId === "offtaker-marketplace" ||
+        tabId === "profile" ||
+        tabId === "platform-admin" ||
+        tabId === "backup-restore" ||
+        tabId === "audit-archive"
+      );
+    }
+
     // If in veterinary workspace view, restrict to vet & configs
     if (workspaceMode === "Veterinary") {
       return (
@@ -199,6 +235,7 @@ export default function Sidebar({
       tabId === "finance-hub" ||
       tabId === "assets" ||
       tabId === "marketplace" ||
+      tabId === "offtaker-marketplace" ||
       tabId === "audit-archive" ||
       tabId === "accounts" ||
       tabId === "expenses" ||

@@ -521,8 +521,8 @@ interface LivestockPoultryPanelProps {
   // Subscription and clinical states
   subscriptionTier: string;
   setSubscriptionTier: (tier: string) => void;
-  workspaceMode: "Farmer" | "Veterinary";
-  setWorkspaceMode: (mode: "Farmer" | "Veterinary") => void;
+  workspaceMode: "Farmer" | "Veterinary" | "Offtaker";
+  setWorkspaceMode: (mode: "Farmer" | "Veterinary" | "Offtaker") => void;
   vetFeeActivation: boolean;
   setVetFeeActivation: (active: boolean) => void;
   accounts: any[];

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Supplier, Customer, PredefinedRole, DefaultVaccineScheduleItem } from "../types";
-import { storage } from "../firebase";
+import { storage, auth } from "../firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useSuperAdmin } from "../hooks/useSuperAdmin";
 import { 
   User, 
   Building2, 
@@ -65,8 +66,8 @@ interface ProfilesPlatformPanelProps {
   // Subscription and clinical states
   subscriptionTier: string;
   setSubscriptionTier: (tier: string) => void;
-  workspaceMode: "Farmer" | "Veterinary";
-  setWorkspaceMode: (mode: "Farmer" | "Veterinary") => void;
+  workspaceMode: "Farmer" | "Veterinary" | "Offtaker";
+  setWorkspaceMode: (mode: "Farmer" | "Veterinary" | "Offtaker") => void;
   vetFeeActivation: boolean;
   setVetFeeActivation: (active: boolean) => void;
   
@@ -148,6 +149,7 @@ export default function ProfilesPlatformPanel({
   defaultVaccinationSchedule = [],
   setDefaultVaccinationSchedule
 }: ProfilesPlatformPanelProps) {
+  const { isSuperAdmin } = useSuperAdmin();
   // Safe Fallback for configurable 5 credit tiers
   const [localCreditTiers, setLocalCreditTiers] = useState([
     { id: "tier-1", name: "Tier 1: Basic Operations", cost: 1, modules: "Dashboard, Sales Tracker, User Profiles, Backup & Restore", color: "#94a3b8" },
@@ -160,6 +162,191 @@ export default function ProfilesPlatformPanel({
   // Lipila audit filtering state
   const [lipilaFilterStatus, setLipilaFilterStatus] = useState<"All" | "Successful" | "Failed">("All");
   const [lipilaSearchQuery, setLipilaSearchQuery] = useState("");
+
+  // ==========================================
+  // Platform Admin controls state hooks
+  // ==========================================
+  const [platformAdminSubTab, setPlatformAdminSubTab] = useState<"tenants" | "admins" | "audit">("tenants");
+  const [adminsList, setAdminsList] = useState<any[]>([]);
+  const [auditLogsList, setAuditLogsList] = useState<any[]>([]);
+  const [adminsListLoading, setAdminsListLoading] = useState<boolean>(false);
+  const [auditLogsLoading, setAuditLogsLoading] = useState<boolean>(false);
+  
+  // Create admin modal/form input states
+  const [showCreateAdminModal, setShowCreateAdminModal] = useState<boolean>(false);
+  const [newAdminEmail, setNewAdminEmail] = useState<string>("");
+  const [newAdminPermissions, setNewAdminPermissions] = useState<string[]>([
+    "tenant_management",
+    "subscription_management"
+  ]);
+  const [newAdminCustomUid, setNewAdminCustomUid] = useState<string>("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [submittingAdmin, setSubmittingAdmin] = useState<boolean>(false);
+
+  const fetchAdmins = async () => {
+    setAdminsListLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-mabala-admin-uid"] = currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+      const res = await fetch("/api/admin/admins", { headers });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success) {
+          setAdminsList(body.admins || []);
+        }
+      }
+    } catch (err: any) {
+      console.error("[ProfilesPlatformPanel] Failed to fetch admins:", err);
+    } finally {
+      setAdminsListLoading(false);
+    }
+  };
+
+  const fetchAuditLogs = async () => {
+    setAuditLogsLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-mabala-admin-uid"] = currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+      const res = await fetch("/api/admin/audit-logs", { headers });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success) {
+          setAuditLogsList(body.logs || []);
+        }
+      }
+    } catch (err: any) {
+      console.error("[ProfilesPlatformPanel] Failed to fetch audit logs:", err);
+    } finally {
+      setAuditLogsLoading(false);
+    }
+  };
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail) return;
+    
+    setSubmittingAdmin(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-mabala-admin-uid"] = currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+      const res = await fetch("/api/admin/admins", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          email: newAdminEmail,
+          permissions: newAdminPermissions,
+          customUid: newAdminCustomUid || undefined
+        })
+      });
+
+      const body = await res.json();
+      if (res.ok && body.success) {
+        setActionSuccess(`Successfully delegated administrative privileges for ${newAdminEmail}`);
+        setNewAdminEmail("");
+        setNewAdminCustomUid("");
+        setNewAdminPermissions(["tenant_management", "subscription_management"]);
+        fetchAdmins();
+        fetchAuditLogs();
+        setTimeout(() => {
+          setShowCreateAdminModal(false);
+          setActionSuccess(null);
+        }, 1200);
+      } else {
+        setActionError(body.error || "Failed to delegate administrator privileges.");
+      }
+    } catch (err: any) {
+      setActionError(err.message || "Network delegation failure");
+    } finally {
+      setSubmittingAdmin(false);
+    }
+  };
+
+  const handleRevokeAdminAccess = async (targetUid: string, email: string) => {
+    if (!window.confirm(`Are you absolutely sure you want to revoke administrative access for ${email}? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-mabala-admin-uid"] = currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+      const res = await fetch(`/api/admin/admins/${targetUid}/revoke`, {
+        method: "POST",
+        headers
+      });
+
+      if (res.ok) {
+        alert("Administrative privileges successfully revoked.");
+        fetchAdmins();
+        fetchAuditLogs();
+      } else {
+        const body = await res.json();
+        alert(`Error revoking access: ${body.error}`);
+      }
+    } catch (err: any) {
+      alert(`Network error: ${err.message}`);
+    }
+  };
+
+  const handleBootstrapPlatform = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/admin/bootstrap", {
+        method: "POST",
+        headers
+      });
+
+      if (res.ok) {
+        alert("Platform designation and claims bootstrapped successfully! Relog to propagate.");
+      } else {
+        const body = await res.json();
+        alert(`Bootstrap assertion failed: ${body.error}`);
+      }
+    } catch (err: any) {
+      alert(`Server connection failed: ${err.message}`);
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === "platform-admin" && isSuperAdmin) {
+      fetchAdmins();
+      fetchAuditLogs();
+    }
+  }, [viewMode, isSuperAdmin]);
+
   const activeCreditTiers = creditTiers || localCreditTiers;
   const activeSetCreditTiers = setCreditTiers || setLocalCreditTiers;
 
@@ -659,7 +846,7 @@ export default function ProfilesPlatformPanel({
     }, 2000);
   };
 
-  const isSuperUser = userProfile.email === "deepvaleyfarm@gmail.com" || currentRole === "Platform Administrator";
+  const isSuperUser = isSuperAdmin || currentRole === "Platform Administrator";
 
   return (
     <div className="space-y-6">
@@ -697,7 +884,7 @@ export default function ProfilesPlatformPanel({
                   className="w-full text-xs mt-1 p-2 border rounded outline-none focus:border-[#475569] bg-slate-50 focus:bg-white font-mono font-bold" 
                 />
                 
-                {userProfile.email === "deepvaleyfarm@gmail.com" && onChangeSessionRole && (
+                {isSuperAdmin && onChangeSessionRole && (
                   <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2">
                     <div className="flex justify-between items-center gap-3 flex-wrap">
                       <div>
@@ -716,8 +903,8 @@ export default function ProfilesPlatformPanel({
                         }}
                         className={`px-3 py-1.5 text-[9.5px] font-extrabold uppercase rounded-lg transition-all shadow-sm ${
                           currentRole === "Platform Administrator"
-                            ? "bg-[#0f172a] hover:bg-slate-800 text-white"
-                            : "bg-emerald-950 hover:bg-emerald-800 text-white"
+                             ? "bg-[#0f172a] hover:bg-slate-800 text-white"
+                             : "bg-emerald-950 hover:bg-emerald-800 text-white"
                         }`}
                       >
                         {currentRole === "Platform Administrator" ? "Switch to Normal User (Farm Owner)" : "Switch to Super Admin"}
@@ -732,10 +919,10 @@ export default function ProfilesPlatformPanel({
                   </div>
                 )}
 
-                {tempUserEmail === "deepvaleyfarm@gmail.com" && (
+                {isSuperAdmin && (
                   <div className="mt-2 text-[10px] font-black uppercase text-emerald-800 bg-emerald-100/50 border border-emerald-300 p-2 rounded-lg flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-                    <span>👑 Overlord Detected: platform access enabled.</span>
+                    <span>👑 Super Admin: platform access enabled.</span>
                   </div>
                 )}
               </div>
@@ -1169,32 +1356,35 @@ export default function ProfilesPlatformPanel({
                     {/* Mode Switching */}
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block pb-1">Select Operational view mode</span>
-                      {!(subscriptionTier.includes("Veterinary") || subscriptionTier.includes("Agro-Vet")) ? (
-                        <div className="p-2 bg-amber-50 rounded border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
-                          <strong>Farmer Mode Locked:</strong> Veterinary Mode is hidden which disables multi-farm directories. Please upgrade to a Veterinary plan to toggle modes.
-                        </div>
-                      ) : (
-                        <div className="flex bg-slate-200 p-1 rounded-lg gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setWorkspaceMode("Farmer")}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                              workspaceMode === "Farmer" ? "bg-[#0f172a] text-white shadow" : "text-slate-600 hover:text-slate-800"
-                            }`}
-                          >
-                            Farmer Mode
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWorkspaceMode("Veterinary")}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                              workspaceMode === "Veterinary" ? "bg-[#0f172a] text-white shadow" : "text-slate-600 hover:text-slate-800"
-                            }`}
-                          >
-                            Veterinary Mode
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex bg-slate-200 p-1 rounded-lg gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceMode("Farmer")}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                            workspaceMode === "Farmer" ? "bg-[#0f172a] text-white shadow" : "text-slate-600 hover:text-slate-800"
+                          }`}
+                        >
+                          Farmer Mode
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceMode("Veterinary")}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                            workspaceMode === "Veterinary" ? "bg-[#0f172a] text-white shadow" : "text-slate-600 hover:text-slate-800"
+                          }`}
+                        >
+                          Veterinary Mode
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceMode("Offtaker")}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                            workspaceMode === "Offtaker" ? "bg-[#0f172a] text-white shadow" : "text-slate-600 hover:text-slate-800"
+                          }`}
+                        >
+                          Offtaker Mode
+                        </button>
+                      </div>
                     </div>
 
                     {/* Vet Fee Switcher */}
@@ -1323,14 +1513,62 @@ export default function ProfilesPlatformPanel({
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto animate-bounce" />
               <h4 className="text-sm font-black uppercase text-slate-800 tracking-wider">Access Restrict Lockdown Activated</h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Mabala security protocols mandate that only authorized platform developers with email <strong className="font-mono text-slate-900 bg-slate-100 p-1 rounded inline-block">deepvaleyfarm@gmail.com</strong> or users with the <strong className="font-sans text-slate-900 bg-purple-100 px-1.5 py-0.5 rounded inline-block">Platform Administrator</strong> role are permitted to toggle credit allocations, freeze tenant accounts, or edit global rate cards.
+                Mabala security protocols mandate that only the authorized platform **Super Admin** or users verified with **Platform Administrator** permissions are permitted to toggle credit allocations, freeze tenant accounts, or edit global rate cards.
               </p>
               <div className="pt-2">
-                <span className="text-[10px] text-slate-400 block italic">Switch active email in "User & Farm Profiles" to test.</span>
+                <span className="text-[10px] text-slate-400 block italic">Access is granted exclusively to verified Super Admins.</span>
               </div>
             </div>
           ) : (
             <div className="space-y-6 animate-fade-in">
+
+              {/* Platform Admin Inner Tab Switcher */}
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center bg-slate-100 p-2 rounded-xl border border-slate-200 gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  <button 
+                    type="button"
+                    onClick={() => setPlatformAdminSubTab("tenants")}
+                    className={`px-4 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                      platformAdminSubTab === "tenants" 
+                        ? "bg-slate-900 text-white shadow-sm" 
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                    }`}
+                  >
+                    🏢 Tenant Controls
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setPlatformAdminSubTab("admins")}
+                    className={`px-4 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                      platformAdminSubTab === "admins" 
+                        ? "bg-slate-900 text-white shadow-sm" 
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                    }`}
+                  >
+                    👑 Administrators Panel
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setPlatformAdminSubTab("audit")}
+                    className={`px-4 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                      platformAdminSubTab === "audit" 
+                        ? "bg-slate-900 text-white shadow-sm" 
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                    }`}
+                  >
+                    📜 Compliance Audit Trails
+                  </button>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={handleBootstrapPlatform}
+                  className="px-3.5 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-[10px] font-black rounded-lg transition-all uppercase tracking-wide cursor-pointer text-center"
+                  title="Bootstrap configurations and assert custom claims"
+                >
+                  ⚙️ Bootstrap Claims
+                </button>
+              </div>
               
               {/* Top Summary Stats for Overlord Info */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1362,8 +1600,10 @@ export default function ProfilesPlatformPanel({
                 </div>
               </div>
 
-              {/* Grid block credit adjustments & freeze management */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {platformAdminSubTab === "tenants" && (
+                <>
+                  {/* Grid block credit adjustments & freeze management */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 {/* Credit Adjustment Panel */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -2895,9 +3135,314 @@ export default function ProfilesPlatformPanel({
                   </div>
                 </div>
               </div>
-              
+            </>
+          )}
+
+          {/* ========================================================= */}
+          {/* ADMINISTRATORS MANAGEMENT VIEW SECTION                    */}
+          {/* ========================================================= */}
+          {platformAdminSubTab === "admins" && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                <div className="flex justify-between items-center border-b pb-4 flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-850 uppercase tracking-widest flex items-center gap-2">
+                       <ShieldCheck className="w-4 h-4 text-purple-600" />
+                      <span>Delegated Platform Administrators</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-1 font-semibold leading-relaxed">
+                      Authorize secondary administrators with granular permissions, override active operational credentials, or revoke workspace access.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionError(null);
+                      setActionSuccess(null);
+                      setShowCreateAdminModal(true);
+                    }}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold rounded-xl transition-all shadow flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-white" />
+                    <span>Authorize Administrator</span>
+                  </button>
+                </div>
+
+                {adminsListLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+                    <span className="text-xs text-slate-500 font-bold font-mono">Syncing active credentials with Identity Toolkit...</span>
+                  </div>
+                ) : adminsList.length === 0 ? (
+                  <div className="bg-slate-50 p-8 border rounded-xl border-dashed text-center max-w-md mx-auto space-y-3">
+                    <span className="text-3xl">🛡️</span>
+                    <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">No Secondary Admins Configured</h4>
+                    <p className="text-xs text-slate-400 font-semibold leading-normal">
+                      Only the root Super Admin UID holds platform administrator claims. Create granular admin records to delegate regional operations safely.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase tracking-widest border-b">
+                          <th className="p-4 font-black">Admin UID / E-mail</th>
+                          <th className="p-4 font-black">Role Description</th>
+                          <th className="p-4 font-black">Assigned Scopes</th>
+                          <th className="p-4 font-black">Authorized At</th>
+                          <th className="p-4 font-black">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 font-medium text-slate-700">
+                        {adminsList.map((admin) => (
+                          <tr key={admin.uid} className="hover:bg-slate-50/50">
+                            <td className="p-4">
+                              <div className="font-bold text-slate-900 leading-none">{admin.email}</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-1 select-all">{admin.uid}</div>
+                            </td>
+                            <td className="p-4">
+                              <span className="px-2.5 py-0.5 bg-purple-150 text-purple-950 font-extrabold text-[9px] uppercase tracking-wide rounded-full border border-purple-200">
+                                {admin.role || "Platform Admin"}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-wrap gap-1.5 max-w-xs">
+                                {admin.permissions?.length > 0 ? (
+                                  admin.permissions.map((p: string) => (
+                                    <span key={p} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] border font-mono">
+                                      {p}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-slate-400 text-[10px] italic">No active permissions</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 text-slate-500 font-mono text-[10.5px]">
+                              {admin.createdAt ? new Date(admin.createdAt).toLocaleString() : "System Pre-Seeded"}
+                            </td>
+                            <td className="p-4">
+                              <button
+                                type="button"
+                                onClick={() => handleRevokeAdminAccess(admin.uid, admin.email)}
+                                className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-600 hover:text-white hover:bg-rose-600 border border-slate-200 hover:border-rose-600 rounded-lg transition-all cursor-pointer"
+                              >
+                                Revoke
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+          {/* ========================================================= */}
+          {/* COMPLIANCE AUDIT JONURAL VIEW SECTION                     */}
+          {/* ========================================================= */}
+          {platformAdminSubTab === "audit" && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                <div className="flex justify-between items-center border-b pb-4 flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-850 uppercase tracking-widest flex items-center gap-2">
+                      <History className="w-4 h-4 text-[#0f172a]" />
+                      <span>Compliance Audit Journal</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-1 font-semibold leading-relaxed">
+                      Immutable audit logs synchronized server-side to satisfy regulatory reporting mandates on billing modifications and admin assertions.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchAuditLogs}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border text-slate-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                    <span>Refresh Logs</span>
+                  </button>
+                </div>
+
+                {auditLogsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                    <Loader2 className="w-8 h-8 text-slate-800 animate-spin" />
+                    <span className="text-xs text-slate-500 font-bold font-mono text-center">Reading cryptographic ledger state from database...</span>
+                  </div>
+                ) : auditLogsList.length === 0 ? (
+                  <div className="bg-slate-50 p-8 border rounded-xl border-dashed text-center max-w-sm mx-auto space-y-3 border-dashed">
+                    <span className="text-3xl">📜</span>
+                    <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">No Log Entries Found</h4>
+                    <p className="text-xs text-slate-400 font-semibold leading-normal">
+                      Administrative interactions on tenant freeze, wallet refills, and custom claims grant trigger permanent system records, which are displayed here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase tracking-widest border-b">
+                          <th className="p-4 font-black">Timestamp</th>
+                          <th className="p-4 font-black">Actor UID / Email</th>
+                          <th className="p-4 font-black">Trigger Node Action</th>
+                          <th className="p-4 font-black">Affected Targets & Parameters</th>
+                          <th className="p-4 font-black">IP Address / Metadata</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 font-medium text-slate-700">
+                        {auditLogsList.map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-50/50">
+                            <td className="p-4 font-mono text-slate-500 text-[10.5px]">
+                              {log.timestamp ? new Date(log.timestamp).toLocaleString() : ""}
+                            </td>
+                            <td className="p-4">
+                              <div className="font-bold text-slate-900 leading-none">{log.actorEmail}</div>
+                              <div className="text-[9.5px] text-slate-400 font-mono mt-1 select-all">{log.actorUid}</div>
+                            </td>
+                            <td className="p-4">
+                              <span className="px-2 py-0.5 bg-slate-900 text-slate-100 font-black text-[9px] uppercase tracking-wide rounded border animate-pulse">
+                                {log.action}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-slate-800 font-bold leading-normal truncate max-w-xs" title={log.details}>
+                                {log.details}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="text-[10.5px] font-mono text-slate-500">{log.ipAddress || "::1 (Local)"}</div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* CREATE ADMINISTRATOR MODAL FORM                           */}
+          {/* ========================================================= */}
+          {showCreateAdminModal && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-955/40 backdrop-blur-xs animate-fade-in p-4">
+              <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-scale-in">
+                <div className="bg-gradient-to-r from-purple-800 to-purple-950 px-6 py-4.5 text-white flex justify-between items-center">
+                  <div>
+                    <h3 className="text-[9.5px] font-black uppercase tracking-widest text-purple-200">Security Access Delegation</h3>
+                    <h2 className="text-sm font-bold text-white mt-0.5">Authorize Platform Administrator</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateAdminModal(false)}
+                    className="text-white/80 hover:text-white font-extrabold text-xs cursor-pointer bg-purple-900/45 hover:bg-purple-900/80 px-2.5 py-1 rounded-lg"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateAdmin} className="p-6 space-y-4">
+                  {actionError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-black">
+                      ⚠️ {actionError}
+                    </div>
+                  )}
+                  {actionSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-black">
+                      🛡️ {actionSuccess}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Administrator E-mail Address</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. associate.admin@mabala.com"
+                      value={newAdminEmail}
+                      onChange={(e) => setNewAdminEmail(e.target.value)}
+                      className="w-full text-xs mt-1.5 p-2.5 border rounded-lg bg-slate-50 focus:bg-white outline-none focus:border-purple-600 font-bold"
+                    />
+                    <span className="text-[9.5px] text-slate-400 mt-1 block">Account must correspond to a registered authentication user.</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Custom Firebase Auth UID (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="Retrieve from Authentication dashboard"
+                      value={newAdminCustomUid}
+                      onChange={(e) => setNewAdminCustomUid(e.target.value)}
+                      className="w-full text-xs mt-1.5 p-2.5 border rounded-lg bg-slate-50 focus:bg-white outline-none focus:border-purple-600 font-mono"
+                    />
+                    <span className="text-[9.5px] text-slate-400 mt-1 block">If omitted, the server will seek user UID dynamically by email search.</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider block">Allocate Granular Privileges</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      {[
+                        { id: "tenant_management", name: "Tenant Management", desc: "View, suspend, or delete tenant records" },
+                        { id: "subscription_management", name: "Subscription Management", desc: "Scale subscriptions or plans" },
+                        { id: "financial_reports", name: "Financial Reports", desc: "Access global corporate financials" },
+                        { id: "user_support", name: "User Support", desc: "Impersonate workspaces and logs" },
+                        { id: "platform_config", name: "Platform Config", desc: "Override fee rates and gateway rules" }
+                      ].map((perm) => (
+                        <label key={perm.id} className="flex items-start gap-2 p-2 border rounded-lg bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newAdminPermissions.includes(perm.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setNewAdminPermissions(prev => [...prev, perm.id]);
+                              } else {
+                                setNewAdminPermissions(prev => prev.filter(p => p !== perm.id));
+                              }
+                            }}
+                            className="mt-1 h-3 w-3 accent-purple-600 rounded"
+                          />
+                          <div>
+                            <span className="block text-[10.5px] font-bold text-slate-800">{perm.name}</span>
+                            <span className="block text-[9px] text-slate-400 leading-tight">{perm.desc}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateAdminModal(false)}
+                      className="px-4 py-2 bg-slate-150 hover:bg-slate-200 text-slate-700 font-black text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingAdmin}
+                      className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {submittingAdmin ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>Delegating Access...</span>
+                        </>
+                      ) : (
+                        <span>Delegate Access</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          
+        </div>
+      )}
 
         </div>
       )}

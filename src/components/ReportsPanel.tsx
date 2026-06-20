@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Account, ExpenseTransaction, CashSale, Invoice, CropCycle, PoultryBatch, FarmTask } from "../types";
+import { LedgerService } from "./offtaker/LedgerService";
 import { 
   FileSpreadsheet, 
   ArrowUpRight, 
@@ -64,7 +65,7 @@ export default function ReportsPanel({
   subscriptionTier,
   tasks = []
 }: ReportsPanelProps) {
-  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual" | "analytics" | "api" | "csv_export">("pl");
+  const [activeReport, setActiveReport] = useState<"pl" | "bs" | "tb" | "tax" | "visual" | "analytics" | "api" | "csv_export" | "farmer_is" | "offtaker_report" | "platform_revenue">("pl");
   const [apiKey, setApiKey] = useState<string>("");
   const [apiSandboxEndpoint, setApiSandboxEndpoint] = useState<string>("/api/v1/farms");
 
@@ -210,10 +211,72 @@ export default function ReportsPanel({
     return sum + chickCost + setupCost + transportCost + feedCost + medCostVal + treatmentCostVal + labourCost + utils + depreciation;
   }, 0);
 
-  const baseRevenues = accounts.filter(a => a.category === "Revenue");
-  const baseExpenses = accounts.filter(a => a.category === "Expense");
+  // Load and subscribe to ledger entries
+  const [ledgerEntries, setLedgerEntries] = React.useState(() => LedgerService.getEntries());
+
+  React.useEffect(() => {
+    const handleLedgerUpdate = () => {
+      setLedgerEntries(LedgerService.getEntries());
+    };
+    window.addEventListener("mabala_ledger_updated", handleLedgerUpdate);
+    return () => {
+      window.removeEventListener("mabala_ledger_updated", handleLedgerUpdate);
+    };
+  }, []);
+
+  // Enriched account balances to maintain strict double-entry integrity on standard outputs
+  const enrichedAccounts = React.useMemo(() => {
+    return accounts.map(acc => {
+      let ledgerDelta = 0;
+      const entries = ledgerEntries.filter(e => e.coaCode === acc.code);
+      for (const ent of entries) {
+        if (acc.category === "Asset" || acc.category === "Expense") {
+          ledgerDelta += (ent.debit - ent.credit);
+        } else {
+          ledgerDelta += (ent.credit - ent.debit);
+        }
+      }
+      return {
+        ...acc,
+        balance: acc.balance + ledgerDelta
+      };
+    });
+  }, [accounts, ledgerEntries]);
+
+  // Per-crop-cycle Sales (Offtaker)
+  const offtakerCropSalesByCycle = React.useMemo(() => {
+    const cycleSales: Record<string, number> = {};
+    const confirmedDnEntries = ledgerEntries.filter(
+      e => e.event === "DN confirmed" && e.coaCode === "4000" && e.cropCycleId
+    );
+    for (const entry of confirmedDnEntries) {
+      if (entry.cropCycleId) {
+        cycleSales[entry.cropCycleId] = (cycleSales[entry.cropCycleId] || 0) + (entry.credit || entry.debit);
+      }
+    }
+    return cycleSales;
+  }, [ledgerEntries]);
+
+  // Transform each crop cycle with offtaker sales into distinct lines in the revenues list
+  const offtakerSalesLines = React.useMemo(() => {
+    return (crops || []).map(cc => {
+      const saleAmt = offtakerCropSalesByCycle[cc.id] || 0;
+      return {
+        code: `4000-${cc.id.slice(-4)}`,
+        name: `Offtaker Crop Sales — ${cc.cropType} (${cc.fieldBlock || "Main Block"})`,
+        category: "Revenue" as const,
+        balance: saleAmt
+      };
+    }).filter(line => line.balance > 0);
+  }, [crops, offtakerCropSalesByCycle]);
+
+  const baseRevenues = enrichedAccounts.filter(a => a.category === "Revenue");
+  const baseExpenses = enrichedAccounts.filter(a => a.category === "Expense");
 
   const revenues = [...baseRevenues];
+  // Inject the Per-crop-cycle Sales (Offtaker) lines
+  revenues.push(...offtakerSalesLines);
+
   if (poultryRevenuesVal > 0) {
     revenues.push({
       code: "4300",
@@ -238,9 +301,9 @@ export default function ReportsPanel({
   const netEarnings = totalRev - totalExp;
 
   // Balance sheet
-  const assets = accounts.filter(a => a.category === "Asset");
-  const liabilities = accounts.filter(a => a.category === "Liability");
-  const equity = accounts.filter(a => a.category === "Equity");
+  const assets = enrichedAccounts.filter(a => a.category === "Asset");
+  const liabilities = enrichedAccounts.filter(a => a.category === "Liability");
+  const equity = enrichedAccounts.filter(a => a.category === "Equity");
   
   const totalAssets = assets.reduce((s, a) => s + a.balance, 0);
   const totalLiabilities = liabilities.reduce((s, a) => s + a.balance, 0);
@@ -999,6 +1062,15 @@ export default function ReportsPanel({
         </button>
         <button onClick={() => setActiveReport("csv_export")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "csv_export" ? "bg-white text-slate-800 shadow text-emerald-700 font-extrabold" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-csv-export">
           💾 CSV Data Export Hub
+        </button>
+        <button onClick={() => setActiveReport("farmer_is")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "farmer_is" ? "bg-white text-emerald-800 shadow border-b-2 border-emerald-500" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-farmer-is">
+          🌾 Farmer Income Statement
+        </button>
+        <button onClick={() => setActiveReport("offtaker_report")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "offtaker_report" ? "bg-white text-blue-800 shadow border-b-2 border-blue-500" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-offtaker">
+          🏢 Offtaker Supply Chain
+        </button>
+        <button onClick={() => setActiveReport("platform_revenue")} className={`px-4 py-2 rounded-lg transition-all ${activeReport === "platform_revenue" ? "bg-white text-indigo-800 shadow border-b-2 border-indigo-500" : "text-slate-500 hover:text-slate-700"}`} id="reports-nav-platform-revenue">
+          💰 Mabala Revenue Center
         </button>
         {subscriptionTier === "Enterprise Suite" && (
           <>

@@ -68,6 +68,104 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["uid", "amount", "status"]
+    },
+    "LinkedFarmer": {
+      "title": "LinkedFarmer",
+      "description": "Onboarded and fully KYC-verified farmer linked to an offtaker organizational account",
+      "type": "object",
+      "properties": {
+        "farmerUid": { "type": "string" },
+        "name": { "type": "string" },
+        "nrc": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "secondaryPhone": { "type": "string" },
+        "profilePhotoUrl": { "type": "string" },
+        "farmerCode": { "type": "string" },
+        "payoutMethod": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "mobileOperator": { "type": "string" },
+        "accountName": { "type": "string" },
+        "accountNameOverridden": { "type": "boolean" },
+        "bankName": { "type": "string" },
+        "bankAccount": { "type": "string" },
+        "address": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "nrc", "phone", "farmerCode", "payoutMethod"]
+    },
+    "OfftakerLink": {
+      "title": "OfftakerLink",
+      "description": "Reference mapping inside a farmer's profile linking them to a registered offtaker",
+      "type": "object",
+      "properties": {
+        "offtakerId": { "type": "string" },
+        "linkedAt": { "type": "string" }
+      },
+      "required": ["offtakerId", "linkedAt"]
+    },
+    "QualitySetting": {
+      "title": "QualitySetting",
+      "description": "Quality grades and dynamic prices defined by offtaker for different crops",
+      "type": "object",
+      "properties": {
+        "productName": { "type": "string" },
+        "unit": { "type": "string" },
+        "grades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "gradeId": { "type": "string" },
+              "gradeName": { "type": "string" },
+              "description": { "type": "string" },
+              "pricePerUnit": { "type": "number" },
+              "active": { "type": "boolean" }
+            }
+          }
+        },
+        "lastPublished": { "type": "string" },
+        "lastPublishedBy": { "type": "string" },
+        "history": { "type": "array" }
+      },
+      "required": ["productName", "unit", "grades"]
+    },
+    "FarmerNotification": {
+      "title": "FarmerNotification",
+      "description": "In-app price board change alerts sent directly to registered farmers",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "offtakerUid": { "type": "string" }
+      },
+      "required": ["title", "body", "read", "createdAt", "offtakerUid"]
+    },
+    "Delivery": {
+      "title": "Delivery",
+      "description": "Record of a dynamic certified crop delivery made by a registered linked farmer",
+      "type": "object",
+      "properties": {
+        "farmerUid": { "type": "string" },
+        "farmerCode": { "type": "string" },
+        "farmerName": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "gradeId": { "type": "string" },
+        "gradeName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "unitPrice": { "type": "number" },
+        "totalValue": { "type": "number" },
+        "verifiedBy": { "type": "string" },
+        "verifiedAt": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["farmerUid", "farmerCode", "farmerName", "productId", "productName", "gradeId", "gradeName", "quantity", "unit", "unitPrice", "totalValue", "verifiedBy", "status"]
     }
   },
   "firestore": {
@@ -78,6 +176,30 @@
     "/payments/{paymentId}": {
       "schema": "Payment",
       "description": "Collection logging all payments initiated or completed through Hostinger or Local Proxies"
+    },
+    "/offtakers/{offtakerId}/linkedFarmers/{farmerId}": {
+      "schema": "LinkedFarmer",
+      "description": "Offtaker's directly linked and KYC verified suppliers"
+    },
+    "/farmers/{farmerId}/offtakerLinks/{offtakerId}": {
+      "schema": "OfftakerLink",
+      "description": "Reference indices of links back to offtakers"
+    },
+    "/offtakers/{offtakerId}/qualitySettings/{productId}": {
+      "schema": "QualitySetting",
+      "description": "Dynamic premium crop quality grading schedules"
+    },
+    "/farmers/{farmerId}/notifications/{notifId}": {
+      "schema": "FarmerNotification",
+      "description": "Price push alerts received by individual farmers"
+    },
+    "/offtakers/{offtakerId}/deliveries/{deliveryId}": {
+      "schema": "Delivery",
+      "description": "Crop deliveries recorded in the system for offtakers"
+    },
+    "/farmers/{farmerId}/deliveries/{deliveryId}": {
+      "schema": "Delivery",
+      "description": "Mirrored copy of recorded deliveries displayed in farmer-facing histories"
     }
   }
 }
