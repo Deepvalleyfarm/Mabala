@@ -86,7 +86,7 @@ export default function MarketplacePanel({
 
   // Simulated subscription and expiry notifications dispatched/logged
   const [expiryNotifications, setExpiryNotifications] = useState<any[]>([
-    { id: 1, recipient: "shikasuli@gmail.com", farm: "Shika Farms Store", type: "7-Day Warning Notice", date: "2026-06-03", status: "Sent (Auto-dispatched)" },
+    { id: 1, recipient: "owner@mabala.com", farm: "Mabala Farms Store", type: "7-Day Warning Notice", date: "2026-06-03", status: "Sent (Auto-dispatched)" },
     { id: 2, recipient: "coop-seeds@mabala.org", farm: "Chisamba Seeds Cooperatives", type: "Expired Suspended Alert", date: "2026-06-04", status: "Sent (Tenant Store Hidden)" },
     { id: 3, recipient: "lusaka-livestock@gmail.com", farm: "Lusaka Livestock Hub", type: "Renewed Receipt Notification", date: "2026-06-05", status: "Sent (Payment Confirmed)" }
   ]);

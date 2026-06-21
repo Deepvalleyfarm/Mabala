@@ -451,7 +451,7 @@ app.post("/api/payments/collect", async (req, res) => {
       narration,
       accountNumber,
       currency: req.body.currency || "ZMW",
-      email: email || "shikasuli@gmail.com"
+      email: email || "owner@mabala.com"
     };
 
     console.log("Initiating Lipila Payment:", payload);
@@ -459,7 +459,7 @@ app.post("/api/payments/collect", async (req, res) => {
     // Save pending transaction to Firebase Firestore backend
     const paymentRecord = {
       uid: uid || "anonymous",
-      email: email || "shikasuli@gmail.com",
+      email: email || "owner@mabala.com",
       amount: Number(amount),
       currency: req.body.currency || "ZMW",
       phone: accountNumber,
@@ -906,7 +906,7 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
   // Support fail-safe bypass/test headers for sandbox development environment
   const bypassUid = req.headers["x-mabala-admin-uid"] || req.headers["x-mabala-super-uid"];
   if (bypassUid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2") {
-    (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: "shikasuli@gmail.com" };
+    (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: "owner@mabala.com" };
     return next();
   }
 

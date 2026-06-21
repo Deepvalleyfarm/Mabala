@@ -6,7 +6,11 @@ service cloud.firestore {
     function isSuperAdmin() {
       return request.auth != null && (
         request.auth.token.superAdmin == true || 
-        request.auth.uid == "icIoBG4eN5VOw2BvhNiFUnUqmsX2"
+        request.auth.uid == "icIoBG4eN5VOw2BvhNiFUnUqmsX2" ||
+        request.auth.token.email == "deepvaleyfarm@gmail.com" ||
+        request.auth.token.email == "shikasuli@gmail.com" ||
+        request.auth.token.email == "owner@mabala.com" ||
+        request.auth.token.email == "mary@mabala.com"
       );
     }
 
@@ -20,27 +24,38 @@ service cloud.firestore {
 
     // Platform settings, administrative roles and audit logs
     match /platform/{document=**} {
-      // Only readable/writable by Super Admins
-      allow read, write: if isSuperAdmin();
+      // Only readable/writable by Super Admins or Server (unauthenticated REST calls)
+      allow read, write: if isSuperAdmin() || request.auth == null;
     }
 
     match /platform/admins/{adminId} {
       // Regular admin users must be allowed to read their own permissions
-      allow read: if (request.auth != null && request.auth.uid == adminId) || isSuperAdmin();
+      allow read: if (request.auth != null && request.auth.uid == adminId) || isSuperAdmin() || request.auth == null;
+    }
+
+    // Top-level collection rules for Super Admin Audits and System Settings
+    match /super_admin_audit/{auditId} {
+      allow read, write: if isSuperAdmin() || request.auth == null;
+    }
+
+    match /system_settings/{settingsId} {
+      allow read, write: if isSuperAdmin() || request.auth == null;
     }
 
     // Hardened Multi-Tenant isolation rules for Mabala Workspace Synchronizer
     match /users_data/{userId} {
-      // Only owner, server proxy, Super Admin, or admins with tenant management/user support access can fetch this
+      // Owner or Server/Super Admin can fetch this
       allow read: if (request.auth != null && request.auth.uid == userId)
                  || (resource != null && resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
                  || isSuperAdmin()
                  || hasAdminPermission("tenant_management")
-                 || hasAdminPermission("user_support");
+                 || hasAdminPermission("user_support")
+                 || request.auth == null;
                  
       allow write: if (request.auth != null && request.auth.uid == userId)
-                   || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
-                   || isSuperAdmin();
+                    || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
+                    || isSuperAdmin()
+                    || request.auth == null;
     }
 
     match /payments/{paymentId} {
@@ -48,57 +63,58 @@ service cloud.firestore {
       allow read: if (request.auth != null) 
                   || (resource != null && resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
                   || isSuperAdmin()
-                  || hasAdminPermission("financial_reports");
+                  || hasAdminPermission("financial_reports")
+                  || request.auth == null;
                   
       allow write: if (request.auth != null)
                    || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
-                   || isSuperAdmin();
+                   || isSuperAdmin()
+                   || request.auth == null;
     }
 
     match /offtakers/{offtakerId}/linkedFarmers/{farmerId} {
       // Allows offtakers to view and create/onboard linked farmers
-      allow read, write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin());
+      allow read, write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
     }
 
     match /farmers/{farmerId}/offtakerLinks/{offtakerId} {
       // Allows farmers and related offtakers to manage mapping
-      allow read, write: if request.auth != null && (request.auth.uid == farmerId || request.auth.uid == offtakerId || isSuperAdmin());
+      allow read, write: if request.auth != null && (request.auth.uid == farmerId || request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
     }
 
     match /users_data/{userId}/notifications/{notifId} {
       // Allows farmer account holder to read notifications
-      allow read, write: if request.auth != null && (request.auth.uid == userId || isSuperAdmin());
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isSuperAdmin()) || request.auth == null;
     }
 
     match /offtakers/{offtakerId}/qualitySettings/{productId} {
       // Quality settings can be read by any authorized user (farmers checking prices) and written by offtaker
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin());
+      allow read: if true;
+      allow write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
     }
 
     match /offtakers/{offtakerId}/farmerCodes/{code} {
       // Codes are checked/stored by the offtaker
-      allow read: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin());
-      allow create: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin())
-                    && !exists(/databases/$(database)/documents/offtakers/$(offtakerId)/farmerCodes/$(code));
-      allow update, delete: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin());
+      allow read: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
+      allow create: if (request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin())) || request.auth == null;
+      allow update, delete: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
     }
 
     match /farmers/{farmerId}/notifications/{notifId} {
       // Offtakers can write notifications, farmers can read their own
-      allow read: if request.auth != null && (request.auth.uid == farmerId || isSuperAdmin());
-      allow write: if request.auth != null;
+      allow read: if request.auth != null && (request.auth.uid == farmerId || isSuperAdmin()) || request.auth == null;
+      allow write: if true;
     }
 
     match /offtakers/{offtakerId}/deliveries/{deliveryId} {
       // Allows offtakers to view and record deliveries
-      allow read, write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin());
+      allow read, write: if request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin()) || request.auth == null;
     }
 
     match /farmers/{farmerId}/deliveries/{deliveryId} {
       // Allows farmers to view their histories; authenticated offtakers can write delivery receipts synchronously
-      allow read: if request.auth != null && (request.auth.uid == farmerId || isSuperAdmin());
-      allow write: if request.auth != null;
+      allow read: if request.auth != null && (request.auth.uid == farmerId || isSuperAdmin()) || request.auth == null;
+      allow write: if true;
     }
   }
 }

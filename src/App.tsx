@@ -391,6 +391,21 @@ async function safeFetchJsonClient(url: string, options?: RequestInit): Promise<
 }
 
 const DEFAULT_PERMISSIONS: RolePermissionsMap = {
+  "Super Admin": {
+    dashboard: { read: true, write: true },
+    accounts: { read: true, write: true },
+    expenses: { read: true, write: true },
+    crops: { read: true, write: true },
+    payroll: { read: true, write: true },
+    sales: { read: true, write: true },
+    invoices: { read: true, write: true },
+    livestock: { read: true, write: true },
+    poultry: { read: true, write: true },
+    aquaculture: { read: true, write: true },
+    inventory: { read: true, write: true },
+    reports: { read: true, write: true },
+    permissions: { read: true, write: true },
+  },
   "Platform Administrator": {
     dashboard: { read: true, write: true },
     accounts: { read: true, write: true },
@@ -529,7 +544,7 @@ const DEFAULT_PERMISSIONS: RolePermissionsMap = {
 };
 
 const DEFAULT_TEAM_MEMBERS: UserMember[] = [
-  { id: "M3", name: "Shadrick Kasuli", email: "shikasuli@gmail.com", role: "Farm Owner", lastActive: "Just now", status: "Active", password: "Password123!" },
+  { id: "M3", name: "Mary Banda", email: "mary@mabala.com", role: "Farm Owner", lastActive: "Just now", status: "Active", password: "Password123!" },
   { id: "M4", name: "Deep Valley Farms", email: "deepvaleyfarm@gmail.com", role: "Platform Administrator", lastActive: "Just now", status: "Active", password: "Zoiechibeka@2005" }
 ];
 
@@ -541,8 +556,8 @@ export default function App() {
       try { return JSON.parse(cached); } catch (e) {}
     }
     return {
-      name: "Shadrick Kasuli",
-      email: "shikasuli@gmail.com",
+      name: "Farm Owner",
+      email: "owner@mabala.com",
       phone: "+260978070734"
     };
   });
@@ -691,6 +706,17 @@ export default function App() {
   // Role and Granular Permission states
   const [currentRole, setCurrentRole] = useState<PredefinedRole>("Farm Owner");
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_PERMISSIONS);
+  const [impersonation, setImpersonation] = useState<{
+    targetUid: string;
+    targetEmail: string;
+    targetFarmId: string;
+    originalUserProfile: any;
+    originalFarms: any[];
+    originalRole: any;
+    originalCredits: number;
+    originalSubscriptionTier: string;
+    originalWorkspaceMode: string;
+  } | null>(null);
 
   const { isSuperAdmin, isLoading: isSuperAdminLoading } = useSuperAdmin();
 
@@ -1015,6 +1041,39 @@ export default function App() {
   const [farmSearchQuery, setFarmSearchQuery] = useState<string>("");
 
   // Live Lipila Payment Terminal State
+  const [activeAccessPass, setActiveAccessPass] = useState<any>(() => {
+    const cached = localStorage.getItem("mabala_active_access_pass");
+    if (cached) {
+      try {
+        const pass = JSON.parse(cached);
+        if (new Date(pass.expiresAt) > new Date()) {
+          return pass;
+        }
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (activeAccessPass) {
+      const expiresAt = new Date(activeAccessPass.expiresAt);
+      if (expiresAt <= new Date()) {
+        setActiveAccessPass(null);
+        localStorage.removeItem("mabala_active_access_pass");
+      } else {
+        localStorage.setItem("mabala_active_access_pass", JSON.stringify(activeAccessPass));
+        const diff = expiresAt.getTime() - Date.now();
+        const timer = setTimeout(() => {
+          setActiveAccessPass(null);
+          localStorage.removeItem("mabala_active_access_pass");
+        }, diff);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      localStorage.removeItem("mabala_active_access_pass");
+    }
+  }, [activeAccessPass]);
+
   const [lipilaCheckout, setLipilaCheckout] = useState<{
     type: "subscription" | "credits";
     name: string;
@@ -1023,6 +1082,8 @@ export default function App() {
     creditsToAward: number;
     description: string;
     registrationData?: any;
+    is_unmetered_access?: boolean;
+    duration_hours?: number;
   } | null>(null);
 
   const [lipilaPhone, setLipilaPhone] = useState("");
@@ -1085,6 +1146,12 @@ export default function App() {
         if (data.credits !== undefined) setCredits(data.credits);
         if (data.subscriptionTier) setSubscriptionTier(data.subscriptionTier);
         if (data.workspaceMode) setWorkspaceMode(data.workspaceMode);
+        if (data.role) {
+          setCurrentRole(data.role);
+        } else {
+          const isSuper = email.trim().toLowerCase() === "deepvaleyfarm@gmail.com" && uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+          setCurrentRole(isSuper ? "Super Admin" : "Farm Owner");
+        }
         
         console.log("[Mabala Cloud] Restored persistent cloud data successfully.");
       } else {
@@ -1099,11 +1166,28 @@ export default function App() {
   const handleSaveCloudWorkspace = async (uid: string) => {
     try {
       if (!isConfigured) return;
-      console.log("[Mabala Cloud] Committing persistent workspace state changes to Cloud Firestore securely...");
-      const docRef = doc(db, "users_data", uid);
+      const targetUid = impersonation ? impersonation.targetUid : uid;
+      console.log(`[Mabala Cloud] Committing persistent workspace state changes for ${targetUid} to Cloud Firestore securely...`);
+      const docRef = doc(db, "users_data", targetUid);
+      
+      let syncedAuditLogs = [...auditLogs];
+      if (impersonation) {
+        const supportLog = {
+          id: "log-support-" + Date.now(),
+          action: "Support Action by Admin",
+          description: `Support action by Super Admin (${auth.currentUser?.email || "deepvaleyfarm@gmail.com"}): Workspace parameters committed.`,
+          date: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          ip: "102.89.34.12",
+          actor: "Super Admin"
+        };
+        // Avoid duplicate spam logs if no visual variables modified, but append if changes are committed
+        syncedAuditLogs.push(supportLog);
+      }
+
       await setDoc(docRef, {
-        uid,
-        email: auth.currentUser?.email || "",
+        uid: targetUid,
+        email: impersonation ? impersonation.targetEmail : (auth.currentUser?.email || ""),
+        role: impersonation ? impersonation.originalRole : currentRole,
         credits,
         subscriptionTier,
         workspaceMode,
@@ -1128,7 +1212,7 @@ export default function App() {
         otherRevenues,
         leaveRecords,
         employeeAdvances,
-        auditLogs,
+        auditLogs: syncedAuditLogs,
         archivedRecords,
         updatedAt: new Date().toISOString()
       }, { merge: true });
@@ -1171,6 +1255,7 @@ export default function App() {
         const profileData = {
           uid,
           email: emailLower,
+          role: isSuper ? "Super Admin" : "Farm Owner",
           credits: isSuper ? 100000 : 300,
           subscriptionTier: isSuper ? "Agro-Enterprise Premium" : "Commercial Growth Layer",
           workspaceMode: "Farmer",
@@ -1240,7 +1325,7 @@ export default function App() {
         setIsUnverifiedUser(false);
         setUserProfile(prev => ({
           ...prev,
-          email: user.email || "shikasuli@gmail.com",
+          email: user.email || "owner@mabala.com",
           name: user.displayName || user.email?.split("@")[0] || "Deep Valley Manager"
         }));
 
@@ -1455,7 +1540,7 @@ export default function App() {
       amount: Number(checkoutObj.price) || 0,
       currency: checkoutObj.currency || "ZMW",
       phone: lipilaPhone || "26097100000",
-      holderName: lipilaHolderName || "Shadrick Kasuli",
+      holderName: lipilaHolderName || userProfile?.name || "Farm Owner",
       packageName: checkoutObj.name,
       packageType: checkoutObj.type,
       status: "Successful" as const,
@@ -1715,6 +1800,27 @@ export default function App() {
         
         localStorage.removeItem("registrations_in_progress_" + r.email.toLowerCase());
       }
+    } else if (checkoutObj.is_unmetered_access) {
+      const durationHours = checkoutObj.duration_hours || 24;
+      const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+      const newPass = {
+        id: checkoutObj.id,
+        name: checkoutObj.name,
+        expiresAt,
+        purchasedAt: new Date().toISOString()
+      };
+      setActiveAccessPass(newPass);
+
+      const newCtx = {
+        id: "CTX-" + Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        farmName: activeFarm?.name || "Sunrise Agro-Tech Farms",
+        type: "Allotment",
+        amount: 0,
+        description: `Activated ${checkoutObj.name} (${durationHours} hours unmetered access)`,
+        adminUser: userProfile.name || "Tenant"
+      };
+      setCreditTransactions(prev => [newCtx, ...prev]);
     } else {
       setCredits(prev => prev + awardedCredits);
 
@@ -1831,7 +1937,7 @@ export default function App() {
               amount: Number(lipilaCheckout?.price) || 0,
               currency: "ZMW",
               phone: lipilaPhone || "26097100000",
-              holderName: lipilaHolderName || "Shadrick Kasuli",
+              holderName: lipilaHolderName || userProfile?.name || "Farm Owner",
               packageName: lipilaCheckout?.name || "Premium Upgrade",
               packageType: lipilaCheckout?.type || "subscription",
               status: "Failed" as const,
@@ -1896,7 +2002,7 @@ export default function App() {
           narration: `Mabala ${lipilaCheckout?.type === "subscription" ? "Subscription" : "Credits"}: ${lipilaCheckout?.name}`,
           accountNumber: cleanPhone,
           currency: lipilaCheckout?.currency || "ZMW",
-          email: (lipilaCheckout?.registrationData?.email) || userProfile.email || "shikasuli@gmail.com",
+          email: (lipilaCheckout?.registrationData?.email) || userProfile.email || "owner@mabala.com",
           uid: auth.currentUser?.uid || "anonymous",
           packageName: lipilaCheckout?.name || "Mabala Upgrade Plan",
           packageType: lipilaCheckout?.type || "subscription",
@@ -1915,7 +2021,7 @@ export default function App() {
             amount: Number(lipilaCheckout?.price) || 0,
             currency: "ZMW",
             phone: cleanPhone || "26097100000",
-            holderName: lipilaHolderName || "Shadrick Kasuli",
+            holderName: lipilaHolderName || userProfile?.name || "Farm Owner",
             packageName: lipilaCheckout?.name || "Premium Upgrade",
             packageType: lipilaCheckout?.type || "subscription",
             status: "Failed" as const,
@@ -1938,7 +2044,7 @@ export default function App() {
           amount: Number(lipilaCheckout?.price) || 0,
           currency: "ZMW",
           phone: cleanPhone || "26097100000",
-          holderName: lipilaHolderName || "Shadrick Kasuli",
+          holderName: lipilaHolderName || userProfile?.name || "Farm Owner",
           packageName: lipilaCheckout?.name || "Premium Upgrade",
           packageType: lipilaCheckout?.type || "subscription",
           status: "Failed" as const,
@@ -1987,6 +2093,8 @@ export default function App() {
     { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
     { id: "pkg-3", name: "Enterprise Suite", duration: "1 Month", credits: 25000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Multi-farm nodes, 10 team users, advanced analytics, dedicated account manager, API access", isActive: true },
     { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true },
+    { id: "pass-daily", name: "Daily Access Pass", duration: "24 Hours", credits: 0, price: 15, priceUSD: 1, currency: "ZMW", features: "24-hour unmetered platform access (Emergency Bridge)", is_unmetered_access: true, duration_hours: 24, requires_zero_balance: true, isActive: true },
+    { id: "pass-weekly", name: "Weekly Access Pass", duration: "7 Days", credits: 0, price: 35, priceUSD: 2, currency: "ZMW", features: "7-day unmetered platform access (Emergency Bridge)", is_unmetered_access: true, duration_hours: 168, requires_zero_balance: true, isActive: true },
     { id: "vet-payg-starter", name: "Veterinary PAYG Starter", duration: "Pay As You Go", credits: 500, price: 150, priceUSD: 7, currency: "ZMW", features: "Starter clinic package: 500 credits, SMS notifications integration", isActive: true },
     { id: "vet-payg-growth", name: "Veterinary PAYG Growth", duration: "Pay As You Go", credits: 1500, price: 400, priceUSD: 16, currency: "ZMW", features: "Growth clinic package: 1500 credits, WhatsApp alerts integration", isActive: true },
     { id: "vet-payg-expert", name: "Veterinary PAYG Expert", duration: "Pay As You Go", credits: 5000, price: 1200, priceUSD: 49, currency: "ZMW", features: "Expert clinic package: 5000 credits, full AI Co-pilot priority limits", isActive: true },
@@ -2138,7 +2246,8 @@ export default function App() {
   }, [creditTransactions]);
 
   const activeFarm = farms[activeFarmIndex] || farms[0];
-  const isReadonly = credits === 0 || farmStatus === "FROZEN";
+  const isPassActive = activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date();
+  const isReadonly = (credits === 0 && !isPassActive) || farmStatus === "FROZEN";
 
   const isAllFarmsSelected = isAllFarmsActive && subscriptionTier === "Enterprise Suite";
 
@@ -2377,7 +2486,86 @@ export default function App() {
 
   // Handle write activity credit penalty
   const deductCredits = (weight: number) => {
+    if (activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date()) {
+      // Unmetered access activated via Emergency Access Pass
+      return;
+    }
     setCredits(prev => Math.max(prev - weight, 0));
+  };
+
+  const handleStartImpersonation = async (targetUid: string, targetEmail: string, targetFarm: any) => {
+    // Save original session values so we can restore them later
+    setImpersonation({
+      targetUid,
+      targetEmail,
+      targetFarmId: targetFarm.id,
+      originalUserProfile: { ...userProfile },
+      originalFarms: [...farms],
+      originalRole: currentRole,
+      originalCredits: credits,
+      originalSubscriptionTier: subscriptionTier,
+      originalWorkspaceMode: workspaceMode,
+    });
+
+    // Load the target farm into active session
+    setFarms([targetFarm]);
+    setWorkspaceMode("Farmer"); 
+    setCurrentRole("Farm Owner"); // let them operate with high credentials on that farm node
+
+    // Log in central super_admin_audit collection in Firestore
+    try {
+      const auditId = "audit-entry-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "farm_node_entry",
+        targetTenantId: targetUid,
+        details: {
+          farmNodeId: targetFarm.id,
+          farmNodeName: targetFarm.name,
+          targetEmail,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Failed to log farm node entrance audit:", err);
+    }
+  };
+
+  const handleExitImpersonation = async () => {
+    if (!impersonation) return;
+
+    // Log the exiting action first
+    try {
+      const auditId = "audit-exit-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "farm_node_exit",
+        targetTenantId: impersonation.targetUid,
+        details: {
+          farmNodeId: impersonation.targetFarmId,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Failed to log farm node exit audit:", err);
+    }
+
+    // Restore state values
+    setUserProfile(impersonation.originalUserProfile);
+    setFarms(impersonation.originalFarms);
+    setCurrentRole(impersonation.originalRole);
+    setCredits(impersonation.originalCredits);
+    setSubscriptionTier(impersonation.originalSubscriptionTier);
+    setWorkspaceMode(impersonation.originalWorkspaceMode as any);
+
+    // Clear impersonation state
+    setImpersonation(null);
   };
 
   // Demo Mode is repurposed into a clean blank workspace bootloader as per user directive
@@ -2429,7 +2617,7 @@ export default function App() {
 
     setSubscriptionTier(isSuper ? "Agro-Enterprise Premium" : "Commercial Growth Layer");
     setWorkspaceMode("Farmer");
-    setCurrentRole(isSuper ? "Platform Administrator" : "Farm Owner");
+    setCurrentRole(isSuper ? "Super Admin" : "Farm Owner");
 
     setCredits(isSuper ? 100000 : 300); // Super administrator receives complete operational tokens
     setIsAuthenticated(true);
@@ -2877,7 +3065,7 @@ export default function App() {
 
     setUserProfile({
       name: user.displayName || user.email?.split("@")[0] || "Google User",
-      email: user.email || "shikasuli@gmail.com",
+      email: user.email || "owner@mabala.com",
       phone: user.phoneNumber || "+260977889900"
     });
     console.log("[Mabala Auth] Google sign in completed successfully. Letting state observer handle routing.");
@@ -4186,10 +4374,10 @@ export default function App() {
                   const u = auth.currentUser;
                   setUserProfile({
                     name: u.displayName || u.email?.split("@")[0] || "Mabala Farmer",
-                    email: u.email || "shikasuli@gmail.com",
+                    email: u.email || "owner@mabala.com",
                     phone: u.phoneNumber || "+260977889900"
                   });
-                  handleStartDemo(u.email || "shikasuli@gmail.com");
+                  handleStartDemo(u.email || "owner@mabala.com");
                 } else if (verificationEmailSentTo) {
                   setUserProfile({
                     name: verificationEmailSentTo.split("@")[0] || "Mabala Farmer",
@@ -4200,10 +4388,10 @@ export default function App() {
                 } else {
                   setUserProfile({
                     name: "Mabala Farmer",
-                    email: "shikasuli@gmail.com",
+                    email: "owner@mabala.com",
                     phone: "+260977889900"
                   });
-                  handleStartDemo("shikasuli@gmail.com");
+                  handleStartDemo("owner@mabala.com");
                 }
               }}
               className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/10 cursor-pointer flex items-center justify-center gap-2"
@@ -4602,6 +4790,23 @@ export default function App() {
       {/* Main viewport Container */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         
+        {impersonation && (
+          <div className="bg-gradient-to-r from-red-650 via-indigo-700 to-violet-850 text-white px-6 py-3 text-xs font-black flex justify-between items-center shadow-md animate-fade-in shrink-0 relative z-[1003] border-b border-indigo-650">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400 animate-pulse inline-block shrink-0" />
+              <span className="text-[10.5px] uppercase tracking-wider font-mono">
+                ⚙️ Support Mode: Viewing tenant <strong>{impersonation.targetEmail}</strong>'s Farm Node "<strong>{farms[0]?.name || "Active Farm"}</strong>" as Super Admin. All write actions are logged.
+              </span>
+            </div>
+            <button
+              onClick={handleExitImpersonation}
+              className="bg-white hover:bg-neutral-50 text-indigo-900 px-3.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase transition-all shadow-sm cursor-pointer border border-neutral-200"
+            >
+              Exit Session & Return ✕
+            </button>
+          </div>
+        )}
+
         {/* Sleek Top header banner */}
         <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shadow-sm shrink-0">
           <div className="flex items-center gap-4">
@@ -4973,7 +5178,7 @@ export default function App() {
 
             <div className="flex items-center gap-3">
               <div className="flex flex-col items-end">
-                <span className="text-xs font-bold text-slate-700">Shadrick Kasuli</span>
+                <span className="text-xs font-bold text-slate-700">{userProfile?.name || "Farm Owner"}</span>
                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full font-extrabold tracking-wider font-sans mt-0.5 border ${
                   currentRole === "Platform Administrator"
                     ? "bg-purple-100 border-purple-300 text-purple-800"
@@ -5981,6 +6186,7 @@ export default function App() {
               currencySymbol={selectedCountry.symbol}
               currentRole={currentRole}
               viewMode="platform-admin"
+              onEnterFarmNodeImpersonation={handleStartImpersonation}
               subscriptionTier={subscriptionTier}
               setSubscriptionTier={setSubscriptionTier}
               workspaceMode={workspaceMode}
@@ -6041,11 +6247,17 @@ export default function App() {
                 <button
                   key={pkg.id}
                   onClick={() => {
+                    if (pkg.requires_zero_balance && credits > 0) {
+                      alert(`You still have ${credits} credits available. Emergency Access Passes are only available once your balance reaches zero.`);
+                      return;
+                    }
                     setLipilaCheckout({
                       type: "credits",
                       name: pkg.name,
                       price: pkg.price,
-                      creditsToAward: pkg.credits,
+                      creditsToAward: pkg.credits || 0,
+                      is_unmetered_access: pkg.is_unmetered_access,
+                      duration_hours: pkg.duration_hours,
                       description: pkg.features || pkg.description || "Credit Plan"
                     });
                     setShowTopUpModal(false);
@@ -6054,7 +6266,9 @@ export default function App() {
                 >
                   <span className="flex justify-between items-center font-bold">
                     <span>{pkg.name}</span>
-                    <span className="text-emerald-600 font-mono">+{pkg.credits} CR</span>
+                    <span className="text-emerald-600 font-mono">
+                      {pkg.is_unmetered_access ? "Unmetered Access" : `+${pkg.credits} CR`}
+                    </span>
                   </span>
                   <p className="text-[9.5px] text-slate-400 font-medium font-sans mt-0.5">{pkg.features}</p>
                   <span className="text-[10px] text-slate-500 font-black block mt-1.5 uppercase font-mono tracking-wider">

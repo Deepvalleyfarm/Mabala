@@ -237,7 +237,7 @@ export default function WelcomeScreen({
 
   // Google Sign-In Screen States
   const [showGoogleAccountScreen, setShowGoogleAccountScreen] = useState<boolean>(false);
-  const [selectedGoogleEmail, setSelectedGoogleEmail] = useState<string>("shikasuli@gmail.com");
+  const [selectedGoogleEmail, setSelectedGoogleEmail] = useState<string>("owner@mabala.com");
   const [isEditingGoogleEmail, setIsEditingGoogleEmail] = useState<boolean>(false);
 
   // Recovery States
@@ -615,7 +615,7 @@ export default function WelcomeScreen({
         });
       } else {
         // Login
-        await onLogin(tempData?.email || "shikasuli@gmail.com", tempData?.password);
+        await onLogin(tempData?.email || "owner@mabala.com", tempData?.password);
       }
 
       // Dismiss the verification overlays so they can see the resulting layout or checkout screens!
@@ -663,7 +663,7 @@ export default function WelcomeScreen({
       }
       try {
         const matchName = recoveryOrgName.toLowerCase().trim();
-        let matchedEmail = "shikasuli@gmail.com";
+        let matchedEmail = "owner@mabala.com";
         
         if (matchName.includes("sunrise") || matchName.includes("agro") || matchName.includes("tech")) {
           matchedEmail = "clara.mwila@sunriseagro.co.zm";
@@ -2721,7 +2721,7 @@ export default function WelcomeScreen({
                         <input
                           type="text"
                           required
-                          placeholder="Dr. Shadrick Kasuli"
+                          placeholder="e.g. Mary Banda"
                           value={vetDirectorName}
                           onChange={(e) => setVetDirectorName(e.target.value)}
                           className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-semibold"

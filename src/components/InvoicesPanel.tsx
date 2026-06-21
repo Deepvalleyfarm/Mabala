@@ -52,6 +52,46 @@ export default function InvoicesPanel({
 }: InvoicesPanelProps) {
   const [activeSegment, setActiveSegment] = useState<"invoices" | "quotations" | "customers">("invoices");
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const handleDownloadInvoicesCSV = () => {
+    // Generate secure CSV of invoices
+    const headers = ["Reference ID", "Customer Name", "Due Deadline", "Line Product/Description", "Line Quantity", "Line Unit Price", "Line Amount", "Invoiced Sum", "Collected Amount", "Status"];
+    const csvRows = [headers.join(",")];
+
+    const getPaidAmount = (inv: Invoice) => {
+      if ((inv.status as string) === "Paid") return inv.total;
+      if ((inv.status as string) === "Part Paid" && inv.paidAmount) return inv.paidAmount;
+      return 0;
+    };
+
+    for (const inv of invoices) {
+      const paid = getPaidAmount(inv);
+      for (const line of inv.lines) {
+        const row = [
+          `"${inv.id}"`,
+          `"${(inv.customerName || "").replace(/"/g, '""')}"`,
+          `"${inv.dueDate}"`,
+          `"${(line.description || "").replace(/"/g, '""')}"`,
+          line.quantity,
+          line.unitPrice.toFixed(2),
+          line.amount.toFixed(2),
+          inv.total.toFixed(2),
+          paid.toFixed(2),
+          `"${inv.status}"`
+        ];
+        csvRows.push(row.join(","));
+      }
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `mabala_invoices_registry_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [showCustomerModal, setShowCustomerModal] = useState(false);
 
   // New Customer Form States
@@ -722,9 +762,29 @@ export default function InvoicesPanel({
               <p className="text-[11px] text-slate-500">Auto-balanced customer credit obligations and outstanding collections registers.</p>
             </div>
             {!isReadonly ? (
-              <button onClick={() => setShowAddForm(true)} className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold shadow">+ New Invoice</button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadInvoicesCSV}
+                  className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 bg-white cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download CSV</span>
+                </button>
+                <button onClick={() => setShowAddForm(true)} className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold shadow">+ New Invoice</button>
+              </div>
             ) : (
-              <span className="text-xs text-rose-500 bg-rose-50 px-2.5 py-1 rounded font-bold">Read-Only View</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadInvoicesCSV}
+                  className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 bg-white cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download CSV</span>
+                </button>
+                <span className="text-xs text-rose-500 bg-rose-50 px-2.5 py-1 rounded font-bold">Read-Only View</span>
+              </div>
             )}
           </div>
 

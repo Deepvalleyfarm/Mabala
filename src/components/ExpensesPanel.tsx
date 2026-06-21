@@ -18,7 +18,8 @@ import {
   Upload,
   CheckCircle,
   Copy,
-  Info
+  Info,
+  Download
 } from "lucide-react";
 
 interface ExpensesPanelProps {
@@ -58,6 +59,36 @@ export default function ExpensesPanel({
 }: ExpensesPanelProps) {
   const [activeTab, setActiveTab] = useState<"expenses" | "suppliers">("expenses");
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const handleDownloadCSV = () => {
+    // Generate secure CSV of expense transactions
+    const headers = ["Reference ID", "Supplier / Vendor", "Collection Date", "CoA Code", "Product/Category", "Row Amount", "Total Transaction Sum"];
+    const csvRows = [headers.join(",")];
+
+    for (const tx of expenses) {
+      for (const r of tx.rows) {
+        const row = [
+          `"${tx.id}"`,
+          `"${(tx.supplierName || "").replace(/"/g, '""')}"`,
+          `"${tx.date}"`,
+          `"${r.coaCode}"`,
+          `"${(r.category || "").replace(/"/g, '""')}"`,
+          r.amount.toFixed(2),
+          tx.total.toFixed(2)
+        ];
+        csvRows.push(row.join(","));
+      }
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `mabala_expenses_audit_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -890,6 +921,14 @@ export default function ExpensesPanel({
             {!isReadonly ? (
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={handleDownloadCSV}
+                  className="px-4 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold font-sans text-slate-700 flex items-center gap-1.5 bg-white shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download CSV</span>
+                </button>
+                <button
                   onClick={() => {
                     setShowCsvForm(!showCsvForm);
                     setShowAddForm(false);
@@ -914,9 +953,19 @@ export default function ExpensesPanel({
                 </button>
               </div>
             ) : (
-              <span className="text-xs text-rose-500 font-bold bg-rose-50 px-2.5 py-1 rounded inline-flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5 animate-pulse" /> Read-Only View
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadCSV}
+                  className="px-4 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold font-sans text-slate-700 flex items-center gap-1.5 bg-white shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download CSV</span>
+                </button>
+                <span className="text-xs text-rose-500 font-bold bg-rose-50 px-2.5 py-1 rounded inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 animate-pulse" /> Read-Only View
+                </span>
+              </div>
             )}
           </div>
 

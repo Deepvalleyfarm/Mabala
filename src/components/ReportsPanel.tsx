@@ -1084,6 +1084,41 @@ export default function ReportsPanel({
         )}
       </div>
 
+      {/* High-level portfolio summary grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border border-slate-200/80 p-4 bg-slate-50/55 rounded-2xl no-print">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 block">Total Portfolio Revenue</span>
+            <span className="text-lg font-black font-sans text-slate-800">{formatAmt(totalRev)}</span>
+          </div>
+          <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 block">Total Operational Expenses</span>
+            <span className="text-lg font-black font-sans text-amber-600">{formatAmt(totalExp)}</span>
+          </div>
+          <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 block">Net Portfolio Surplus/Deficit</span>
+            <span className={`text-lg font-black font-sans ${netEarnings >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+              {formatAmt(netEarnings)}
+            </span>
+          </div>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${netEarnings >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-50 text-rose-600"}`}>
+            <ArrowUpRight className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
       {activeReport === "pl" && (
         <div className="bg-white rounded-xl border p-6 space-y-6 shadow-sm animate-fade-in printable-area">
           <div className="flex justify-between items-center border-b pb-4">

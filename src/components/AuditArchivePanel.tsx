@@ -137,14 +137,14 @@ export default function AuditArchivePanel({
     doc.text("AUTHORIZED OPERATOR:", rightColX, metaY + 8);
     doc.setFont("helvetica", "normal");
     doc.setTextColor("#475569");
-    doc.text(currentUser?.name || "Shadrick Kasuli", rightColX + 45, metaY + 8);
+    doc.text(currentUser?.name || "Farm Owner", rightColX + 45, metaY + 8);
 
     doc.setFont("helvetica", "bold");
     doc.setTextColor("#1e293b");
     doc.text("OPERATOR EMAIL:", rightColX, metaY + 16);
     doc.setFont("helvetica", "normal");
     doc.setTextColor("#475569");
-    doc.text(currentUser?.email || "shikasuli@gmail.com", rightColX + 45, metaY + 16);
+    doc.text(currentUser?.email || "operator@mabala.com", rightColX + 45, metaY + 16);
 
     doc.setFont("helvetica", "bold");
     doc.setTextColor("#1e293b");

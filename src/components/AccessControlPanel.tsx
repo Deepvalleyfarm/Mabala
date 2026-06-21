@@ -321,7 +321,7 @@ export default function AccessControlPanel({
 
                   <div className="flex flex-col items-end gap-1.5">
                     {/* Role Dropdown */}
-                    {isOwner && member.email !== "shikasuli@gmail.com" ? (
+                    {isOwner && member.email !== userEmail ? (
                       <select
                         value={member.role}
                         onChange={(e) => onChangeMemberRole(member.id, e.target.value as PredefinedRole)}
@@ -346,7 +346,7 @@ export default function AccessControlPanel({
                       </span>
                     )}
 
-                    {isOwner && member.email !== "shikasuli@gmail.com" && (
+                    {isOwner && member.email !== userEmail && (
                       <button
                         onClick={() => onRemoveTeamMember(member.id)}
                         className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"

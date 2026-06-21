@@ -85,9 +85,9 @@ export default function OfftakerPanel({
   const [offtakerStaffRole, setOfftakerStaffRole] = useState<string>("Offtaker Admin");
 
   // Determine view mode based on role & email
-  // If the user name/identity is "shikasuli@gmail.com", they are the main farmer. Let's let them experience BOTH views for testability!
+  // If the user identity is "owner@mabala.com", they are the main farmer. Let's let them experience BOTH views for testability!
   // Normal offtaker roles see Offtaker Workspace only.
-  const isFarmerPlayer = userEmail === "shikasuli@gmail.com";
+  const isFarmerPlayer = userEmail === "owner@mabala.com" || currentRole === "Farm Owner";
   const isPlatformAdmin = currentRole === "Platform Administrator" || userEmail === "deepvaleyfarm@gmail.com";
 
   // Configuration and Local DB States

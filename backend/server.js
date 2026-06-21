@@ -222,7 +222,7 @@ app.post('/api/payments/collect', async (req, res) => {
       narration,
       accountNumber,
       currency: req.body.currency || "ZMW",
-      email: email || "shikasuli@gmail.com"
+      email: email || "owner@mabala.com"
     };
 
     console.log("[Mabala Payment] Initiating Lipila payment request:", payload);
@@ -230,7 +230,7 @@ app.post('/api/payments/collect', async (req, res) => {
     // Save pending transaction to Firebase Firestore backend
     const paymentRecord = {
       uid: uid || "anonymous",
-      email: email || "shikasuli@gmail.com",
+      email: email || "owner@mabala.com",
       amount: Number(amount),
       currency: req.body.currency || "ZMW",
       phone: accountNumber,

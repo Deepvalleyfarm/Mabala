@@ -583,7 +583,7 @@ export interface AppConfig {
   socialFacebook: string;
 }
 
-export type PredefinedRole = "Platform Administrator" | "Farm Owner" | "Accountant" | "Farm Worker" | "Veterinary Doctor" | "Agro-Vet Specialist" | "Farm Admin" | "Manager" | "Viewer";
+export type PredefinedRole = "Super Admin" | "Platform Administrator" | "Farm Owner" | "Accountant" | "Farm Worker" | "Veterinary Doctor" | "Agro-Vet Specialist" | "Farm Admin" | "Manager" | "Viewer";
 
 export interface OptionalModulePermission {
   read: boolean;

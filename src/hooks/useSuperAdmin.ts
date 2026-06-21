@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 export function useSuperAdmin() {
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
@@ -9,18 +10,26 @@ export function useSuperAdmin() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
       if (user) {
-        // UID icIoBG4eN5VOw2BvhNiFUnUqmsX2 is the designated Super Admin
-        const isSuperUid = user.uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
-        
         try {
-          // Force refresh the ID token to retrieve up-to-date custom claims
-          const idTokenResult = await user.getIdTokenResult(true);
-          const hasClaim = idTokenResult.claims.superAdmin === true;
+          const docRef = doc(db, "users_data", user.uid);
+          const docSnap = await getDoc(docRef);
           
-          setIsSuperAdmin(hasClaim || isSuperUid);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.role === "Super Admin") {
+              setIsSuperAdmin(true);
+            } else {
+              setIsSuperAdmin(false);
+            }
+          } else {
+            // Seed check if the database is unpopulated yet as a helper
+            const isSeed = user.email === "deepvaleyfarm@gmail.com" && user.uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+            setIsSuperAdmin(isSeed);
+          }
         } catch (error) {
-          console.warn("[Mabala useSuperAdmin] Failed to read custom claims:", error);
-          setIsSuperAdmin(isSuperUid);
+          console.warn("[Mabala useSuperAdmin] Failed to check Firestore:", error);
+          const isSeed = user.email === "deepvaleyfarm@gmail.com" && user.uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+          setIsSuperAdmin(isSeed);
         }
       } else {
         setIsSuperAdmin(false);

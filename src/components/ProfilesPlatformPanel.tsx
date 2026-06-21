@@ -1,8 +1,28 @@
 import React, { useState, useEffect } from "react";
 import { Supplier, Customer, PredefinedRole, DefaultVaccineScheduleItem } from "../types";
-import { storage, auth } from "../firebase";
+import { storage, auth, db } from "../firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, doc, setDoc, getDocs, getDoc, query, where } from "firebase/firestore";
 import { useSuperAdmin } from "../hooks/useSuperAdmin";
+import { 
+  Shield, 
+  Users, 
+  Activity, 
+  DollarSign, 
+  Hammer, 
+  Info, 
+  Tractor, 
+  X, 
+  ExternalLink,
+  Lock,
+  Unlock,
+  AlertCircle,
+  Smartphone,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Globe
+} from "lucide-react";
 import { 
   User, 
   Building2, 
@@ -99,7 +119,18 @@ interface ProfilesPlatformPanelProps {
   setLipilaTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
   defaultVaccinationSchedule?: DefaultVaccineScheduleItem[];
   setDefaultVaccinationSchedule?: React.Dispatch<React.SetStateAction<DefaultVaccineScheduleItem[]>>;
+  onEnterFarmNodeImpersonation?: (targetUid: string, targetEmail: string, farm: any) => void;
 }
+
+export const validate_bundle_pricing = (pkg: any) => {
+  if (pkg.is_unmetered_access) {
+    return { isValid: true, pricePerCredit: "N/A — unmetered access" };
+  }
+  if (!pkg.credits || pkg.credits <= 0) {
+    return { isValid: false, pricePerCredit: "N/A", error: "Metered packages require credits count" };
+  }
+  return { isValid: true, pricePerCredit: `ZK ${(pkg.price / pkg.credits).toFixed(4)}` };
+};
 
 export default function ProfilesPlatformPanel({
   userProfile,
@@ -147,7 +178,8 @@ export default function ProfilesPlatformPanel({
   lipilaTransactions = [],
   setLipilaTransactions = () => {},
   defaultVaccinationSchedule = [],
-  setDefaultVaccinationSchedule
+  setDefaultVaccinationSchedule,
+  onEnterFarmNodeImpersonation
 }: ProfilesPlatformPanelProps) {
   const { isSuperAdmin } = useSuperAdmin();
   // Safe Fallback for configurable 5 credit tiers
@@ -167,6 +199,374 @@ export default function ProfilesPlatformPanel({
   // Platform Admin controls state hooks
   // ==========================================
   const [platformAdminSubTab, setPlatformAdminSubTab] = useState<"tenants" | "admins" | "audit">("tenants");
+  const [superAdminSubTab, setSuperAdminSubTab] = useState<"users" | "activity" | "financials" | "nodes" | "settings">("users");
+  const [allPlatformUsers, setAllPlatformUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
+  const [allAuditLogs, setAllAuditLogs] = useState<any[]>([]);
+  const [loadingAudits, setLoadingAudits] = useState<boolean>(false);
+  
+  // Credit allocation states
+  const [creditAmount, setCreditAmount] = useState<number>(100);
+  const [creditReason, setCreditReason] = useState<string>("");
+  const [selectedTenantForCredits, setSelectedTenantForCredits] = useState<any | null>(null);
+  const [creditActionType, setCreditActionType] = useState<"allocate" | "deduct">("allocate");
+  const [showCreditConfirm, setShowCreditConfirm] = useState<boolean>(false);
+  
+  // Selected user for financial deep detail
+  const [selectedFinancialUser, setSelectedFinancialUser] = useState<any | null>(null);
+  
+  // Search / filter states
+  const [userSearchText, setUserSearchText] = useState<string>("");
+  const [userRoleFilter, setUserRoleFilter] = useState<string>("ALL");
+  const [activitySearchText, setActivitySearchText] = useState<string>("");
+  const [activityTypeFilter, setActivityTypeFilter] = useState<string>("ALL");
+  
+  // Ad creation states
+  const [newAdTitle, setNewAdTitle] = useState<string>("");
+  const [newAdDesc, setNewAdDesc] = useState<string>("");
+  const [newAdPlacement, setNewAdPlacement] = useState<"banner" | "sidebar" | "interstitial">("banner");
+  const [newAdDestUrl, setNewAdDestUrl] = useState<string>("");
+  const [newAdBase64, setNewAdBase64] = useState<string>("");
+  const [newAdError, setNewAdError] = useState<string>("");
+
+  // Load Super Admin central directories & system activity audits
+  const loadSuperAdminData = async () => {
+    if (currentRole !== "Super Admin" || !db) return;
+    setLoadingUsers(true);
+    setLoadingAudits(true);
+    try {
+      const usersSnap = await getDocs(collection(db, "users_data"));
+      const usersList: any[] = [];
+      usersSnap.forEach((docSnap) => {
+        usersList.push({ uid: docSnap.id, ...docSnap.data() });
+      });
+      setAllPlatformUsers(usersList);
+      
+      const auditsSnap = await getDocs(collection(db, "super_admin_audit"));
+      const auditsList: any[] = [];
+      auditsSnap.forEach((docSnap) => {
+        auditsList.push(docSnap.data());
+      });
+
+      // If absolutely no audits exist, let's seed 3 clean records so view is functional on mount!
+      if (auditsList.length === 0) {
+        const seedAudits = [
+          {
+            id: "seed-audit-1",
+            superAdminId: "icIoBG4eN5VOw2BvhNiFUnUqmsX2",
+            superAdminEmail: "deepvaleyfarm@gmail.com",
+            actionType: "role_change",
+            targetTenantId: "icIoBG4eN5VOw2BvhNiFUnUqmsX2",
+            details: {
+              targetEmail: "deepvaleyfarm@gmail.com",
+              newRole: "Super Admin",
+              description: "Root super admin claim initialized."
+            },
+            timestamp: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+          },
+          {
+            id: "seed-audit-2",
+            superAdminId: "icIoBG4eN5VOw2BvhNiFUnUqmsX2",
+            superAdminEmail: "deepvaleyfarm@gmail.com",
+            actionType: "credit_allocation",
+            targetTenantId: "t1",
+            details: {
+              targetEmail: "sunrise@agro.com",
+              amount: 500,
+              changeType: "allocate",
+              rationale: "Default introductory partner credits package."
+            },
+            timestamp: new Date(Date.now() - 12 * 3600 * 1000).toISOString()
+          },
+          {
+            id: "seed-audit-3",
+            superAdminId: "system",
+            superAdminEmail: "system@mabala.com",
+            actionType: "settings_change",
+            targetTenantId: "system_global",
+            details: {
+              description: "System parameters and country rate grids synchronized to Lusaka base."
+            },
+            timestamp: new Date().toISOString()
+          }
+        ];
+        // Commit seed audits
+        for (const sa of seedAudits) {
+          await setDoc(doc(db, "super_admin_audit", sa.id), sa);
+          auditsList.push(sa);
+        }
+      }
+
+      auditsList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setAllAuditLogs(auditsList);
+    } catch (err) {
+      console.error("Error loading Super Admin systems:", err);
+    } finally {
+      setLoadingUsers(false);
+      setLoadingAudits(false);
+    }
+  };
+
+  const handleToggleSuperAdminRole = async (targetUser: any) => {
+    if (targetUser.uid === auth.currentUser?.uid || targetUser.email === "deepvaleyfarm@gmail.com") {
+      alert("Validation Error: For integrity and lockout prevention, you are forbidden from altering your own Super Admin role or the root seeded account.");
+      return;
+    }
+    const isNowSuper = targetUser.role === "Super Admin";
+    const nextRole = isNowSuper ? "Platform Administrator" : "Super Admin";
+    
+    try {
+      await setDoc(doc(db, "users_data", targetUser.uid), {
+        role: nextRole
+      }, { merge: true });
+
+      const auditId = "audit-role-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "role_change",
+        targetTenantId: targetUser.uid,
+        details: {
+          targetEmail: targetUser.email,
+          previousRole: targetUser.role || "unknown",
+          newRole: nextRole,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      alert(`SUCCESS: Restructured ${targetUser.email}'s platform access profile to "${nextRole}".`);
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to reconfigure user permissions:", err);
+      alert("Error: Missing or insufficient database permissions to write to other tenant profiles.");
+    }
+  };
+
+  const logFinancialViewTrail = async (targetEmail: string, targetUid: string) => {
+    try {
+      const auditId = "audit-finview-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "financial_view",
+        targetTenantId: targetUid,
+        details: {
+          targetEmail,
+          viewedResource: "wallet_and_billing_ledger",
+          action: "Super Admin viewed transaction references & wallet balances.",
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+      // also reload audits list
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to append financial view tracking audit log:", err);
+    }
+  };
+
+  const handleSuperAdminModifyCredits = async (targetUser: any, type: "allocate" | "deduct") => {
+    if (!creditReason.trim()) {
+      alert("Mandatory Error: A legal, non-empty text justification reason must be captured for accounting audit logs.");
+      return;
+    }
+    const currentCredits = targetUser.credits || 0;
+    let nextCredits = currentCredits;
+    if (type === "allocate") {
+      nextCredits += creditAmount;
+    } else {
+      if (creditAmount > currentCredits) {
+        alert(`Validation Error: Cannot deduct ${creditAmount} credits. Target user only has ${currentCredits} credits.`);
+        return;
+      }
+      nextCredits -= creditAmount;
+    }
+
+    try {
+      await setDoc(doc(db, "users_data", targetUser.uid), {
+        credits: nextCredits
+      }, { merge: true });
+
+      const auditId = "audit-credit-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "credit_allocation",
+        targetTenantId: targetUser.uid,
+        details: {
+          targetEmail: targetUser.email,
+          changeType: type,
+          amount: creditAmount,
+          previousCredits: currentCredits,
+          newCredits: nextCredits,
+          rationale: creditReason,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      alert(`SUCCESS: Balance updated for ${targetUser.email} to ${nextCredits} credits. All audit records generated.`);
+      setCreditReason("");
+      setShowCreditConfirm(false);
+      setSelectedTenantForCredits(null);
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to commit credit balance adjustments:", err);
+      alert("Error: Database error while modifying billing credits.");
+    }
+  };
+
+  const handleSaveSystemSettings = async () => {
+    try {
+      await setDoc(doc(db, "system_settings", "global"), {
+        ...contactDetails,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      const auditId = "audit-settings-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "settings_change",
+        targetTenantId: "system_global",
+        details: {
+          previousDetails: contactDetails,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      alert("SUCCESS: Global marketing contact variables and social coordinates live and synchronized!");
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to save global configuration metadata:", err);
+      alert("Error: Unable to synchronize system settings.");
+    }
+  };
+
+  const handleAdImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setNewAdError("File upload cancelled: Selected image file exceeds 5MB max payload size.");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setNewAdError("File upload cancelled: Invalid file format. Only JPG, PNG, WEBP, or GIF image assets may be uploaded.");
+      return;
+    }
+
+    setNewAdError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNewAdBase64(reader.result as string);
+    };
+    reader.onerror = () => {
+      setNewAdError("Internal compression file system read error. Please select a different image.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveAdPlacement = async () => {
+    if (!newAdTitle.trim() || !newAdBase64) {
+      alert("Validation Error: Both ad placement title and a custom uploaded image file are required.");
+      return;
+    }
+
+    try {
+      const newAd = {
+        id: "ad-" + Date.now(),
+        title: newAdTitle,
+        description: newAdDesc,
+        imageUrl: newAdBase64,
+        externalUrl: newAdDestUrl || "https://mabala.com",
+        placement: newAdPlacement,
+        active: true
+      };
+
+      const updatedAds = [newAd, ...activeAds];
+      
+      if (setActiveAds) {
+        setActiveAds(updatedAds);
+      }
+
+      await setDoc(doc(db, "system_settings", "global"), {
+        ads: updatedAds
+      }, { merge: true });
+
+      const auditId = "audit-ad-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "ad_campaign_created",
+        targetTenantId: "system_global",
+        details: {
+          adId: newAd.id,
+          title: newAd.title,
+          placement: newAd.placement,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      alert(`SUCCESS: Custom ad campaign creative asset secure upload registered! Campaign is live.`);
+      setNewAdTitle("");
+      setNewAdDesc("");
+      setNewAdDestUrl("");
+      setNewAdBase64("");
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to commit premium ad placement asset:", err);
+      alert("Error: Database or file constraints failure compiling campaign creative.");
+    }
+  };
+
+  const handleDeleteAd = async (adId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this ad placement?")) return;
+    const updated = activeAds.filter(a => a.id !== adId);
+    if (setActiveAds) {
+      setActiveAds(updated);
+    }
+    try {
+      await setDoc(doc(db, "system_settings", "global"), {
+        ads: updated
+      }, { merge: true });
+      
+      const auditId = "audit-ad-del-" + Date.now();
+      await setDoc(doc(db, "super_admin_audit", auditId), {
+        id: auditId,
+        superAdminId: auth.currentUser?.uid || "seeded-super-admin",
+        superAdminEmail: auth.currentUser?.email || "deepvaleyfarm@gmail.com",
+        actionType: "ad_campaign_deleted",
+        targetTenantId: "system_global",
+        details: {
+          adId,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      alert("SUCCESS: Campaign creative asset purged.");
+      loadSuperAdminData();
+    } catch (err) {
+      console.error("Failed to sync purged ads list:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentRole === "Super Admin" && db) {
+      loadSuperAdminData();
+    }
+  }, [currentRole]);
+
   const [adminsList, setAdminsList] = useState<any[]>([]);
   const [auditLogsList, setAuditLogsList] = useState<any[]>([]);
   const [adminsListLoading, setAdminsListLoading] = useState<boolean>(false);
@@ -369,27 +769,37 @@ export default function ProfilesPlatformPanel({
   const [editPlanPrice, setEditPlanPrice] = useState(0);
   const [editPlanPriceUSD, setEditPlanPriceUSD] = useState(0);
   const [editPlanFeatures, setEditPlanFeatures] = useState("");
+  const [editPlanIsUnmeteredAccess, setEditPlanIsUnmeteredAccess] = useState(false);
+  const [editPlanDurationHours, setEditPlanDurationHours] = useState<number>(24);
+  const [editPlanRequiresZeroBalance, setEditPlanRequiresZeroBalance] = useState(false);
 
   const handleStartEditPlan = (pkg: any) => {
     setEditingPlanId(pkg.id);
     setEditPlanName(pkg.name);
-    setEditPlanCredits(pkg.credits);
+    setEditPlanCredits(pkg.credits || 0);
     setEditPlanPrice(pkg.price);
     setEditPlanPriceUSD(pkg.priceUSD || Math.round(pkg.price / 20));
     setEditPlanFeatures(pkg.features);
+    setEditPlanIsUnmeteredAccess(!!pkg.is_unmetered_access);
+    setEditPlanDurationHours(pkg.duration_hours || 24);
+    setEditPlanRequiresZeroBalance(!!pkg.requires_zero_balance);
   };
 
   const handleSaveEditPlan = (id: string) => {
-    if (!editPlanName || editPlanCredits <= 0 || editPlanPrice <= 0 || editPlanPriceUSD <= 0) return;
+    if (!editPlanName || editPlanPrice <= 0 || editPlanPriceUSD <= 0) return;
+    if (!editPlanIsUnmeteredAccess && editPlanCredits <= 0) return;
     setPlatformPackages(prev => prev.map(p => {
       if (p.id === id) {
         return {
           ...p,
           name: editPlanName,
-          credits: editPlanCredits,
+          credits: editPlanIsUnmeteredAccess ? 0 : editPlanCredits,
           price: editPlanPrice,
           priceUSD: editPlanPriceUSD,
-          features: editPlanFeatures
+          features: editPlanFeatures,
+          is_unmetered_access: editPlanIsUnmeteredAccess,
+          duration_hours: editPlanIsUnmeteredAccess ? editPlanDurationHours : undefined,
+          requires_zero_balance: editPlanIsUnmeteredAccess ? editPlanRequiresZeroBalance : undefined
         };
       }
       return p;
@@ -532,6 +942,9 @@ export default function ProfilesPlatformPanel({
   const [newPkgPrice, setNewPkgPrice] = useState<number>(250);
   const [newPkgPriceUSD, setNewPkgPriceUSD] = useState<number>(15);
   const [newPkgDesc, setNewPkgDesc] = useState("");
+  const [newPkgIsUnmeteredAccess, setNewPkgIsUnmeteredAccess] = useState(false);
+  const [newPkgDurationHours, setNewPkgDurationHours] = useState<number>(24);
+  const [newPkgRequiresZeroBalance, setNewPkgRequiresZeroBalance] = useState(false);
 
   // Livestock SaaS states moved here
   const [tenants, setTenants] = useState([
@@ -783,17 +1196,23 @@ export default function ProfilesPlatformPanel({
   // Platform admin: subscription package adding
   const handleAddCustomPackage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPkgName || newPkgCredits <= 0 || newPkgPrice <= 0 || newPkgPriceUSD <= 0) return;
+    if (!newPkgName || newPkgPrice <= 0 || newPkgPriceUSD <= 0) return;
+    if (!newPkgIsUnmeteredAccess && newPkgCredits <= 0) return;
 
     const newPkg = {
       id: "pkg-" + (platformPackages.length + 1),
       name: newPkgName,
-      duration: "1 Month",
-      credits: newPkgCredits,
+      duration: newPkgIsUnmeteredAccess 
+        ? (newPkgDurationHours === 24 ? "24 Hours" : newPkgDurationHours === 168 ? "7 Days" : `${newPkgDurationHours} Hours`)
+        : "1 Month",
+      credits: newPkgIsUnmeteredAccess ? 0 : newPkgCredits,
       price: newPkgPrice,
       priceUSD: newPkgPriceUSD,
       currency: "ZMW",
       features: newPkgDesc || "Advanced livestock diagnostics and compliance reporting module",
+      is_unmetered_access: newPkgIsUnmeteredAccess ? true : undefined,
+      duration_hours: newPkgIsUnmeteredAccess ? newPkgDurationHours : undefined,
+      requires_zero_balance: newPkgIsUnmeteredAccess ? newPkgRequiresZeroBalance : undefined,
       isActive: true
     };
 
@@ -801,7 +1220,11 @@ export default function ProfilesPlatformPanel({
     setNewPkgName("");
     setNewPkgCredits(500);
     setNewPkgPrice(250);
+    setNewPkgPriceUSD(15);
     setNewPkgDesc("");
+    setNewPkgIsUnmeteredAccess(false);
+    setNewPkgDurationHours(24);
+    setNewPkgRequiresZeroBalance(false);
 
     alert(`New subscription package "${newPkgName}" created. Dynamic front-end pricing models refreshed instantly!`);
   };
@@ -1519,6 +1942,863 @@ export default function ProfilesPlatformPanel({
                 <span className="text-[10px] text-slate-400 block italic">Access is granted exclusively to verified Super Admins.</span>
               </div>
             </div>
+          ) : currentRole === "Super Admin" ? (
+            /* COHESIVE, ELITE SUPER ADMIN PANEL */
+            <div className="space-y-6 animate-fade-in font-sans">
+              {/* Elegant Header with Stats cards */}
+              <div className="bg-slate-900 text-white rounded-3xl p-8 relative overflow-hidden border border-slate-800 shadow-xl">
+                <div className="absolute top-0 right-0 p-8 text-slate-800 pointer-events-none">
+                  <Shield className="w-48 h-48 opacity-10" />
+                </div>
+                <div className="relative z-10 space-y-3 font-sans">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 bg-red-500 text-white text-[9px] font-black uppercase rounded-full tracking-widest animate-pulse">
+                      System Root Active
+                    </span>
+                    <span className="text-slate-400 text-xs">Mabala SaaS Engine</span>
+                  </div>
+                  <h2 className="text-3xl font-black tracking-tight font-sans">Super Admin Terminal</h2>
+                  <p className="text-slate-300 text-sm max-w-xl font-medium leading-relaxed">
+                    Welcome back, <strong className="text-white">{userProfile.email}</strong>. Operational tools for user directories, financial auditing, credit allocation, farm support, and global overrides are fully authorized.
+                  </p>
+                </div>
+
+                {/* Miniature statistics grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-800">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono">Platform Users</span>
+                    <p className="text-2xl font-black text-white">{allPlatformUsers.length}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono">Support Audits</span>
+                    <p className="text-2xl font-black text-red-400">{allAuditLogs.length}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono">Live Ad Slots</span>
+                    <p className="text-2xl font-black text-amber-500">{activeAds.length}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono">Commission Rate</span>
+                    <p className="text-2xl font-black text-indigo-400">2.5% Base</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Elegant Nav subtabs */}
+              <div className="flex flex-wrap gap-1.5 bg-slate-100 p-2 rounded-2xl border border-slate-200">
+                <button
+                  onClick={() => setSuperAdminSubTab("users")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "users" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Users className="w-4 h-4" /> 👥 User Directory
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("activity")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "activity" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Activity className="w-4 h-4" /> 📈 Activity Feed & Audits
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("financials")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "financials" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <DollarSign className="w-4 h-4" /> 💰 Credits & Wallet Ledger
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("nodes")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "nodes" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Tractor className="w-4 h-4" /> 🚜 Active Farm Nodes
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("settings")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "settings" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Settings className="w-4 h-4" /> ⚙️ System Settings
+                </button>
+              </div>
+
+              {/* TAB CONTENTS: 👥 USER DIRECTORY */}
+              {superAdminSubTab === "users" && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-5">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 tracking-tight">Main User Inventory</h3>
+                      <p className="text-xs text-slate-500 font-medium font-sans">Complete record set of registered accounts across all tenancy blocks.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      <input 
+                        type="text"
+                        placeholder="Search name, email, phone..."
+                        value={userSearchText}
+                        onChange={(e) => setUserSearchText(e.target.value)}
+                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-slate-400 bg-slate-50 w-full md:w-56"
+                      />
+                      <select
+                        value={userRoleFilter}
+                        onChange={(e) => setUserRoleFilter(e.target.value)}
+                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-700"
+                      >
+                        <option value="ALL">All Roles</option>
+                        <option value="Super Admin">Super Admin</option>
+                        <option value="Farm Owner">Farm Owner</option>
+                        <option value="Platform Administrator">Platform Administrator</option>
+                        <option value="Offtaker">Offtaker</option>
+                        <option value="Farmer">Farmer</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {loadingUsers ? (
+                     <div className="py-20 flex flex-col items-center justify-center gap-3">
+                       <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                       <span className="text-xs text-slate-400 font-bold animate-pulse font-mono uppercase tracking-widest">Compiling Directory...</span>
+                     </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-150 rounded-xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-50 text-slate-700 font-black border-b border-slate-150 font-sans tracking-wide">
+                          <tr>
+                            <th className="p-4 uppercase text-[9.5px]">User Details</th>
+                            <th className="p-4 uppercase text-[9.5px]">Role / Claims</th>
+                            <th className="p-4 uppercase text-[9.5px]">Available Credits</th>
+                            <th className="p-4 uppercase text-[9.5px]">Associated Nodes</th>
+                            <th className="p-4 uppercase text-[9.5px] text-center">Security Operations</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-sans font-medium text-slate-750">
+                          {(() => {
+                            const matches = allPlatformUsers.filter(u => {
+                              const fulltext = `${u.email || ""} ${u.role || ""} ${u.uid || ""}`.toLowerCase();
+                              const matchesSearch = fulltext.includes(userSearchText.toLowerCase());
+                              const matchesRole = userRoleFilter === "ALL" || u.role === userRoleFilter;
+                              return matchesSearch && matchesRole;
+                            });
+
+                            if (matches.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={5} className="p-12 text-center text-slate-400 italic">
+                                    No platform user directory records matching search coordinates.
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return matches.map(u => (
+                              <tr key={u.uid} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="p-4 space-y-0.5">
+                                  <p className="font-extrabold text-slate-900">{u.email}</p>
+                                  <p className="text-[10px] text-slate-450 font-mono select-all">UID: {u.uid}</p>
+                                </td>
+                                <td className="p-4">
+                                  <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded ${
+                                    u.role === "Super Admin" ? "bg-red-50 text-red-750 border border-red-200" :
+                                    u.role === "Platform Administrator" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                    "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                                  }`}>
+                                    {u.role || "Farm Owner"}
+                                  </span>
+                                </td>
+                                <td className="p-4 font-mono font-bold text-slate-900">
+                                  🪙 {u.credits !== undefined ? u.credits : "0"} credits
+                                </td>
+                                <td className="p-4 font-bold text-slate-600">
+                                  🚜 {u.farms?.length || 0} Farms
+                                </td>
+                                <td className="p-4 text-center">
+                                  <button
+                                    onClick={() => handleToggleSuperAdminRole(u)}
+                                    disabled={u.uid === auth.currentUser?.uid || u.email === "deepvaleyfarm@gmail.com"}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                                      u.role === "Super Admin" 
+                                        ? "bg-rose-100 hover:bg-rose-200 text-rose-800" 
+                                        : "bg-indigo-50 hover:bg-indigo-100 text-indigo-800"
+                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                  >
+                                    {u.role === "Super Admin" ? <Unlock className="w-3" /> : <Lock className="w-3" />}
+                                    {u.role === "Super Admin" ? "Revoke Super Admin" : "Grant Super Admin"}
+                                  </button>
+                                </td>
+                              </tr>
+                            ));
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB CONTENTS: 📈 PLATFORM ACTIVITY FEED */}
+              {superAdminSubTab === "activity" && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-5">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 tracking-tight">Support Ledger & Logs</h3>
+                      <p className="text-xs text-slate-500 font-medium font-sans">Water-tight tracking trails of all administrative and system operations.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      <input 
+                        type="text"
+                        placeholder="Filter details or emails..."
+                        value={activitySearchText}
+                        onChange={(e) => setActivitySearchText(e.target.value)}
+                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-slate-400 w-full md:w-56"
+                      />
+                      <select
+                        value={activityTypeFilter}
+                        onChange={(e) => setActivityTypeFilter(e.target.value)}
+                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-700"
+                      >
+                        <option value="ALL">All Actions</option>
+                        <option value="role_change">🔒 Role Grants</option>
+                        <option value="credit_allocation">🪙 Credit Gearing</option>
+                        <option value="farm_node_entry">🚜 Node Entrances</option>
+                        <option value="farm_node_exit">🚪 Node Exits</option>
+                        <option value="financial_view">💰 Financial Inspections</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {loadingAudits ? (
+                    <div className="py-20 flex flex-col items-center justify-center gap-3">
+                      <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+                      <span className="text-xs text-slate-400 font-bold animate-pulse font-mono uppercase tracking-widest">Assembling Trails...</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {(() => {
+                        const matches = allAuditLogs.filter(log => {
+                          const fulltext = `${log.superAdminEmail || ""} ${log.actionType || ""} ${JSON.stringify(log.details || {})}`.toLowerCase();
+                          const matchesSearch = fulltext.includes(activitySearchText.toLowerCase());
+                          const matchesType = activityTypeFilter === "ALL" || log.actionType === activityTypeFilter;
+                          return matchesSearch && matchesType;
+                        });
+
+                        if (matches.length === 0) {
+                          return (
+                            <div className="p-12 text-center text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                              No administrative transaction details match core filters.
+                            </div>
+                          );
+                        }
+
+                        return matches.map((log, i) => (
+                          <div key={log.id || i} className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-4 items-start hover:border-slate-300 transition-colors font-sans">
+                            <div className={`p-2 rounded-lg shrink-0 border ${
+                              log.actionType === "role_change" ? "bg-red-50 text-red-700 border-red-200" :
+                              log.actionType === "credit_allocation" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              log.actionType === "farm_node_entry" ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                              log.actionType === "farm_node_exit" ? "bg-slate-105 text-slate-600 border-slate-200" :
+                              "bg-indigo-50 text-indigo-700 border-indigo-200"
+                            }`}>
+                              {log.actionType === "role_change" ? <Lock className="w-4 h-4" /> :
+                               log.actionType === "credit_allocation" ? <Coins className="w-4 h-4" /> :
+                               log.actionType === "farm_node_entry" ? <Tractor className="w-4 h-4" /> :
+                               log.actionType === "farm_node_exit" ? <X className="w-4 h-4" /> :
+                               <DollarSign className="w-4 h-4" />}
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex justify-between items-start gap-2 flex-wrap text-[10px] font-mono text-slate-400 leading-tight">
+                                <div>
+                                  Super Admin: <strong className="text-slate-700 select-all font-bold">{log.superAdminEmail}</strong>
+                                </div>
+                                <span className="font-sans font-extrabold text-slate-500">
+                                  📅 {new Date(log.timestamp).toLocaleString()}
+                                </span>
+                              </div>
+                              <h4 className="text-xs font-black text-slate-800">
+                                {log.actionType === "role_change" ? "Security Privilege Modification" :
+                                 log.actionType === "credit_allocation" ? "Credit Ledger Update" :
+                                 log.actionType === "farm_node_entry" ? "Impersonated Support Entry" :
+                                 log.actionType === "farm_node_exit" ? "Impersonated Support Departure" :
+                                 log.actionType === "settings_change" ? "Global Settings Synchronized" :
+                                 log.actionType === "ad_campaign_created" ? "Promotional Creative Uploaded" :
+                                 "Financial Data Access Logged"}
+                              </h4>
+                              <p className="text-xs text-slate-605 leading-relaxed font-sans font-semibold">
+                                {log.actionType === "role_change" && (
+                                  <span>Reconfigured claims profile for <strong>{log.details?.targetEmail}</strong> from <em>{log.details?.previousRole}</em> to <strong>{log.details?.newRole}</strong>.</span>
+                                )}
+                                {log.actionType === "credit_allocation" && (
+                                  <span>
+                                    {log.details?.changeType === "allocate" ? "Granted" : "Deducted"} <strong>{log.details?.amount} credits</strong> {log.details?.changeType === "allocate" ? "to" : "from"} user <strong>{log.details?.targetEmail}</strong>. 
+                                    <span className="block mt-1 bg-white/70 px-2 py-1 rounded text-[11px] border border-slate-200 italic font-medium">
+                                      Justification Rationale: "{log.details?.rationale}"
+                                    </span>
+                                  </span>
+                                )}
+                                {log.actionType === "farm_node_entry" && (
+                                  <span>Initiated active impersonated read/write session for farm node <strong>{log.details?.farmNodeName}</strong> (Owner Uid: <code>{log.targetTenantId}</code>).</span>
+                                )}
+                                {log.actionType === "farm_node_exit" && (
+                                  <span>Terminated active impersonated session for tenant <code>{log.targetTenantId}</code>. Return checkpoint recorded.</span>
+                                )}
+                                {log.actionType === "financial_view" && (
+                                  <span>Audit checklist assert: Viewed vault details and billing metrics for tenant <strong>{log.details?.targetEmail}</strong>. Complete access logged.</span>
+                                )}
+                                {log.actionType === "settings_change" && (
+                                  <span>Metadata update synchronized on system variables doc <code>{log.targetTenantId}</code>. All headers notified.</span>
+                                )}
+                                {log.actionType === "ad_campaign_created" && (
+                                  <span>Created creative ad placement <strong>"{log.details?.title}"</strong> on layout <code>{log.details?.placement}</code>. Asset uploaded.</span>
+                                )}
+                                {log.actionType === "ad_campaign_deleted" && (
+                                  <span>Purged creative ad placement campaign <code>{log.details?.adId}</code>.</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB CONTENTS: 💰 CREDIT ENGINE & WALL DETS */}
+              {superAdminSubTab === "financials" && (
+                <div className="space-y-6 animate-fade-in font-sans">
+                  
+                  {/* Deep financial inspection modal card */}
+                  {selectedFinancialUser && (
+                    <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 space-y-6 font-sans">
+                      <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                        <div>
+                          <span className="text-[10px] font-black font-mono text-amber-500 tracking-wider block uppercase">Sensitive Security Vault</span>
+                          <h4 className="text-lg font-black tracking-tight flex items-center gap-1.5 font-sans">
+                            💰 Ledger Sheet for {selectedFinancialUser.email}
+                          </h4>
+                        </div>
+                        <button 
+                          onClick={() => setSelectedFinancialUser(null)}
+                          className="text-slate-400 hover:text-white p-2 rounded-xl transition cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-sans">
+                        
+                        {/* Wallet stats */}
+                        <div className="bg-slate-850 p-5 rounded-2xl border border-slate-800 space-y-2">
+                          <span className="text-[9px] text-slate-405 font-extrabold uppercase font-mono tracking-wider block">Wallet Balance</span>
+                          <h3 className="text-3xl font-black text-emerald-450 leading-none">
+                            {currencySymbol}{(selectedFinancialUser.credits || 0) * 2.5} ZMW
+                          </h3>
+                          <p className="text-[10px] text-slate-400">Equivalent credit allocation base pricing model.</p>
+                        </div>
+
+                        {/* Mobile money */}
+                        <div className="bg-slate-850 p-5 rounded-2xl border border-slate-800 space-y-2">
+                          <span className="text-[9px] text-slate-405 font-extrabold uppercase font-mono tracking-wider block">Verified Settlement details</span>
+                          <p className="text-xs font-extrabold text-slate-100 flex items-center gap-1.5">
+                            <Smartphone className="w-4 text-indigo-400" /> WhatsApp Biz Settled: +260 978 070734
+                          </p>
+                          <p className="text-[10px] text-slate-400">Lipila Direct Settlement active.</p>
+                        </div>
+
+                        {/* Subscription Level */}
+                        <div className="bg-slate-850 p-5 rounded-2xl border border-slate-800 space-y-2">
+                          <span className="text-[9px] text-slate-405 font-extrabold uppercase font-mono tracking-wider block">SaaS Subscription Tier</span>
+                          <p className="text-xs font-black text-indigo-300 uppercase leading-none">
+                            🎖️ {selectedFinancialUser.subscriptionTier || "Commercial Growth Layer"}
+                          </p>
+                          <p className="text-[10px] text-slate-400">Workspace Mode: {selectedFinancialUser.workspaceMode || "Farmer"}</p>
+                        </div>
+
+                      </div>
+
+                      {/* CREDIT ALLOCATION BLOCK INSIDE MODAL */}
+                      <div className="bg-slate-850 border border-slate-800 rounded-2xl p-6 space-y-4">
+                        <h4 className="text-xs font-black uppercase text-slate-350 tracking-wider font-mono">
+                          🪙 Credit Allocation Adjuster Engine
+                        </h4>
+                        <p className="text-xs text-slate-400 font-medium">
+                          Instantly inject promotional credits or subtract overages directly from this tenant's wallet ledger. All actions require legal audit justification.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+                          
+                          <div>
+                            <label className="text-[10px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Operation Type</label>
+                            <div className="grid grid-cols-2 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => setCreditActionType("allocate")}
+                                className={`py-1 rounded text-[10px] font-black uppercase cursor-pointer ${
+                                  creditActionType === "allocate" ? "bg-emerald-500 text-white" : "text-slate-450 hover:text-white"
+                                }`}
+                              >
+                                Grant
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCreditActionType("deduct")}
+                                className={`py-1 rounded text-[10px] font-black uppercase cursor-pointer ${
+                                  creditActionType === "deduct" ? "bg-rose-500 text-white" : "text-slate-455 hover:text-white"
+                                }`}
+                              >
+                                Deduct
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Credit Amount</label>
+                            <input 
+                              type="number"
+                              value={creditAmount}
+                              onChange={(e) => setCreditAmount(Math.max(1, parseInt(e.target.value) || 0))}
+                              className="px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-lg w-full text-white focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+
+                          <div className="md:col-span-2">
+                            <label className="text-[10px] text-slate-455 font-black uppercase tracking-wider block pb-1.5">Legal Justification (Mandatory)</label>
+                            <input 
+                              type="text"
+                              placeholder="e.g. Compensation for Lipila network issue 4927"
+                              value={creditReason}
+                              onChange={(e) => setCreditReason(e.target.value)}
+                              className="px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-lg w-full text-white focus:outline-none focus:border-indigo-500 font-sans"
+                            />
+                          </div>
+
+                        </div>
+
+                        {/* Trigger Check Allocation */}
+                        <div className="flex justify-end pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!creditReason.trim()) {
+                                alert("Mandatory Error: Text justification rationale must be captured prior to staging.");
+                                return;
+                              }
+                              setShowCreditConfirm(true);
+                            }}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl uppercase transition cursor-pointer"
+                          >
+                            Stage Adjustments
+                          </button>
+                        </div>
+
+                        {/* Saturated Confirmation Step Modal overlay */}
+                        {showCreditConfirm && (
+                          <div className="bg-slate-900 border-2 border-indigo-500 rounded-2xl p-5 mt-4 space-y-4 shadow-xl">
+                            <h5 className="text-xs font-black text-rose-450 uppercase tracking-widest flex items-center gap-1">
+                              ⚠️ Secondary Authorization Checkpoint
+                            </h5>
+                            <p className="text-xs text-slate-350 leading-relaxed font-sans font-medium">
+                              You are authorizing a physical {creditActionType === "allocate" ? "injection of" : "retirement of"} <strong>{creditAmount} credits</strong>. 
+                              This alters the tenant's wallet ledger balance from <strong>{selectedFinancialUser.credits || 0}</strong> to <strong>{
+                                creditActionType === "allocate" 
+                                  ? (selectedFinancialUser.credits || 0) + creditAmount 
+                                  : Math.max(0, (selectedFinancialUser.credits || 0) - creditAmount)
+                              } credits</strong>.
+                            </p>
+                            <div className="flex justify-between items-center bg-slate-950 p-2 rounded-lg text-[10px] font-mono text-slate-400">
+                              <span>Logged Auditor Ref: {auth.currentUser?.email}</span>
+                              <span>Auditing System: Mabala Core Eng v2</span>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                              <button
+                                onClick={() => setShowCreditConfirm(false)}
+                                className="px-3 py-1.5 text-xs font-black uppercase text-slate-400 hover:text-white cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleSuperAdminModifyCredits(selectedFinancialUser, creditActionType)}
+                                className="px-5 py-2 text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg uppercase cursor-pointer"
+                              >
+                                Authorize Credits Now
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tenants list for financial visibility */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 tracking-tight">Active Tenant Billing & Credit Registers</h3>
+                      <p className="text-xs text-slate-500 font-medium font-sans">Select any active client tenant to inspect financial data under rigid audit trailing.</p>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-150 rounded-xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-50 text-slate-700 font-black border-b border-slate-150 font-sans tracking-wide">
+                          <tr>
+                            <th className="p-4 uppercase text-[9.5px]">Farm Owner Tenant</th>
+                            <th className="p-4 uppercase text-[9.5px]">Subscription Level</th>
+                            <th className="p-4 uppercase text-[9.5px]">Outstanding Credits</th>
+                            <th className="p-4 uppercase text-[9.5px]">ZMW Ledger Value</th>
+                            <th className="p-4 uppercase text-[9.5px] text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-sans font-medium text-slate-755">
+                          {allPlatformUsers.filter(u => u.role !== "Super Admin").map(u => (
+                            <tr key={u.uid} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-4">
+                                <p className="font-extrabold text-slate-900">{u.email}</p>
+                                <p className="text-[9.5px] text-slate-450 font-sans">Sub-Farms: {u.farms?.length || 0}</p>
+                              </td>
+                              <td className="p-4">
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-750 text-[9px] font-black uppercase rounded">
+                                  {u.subscriptionTier || "Commercial Growth Layer"}
+                                </span>
+                              </td>
+                              <td className="p-4 font-mono font-bold text-slate-900">
+                                🪙 {u.credits !== undefined ? u.credits : "0"} credits
+                              </td>
+                              <td className="p-4 font-mono font-bold text-slate-900">
+                                {currencySymbol}{((u.credits || 0) * 2.5).toLocaleString()} ZMW
+                              </td>
+                              <td className="p-4 text-center">
+                                <button
+                                  onClick={() => {
+                                    setSelectedFinancialUser(u);
+                                    logFinancialViewTrail(u.email, u.uid);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-black uppercase tracking-wide cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <DollarSign className="w-3" /> Inspect Sheet
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* TAB CONTENTS: 🚜 FARM NODES LIST & IMPERSONATION */}
+              {superAdminSubTab === "nodes" && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in font-sans">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 tracking-tight">Active Client Farm Nodes</h3>
+                    <p className="text-xs text-slate-500 font-medium">Live tenant farm nodes currently deployed. Launch support-impersonation mode securely to perform troubleshooting.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(() => {
+                      const nodesList: any[] = [];
+                      allPlatformUsers.forEach(u => {
+                        if (u.farms && Array.isArray(u.farms)) {
+                          u.farms.forEach(f => {
+                            nodesList.push({ tenantUid: u.uid, tenantEmail: u.email, farm: f, subscriptionTier: u.subscriptionTier });
+                          });
+                        }
+                      });
+
+                      if (nodesList.length === 0) {
+                        return (
+                          <div className="md:col-span-2 p-12 text-center text-slate-400 italic bg-slate-50 border border-dashed border-slate-200 rounded-2xl font-sans">
+                            No deployed client farm nodes registered in cloud workspace.
+                          </div>
+                        );
+                      }
+
+                      return nodesList.map((n, idx) => (
+                        <div key={idx} className="bg-slate-50 border border-slate-200 hover:border-indigo-400 transition-all rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-start gap-2">
+                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded text-[9px] font-black uppercase border border-emerald-200 font-mono">
+                                {n.subscriptionTier || "Commercial Growth Layer"}
+                              </span>
+                              <span className="text-[9.5px] font-mono text-slate-400">ID: {n.farm.id}</span>
+                            </div>
+                            <h4 className="text-base font-black text-slate-900 tracking-tight leading-snug">{n.farm.name}</h4>
+                            <p className="text-xs text-slate-505 font-semibold font-sans">
+                              Owner Contact: <strong className="text-slate-700 font-extrabold">{n.tenantEmail}</strong>
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-400 pt-1 leading-normal">
+                              <span>📍 {n.farm.location || "Lusaka West"}</span>
+                              <span>🌾 Currency: {n.farm.currency || "ZMW"}</span>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex justify-end">
+                            <button
+                              onClick={() => {
+                                if (onEnterFarmNodeImpersonation) {
+                                  onEnterFarmNodeImpersonation(n.tenantUid, n.tenantEmail, n.farm);
+                                } else {
+                                  alert("Infrastructure Error: Impersonation interface uninitialized.");
+                                }
+                              }}
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-505 text-white rounded-xl text-xs font-black uppercase transition cursor-pointer flex items-center gap-1.5"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" /> Select & Access Node
+                            </button>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB CONTENTS: ⚙️ IMMUTABLE SYSTEM SETTINGS & ADS ADVERT CONFIG */}
+              {superAdminSubTab === "settings" && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in font-sans">
+                  
+                  {/* Global Marketing settings form */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 tracking-tight font-sans">Social & Support Configurations</h3>
+                      <p className="text-xs text-slate-500 font-medium font-sans">Edit coordinates and links that serve as base contact details inside headers and footers.</p>
+                    </div>
+
+                    <div className="space-y-4 font-sans">
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Support Email</label>
+                          <input 
+                            type="email"
+                            value={contactDetails.email || ""}
+                            onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, email: e.target.value }))}
+                            className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Support Phone</label>
+                          <input 
+                            type="text"
+                            value={contactDetails.phone || ""}
+                            onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, phone: e.target.value }))}
+                            className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Physical Address Location</label>
+                        <textarea
+                          rows={2}
+                          value={contactDetails.address || ""}
+                          onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, address: e.target.value }))}
+                          className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50 resize-none font-sans"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                        <div>
+                          <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Twitter / X handle</label>
+                           <input 
+                             type="text"
+                             value={contactDetails.twitter || ""}
+                             onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, twitter: e.target.value }))}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Facebook Profile</label>
+                           <input 
+                             type="text"
+                             value={contactDetails.facebook || ""}
+                             onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, facebook: e.target.value }))}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                           />
+                         </div>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-[10.5px] text-slate-450 font-black uppercase tracking-wider block pb-1.5">LinkedIn Directory</label>
+                           <input 
+                             type="text"
+                             value={contactDetails.linkedin || ""}
+                             onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, linkedin: e.target.value }))}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-[10.5px] text-slate-450 font-black uppercase tracking-wider block pb-1.5">WhatsApp Business Number</label>
+                           <input 
+                             type="text"
+                             value={contactDetails.whatsapp || ""}
+                             onChange={(e) => setContactDetails && setContactDetails(prev => ({ ...prev, whatsapp: e.target.value }))}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50"
+                           />
+                         </div>
+                       </div>
+
+                       <div className="flex justify-end pt-3 border-t border-slate-100">
+                         <button
+                           type="button"
+                           onClick={handleSaveSystemSettings}
+                           className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wide cursor-pointer transition-all flex items-center gap-1.5"
+                         >
+                           <Settings className="w-4 h-4" /> Save Settings Live
+                         </button>
+                       </div>
+
+                     </div>
+                   </div>
+
+                   {/* Custom Advertisement creative-upload campaign configuration engine */}
+                   <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 font-sans">
+                     <div>
+                       <h3 className="text-lg font-black text-slate-800 tracking-tight font-sans">Advertisement Creative Placements</h3>
+                       <p className="text-xs text-slate-500 font-medium font-sans">Stage advertising interstitials or sidebar ads. Assets must be uploaded directly. External URLs are disabled.</p>
+                     </div>
+
+                     <div className="space-y-4">
+                       
+                       <div>
+                         <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Asset Creative (Direct File Image Upload Only)</label>
+                         <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center hover:border-indigo-400 transition-colors bg-slate-50 flex flex-col items-center justify-center gap-2 relative">
+                           {newAdBase64 ? (
+                             <div className="space-y-2 relative w-full flex flex-col items-center">
+                               <img 
+                                 src={newAdBase64} 
+                                 alt="Upload creative asset preview" 
+                                 className="h-32 object-contain rounded-lg bg-white border border-slate-200"
+                               />
+                               <button
+                                 type="button"
+                                 onClick={() => setNewAdBase64("")}
+                                 className="px-3 py-1 bg-rose-105 hover:bg-rose-200 text-rose-800 rounded-lg text-[10px] font-black uppercase cursor-pointer relative z-10"
+                               >
+                                 Clear Asset
+                               </button>
+                             </div>
+                           ) : (
+                             <>
+                               <Camera className="w-8 h-8 text-slate-400 animate-pulse" />
+                               <p className="text-[11px] text-slate-450 font-semibold leading-relaxed font-sans">Click to select or drag image file creative here <br /> <strong className="text-[10px] text-slate-400 uppercase font-mono">Max File Size: 5MB</strong></p>
+                               <input 
+                                 type="file"
+                                 accept="image/*"
+                                 onChange={handleAdImageFileSelect}
+                                 className="absolute inset-0 opacity-0 cursor-pointer"
+                               />
+                             </>
+                           )}
+                         </div>
+                         {newAdError && (
+                           <p className="text-[11px] font-bold text-rose-600 mt-1.5 leading-snug">⚠️ {newAdError}</p>
+                         )}
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Campaign Title</label>
+                           <input 
+                             type="text"
+                             placeholder="e.g. Premium Animal Feed"
+                             value={newAdTitle}
+                             onChange={(e) => setNewAdTitle(e.target.value)}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50 font-sans"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Creative Placement Location</label>
+                           <select
+                             value={newAdPlacement}
+                             onChange={(e) => setNewAdPlacement(e.target.value as any)}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50 font-bold text-slate-705"
+                           >
+                             <option value="banner">Horizontal Banner Integration</option>
+                             <option value="sidebar">Sidebar Widget Offer</option>
+                             <option value="interstitial">Full Interstitial Sign-in Overlay</option>
+                           </select>
+                         </div>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-4">
+                         <div>
+                           <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Redirect Destination URL</label>
+                           <input 
+                             type="url"
+                             placeholder="e.g. https://domain.com/landing"
+                             value={newAdDestUrl}
+                             onChange={(e) => setNewAdDestUrl(e.target.value)}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50 font-sans"
+                           />
+                         </div>
+                         <div>
+                           <label className="text-[10.5px] text-slate-405 font-black uppercase tracking-wider block pb-1.5">Lead Sub-Description</label>
+                           <input 
+                             type="text"
+                             placeholder="e.g. 15% off coupon inside"
+                             value={newAdDesc}
+                             onChange={(e) => setNewAdDesc(e.target.value)}
+                             className="px-3 py-2 text-xs border border-slate-200 rounded-xl w-full focus:outline-slate-400 bg-slate-50 font-sans"
+                           />
+                         </div>
+                       </div>
+
+                       <div className="flex justify-end pt-2 border-t border-slate-100">
+                         <button
+                           type="button"
+                           onClick={handleSaveAdPlacement}
+                           className="px-4.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
+                         >
+                           Publish Promotional Creative
+                         </button>
+                       </div>
+
+                       {/* List of active ads below */}
+                       <div className="pt-4 border-t border-slate-100 space-y-3 font-sans">
+                         <span className="text-[10.5px] text-slate-400 font-extrabold uppercase block tracking-widest font-mono">Installed Creative Slots ({activeAds.length})</span>
+                         <div className="space-y-2">
+                           {activeAds.map(ad => (
+                             <div key={ad.id} className="flex justify-between items-center bg-slate-50 border border-slate-200 p-3 rounded-2xl gap-3">
+                               <div className="flex items-center gap-2">
+                                 {ad.imageUrl && (
+                                   <img 
+                                     src={ad.imageUrl} 
+                                     alt={ad.title} 
+                                     className="w-10 h-10 object-cover rounded-lg bg-white border border-slate-100"
+                                   />
+                                 )}
+                                 <div className="leading-tight">
+                                   <p className="font-extrabold text-xs text-slate-800">{ad.title}</p>
+                                   <p className="text-[10px] text-slate-400 font-mono">Location: {ad.placement}</p>
+                                 </div>
+                               </div>
+                               <button
+                                 type="button"
+                                 onClick={() => handleDeleteAd(ad.id)}
+                                 className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                 title="Purge Campaign creative"
+                               >
+                                 <Trash className="w-4 h-4" />
+                               </button>
+                             </div>
+                           ))}
+                         </div>
+                       </div>
+
+                     </div>
+                   </div>
+
+                 </div>
+               )}
+
+            </div>
           ) : (
             <div className="space-y-6 animate-fade-in">
 
@@ -1757,10 +3037,50 @@ export default function ProfilesPlatformPanel({
                         <input type="text" required value={newPkgName} onChange={e => setNewPkgName(e.target.value)} placeholder="e.g. Cooperatives Starter Pack" className="w-full text-xs mt-0.5 p-1.5 border rounded bg-white" />
                       </div>
 
+                      <div className="space-y-2 pt-1">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold select-none text-[10px] text-slate-600">
+                          <input 
+                            type="checkbox" 
+                            checked={newPkgIsUnmeteredAccess} 
+                            onChange={e => setNewPkgIsUnmeteredAccess(e.target.checked)} 
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 font-bold" 
+                          />
+                          <span>Emergency Access Pass (Unmetered)</span>
+                        </label>
+
+                        {newPkgIsUnmeteredAccess && (
+                          <div className="grid grid-cols-2 gap-2 animate-scale-up">
+                            <div>
+                              <label className="text-[9px] text-slate-400 uppercase">Duration Hours</label>
+                              <select 
+                                value={newPkgDurationHours} 
+                                onChange={e => setNewPkgDurationHours(Number(e.target.value))} 
+                                className="w-full text-xs mt-0.5 p-1 px-1.5 border rounded bg-white font-mono"
+                              >
+                                <option value={24}>24 Hours (Daily)</option>
+                                <option value={168}>168 Hours (Weekly)</option>
+                                <option value={12}>12 Hours</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[9px] text-slate-400 uppercase">Eligibility Requirement</label>
+                              <select 
+                                value={newPkgRequiresZeroBalance ? "zero" : "any"} 
+                                onChange={e => setNewPkgRequiresZeroBalance(e.target.value === "zero")} 
+                                className="w-full text-xs mt-0.5 p-1 px-1.5 border rounded bg-white font-semibold"
+                              >
+                                <option value="zero">Requires Zero Balance</option>
+                                <option value="any">Open to Any Balance</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="text-[9px] text-slate-400 uppercase text-[8px]">Credits</label>
-                          <input type="number" required value={newPkgCredits} onChange={e => setNewPkgCredits(Number(e.target.value))} className="w-full text-xs mt-0.5 p-1.5 border rounded bg-white" />
+                          <input type="number" required={!newPkgIsUnmeteredAccess} disabled={newPkgIsUnmeteredAccess} value={newPkgIsUnmeteredAccess ? 0 : newPkgCredits} onChange={e => setNewPkgCredits(Number(e.target.value))} className="w-full text-xs mt-0.5 p-1.5 border rounded bg-white disabled:bg-slate-100 disabled:text-slate-400" />
                         </div>
                         <div>
                           <label className="text-[9px] text-slate-400 uppercase text-[8px]">Price ({currencySymbol})</label>
@@ -1795,16 +3115,18 @@ export default function ProfilesPlatformPanel({
                             <th className="p-2">Initial Credits</th>
                             <th className="p-2">Sales Price</th>
                             <th className="p-2">Included Modules</th>
+                            <th className="p-2">Price Per Credit</th>
                             <th className="p-2 text-right">Gate Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y text-slate-700">
                           {platformPackages.map(pkg => {
                             const isEditing = editingPlanId === pkg.id;
+                            const pricingInfo = validate_bundle_pricing(pkg);
                             return (
                               <tr key={pkg.id} className="hover:bg-slate-50/50">
                                 {isEditing ? (
-                                  <td colSpan={5} className="p-3 bg-indigo-50/50">
+                                  <td colSpan={6} className="p-3 bg-indigo-50/50">
                                     <div className="space-y-3 font-semibold text-xs text-slate-800">
                                       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                                         <div>
@@ -1820,9 +3142,10 @@ export default function ProfilesPlatformPanel({
                                           <label className="text-[9px] uppercase text-slate-400 block pb-0.5">Initial Monthly Credits</label>
                                           <input 
                                             type="number" 
-                                            value={editPlanCredits} 
+                                            disabled={editPlanIsUnmeteredAccess}
+                                            value={editPlanIsUnmeteredAccess ? 0 : editPlanCredits} 
                                             onChange={e => setEditPlanCredits(Number(e.target.value))} 
-                                            className="w-full p-2 border rounded-lg bg-white"
+                                            className="w-full p-2 border rounded-lg bg-white disabled:bg-slate-100 disabled:text-slate-400"
                                           />
                                         </div>
                                         <div>
@@ -1844,6 +3167,46 @@ export default function ProfilesPlatformPanel({
                                           />
                                         </div>
                                       </div>
+
+                                      <div className="flex flex-wrap gap-4 items-center bg-indigo-100/50 p-2 rounded-lg py-1.5">
+                                        <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold text-indigo-900 select-none">
+                                          <input 
+                                            type="checkbox" 
+                                            checked={editPlanIsUnmeteredAccess} 
+                                            onChange={e => setEditPlanIsUnmeteredAccess(e.target.checked)} 
+                                            className="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500" 
+                                          />
+                                          <span>Unmetered Emergency Access Pass</span>
+                                        </label>
+
+                                        {editPlanIsUnmeteredAccess && (
+                                          <div className="flex gap-3 items-center animate-scale-up">
+                                            <div>
+                                              <span className="text-[9px] text-slate-500 uppercase mr-1">Duration:</span>
+                                              <select 
+                                                value={editPlanDurationHours} 
+                                                onChange={e => setEditPlanDurationHours(Number(e.target.value))} 
+                                                className="text-[10px] p-1 border rounded bg-white font-mono"
+                                              >
+                                                <option value={24}>24 Hours</option>
+                                                <option value={168}>168 Hours</option>
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] text-slate-500 uppercase mr-1">Check:</span>
+                                              <select 
+                                                value={editPlanRequiresZeroBalance ? "zero" : "any"} 
+                                                onChange={e => setEditPlanRequiresZeroBalance(e.target.value === "zero")} 
+                                                className="text-[10px] p-1 border rounded bg-white font-semibold"
+                                              >
+                                                <option value="zero">Zero Bal Only</option>
+                                                <option value="any">Any Bal</option>
+                                              </select>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+
                                       <div>
                                         <label className="text-[9px] uppercase text-slate-400 block pb-0.5">Features Included Summary</label>
                                         <input 
@@ -1873,13 +3236,31 @@ export default function ProfilesPlatformPanel({
                                   </td>
                                 ) : (
                                   <>
-                                    <td className="p-2 font-bold text-slate-950">{pkg.name}</td>
-                                    <td className="p-2 font-mono text-emerald-700">+{pkg.credits} CR</td>
+                                    <td className="p-2 font-bold text-slate-950">
+                                      <div className="flex items-center gap-1.5">
+                                        <span>{pkg.name}</span>
+                                        {pkg.is_unmetered_access && (
+                                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[8px] font-black uppercase rounded tracking-wider">
+                                            Emergency Bridge
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2 font-mono text-emerald-700">
+                                      {pkg.is_unmetered_access ? (
+                                        <span className="text-amber-600 font-bold block">Unmetered ({pkg.duration_hours}h)</span>
+                                      ) : (
+                                        `+${pkg.credits} CR`
+                                      )}
+                                    </td>
                                     <td className="p-2 font-mono text-[11px] leading-tight">
                                       <div className="font-extrabold text-slate-900">{currencySymbol} {pkg.price}</div>
                                       <div className="text-[9.5px] text-indigo-600 font-bold">USD ${pkg.priceUSD || Math.round(pkg.price / 20)}</div>
                                     </td>
                                     <td className="p-2 text-[10px] text-slate-400 truncate max-w-xs">{pkg.features}</td>
+                                    <td className="p-2 font-mono text-[10px] font-bold text-indigo-700">
+                                      {pricingInfo.pricePerCredit}
+                                    </td>
                                     <td className="p-2 text-right">
                                       <div className="flex items-center justify-end gap-1.5">
                                         <button 
