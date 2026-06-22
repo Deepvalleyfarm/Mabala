@@ -56,6 +56,7 @@ export default function LandingPage({
 }: LandingPageProps) {
   const [showInterstitial, setShowInterstitial] = useState(false);
   const [currentInterstitialAd, setCurrentInterstitialAd] = useState<AdCampaign | null>(null);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
 
   // Trigger interstitial on mount if any active interstitial ad is loaded
   useEffect(() => {
@@ -351,73 +352,170 @@ export default function LandingPage({
         {/* PRICING SECTION - PULLED LIVE */}
         <section id="pricing" className="py-24 px-6 bg-slate-50">
           <div className="max-w-7xl mx-auto space-y-12">
-            <div className="text-center max-w-2xl mx-auto space-y-3">
+            <div className="text-center max-w-2xl mx-auto space-y-4">
               <span className="p-1 px-2.5 bg-emerald-50 text-emerald-700 font-bold text-[10px] uppercase rounded-full font-mono tracking-wider">Flexible subscription structures</span>
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 uppercase tracking-tight">Platform Connection Pricing</h2>
               <p className="text-slate-500 text-xs font-semibold leading-relaxed">
-                Pulled live and dynamically synchronized directly with admin configurations. No hidden fees. Select standard connection levels matching your agro operation size.
+                Select from standard connection levels matching your agro-operation size. Synchronized with live admin parameters.
               </p>
+
+              {/* BILLING TOGGLE */}
+              <div className="flex justify-center items-center gap-3 pt-2">
+                <span className={`text-xs font-bold ${billingCycle === "monthly" ? "text-emerald-700" : "text-slate-400"}`}>Monthly Billing</span>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle(prev => prev === "monthly" ? "yearly" : "monthly")}
+                  className="w-12 h-6 bg-emerald-600 rounded-full p-1 relative transition-all duration-300 focus:outline-none flex items-center"
+                  aria-label="Toggle Billing Period"
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${billingCycle === "yearly" ? "translate-x-6" : "translate-x-0"}`} />
+                </button>
+                <span className={`text-xs font-bold flex items-center gap-1.5 ${billingCycle === "yearly" ? "text-emerald-700" : "text-slate-400"}`}>
+                  <span>Yearly Billing</span>
+                  <span className="bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black animate-pulse">SAVE UP TO 15%</span>
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {platformPackages.map((pkg) => {
-                const isPopular = pkg.id === "pkg-2";
-                return (
-                  <div 
-                    key={pkg.id} 
-                    className={`bg-white rounded-3xl p-8 border hover:shadow-xl transition-all flex flex-col justify-between space-y-6 relative ${
-                      isPopular 
-                        ? "border-emerald-500 ring-2 ring-emerald-550/10 shadow-lg" 
-                        : "border-slate-200/80"
-                    }`}
-                  >
-                    {isPopular && (
-                      <span className="absolute top-0 right-8 transform -translate-y-1/2 bg-emerald-600 text-white font-bold text-[9px] uppercase tracking-wider font-mono py-1 px-3 rounded-full shadow-md shadow-emerald-600/20">
-                        Popular Choice
-                      </span>
-                    )}
+            {/* PACKAGE CARD GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {platformPackages
+                .filter(pkg => {
+                  // Hide Daily Bundle in yearly billing cycle
+                  if (billingCycle === "yearly" && pkg.id === "PLAN_DAILY") {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((pkg) => {
+                  const isMonthly = pkg.id === "PLAN_MONTHLY";
+                  const isEnterprise = pkg.id === "PLAN_ENTERPRISE";
+                  const isDaily = pkg.id === "PLAN_DAILY";
 
-                    <div className="space-y-4">
-                      <h4 className="text-xs font-mono font-bold tracking-widest text-slate-400 uppercase">{pkg.duration || "Standard"} Connection Access</h4>
-                      <h3 className="text-lg font-extrabold text-slate-900">{pkg.name}</h3>
-                      
-                      <div className="py-4 border-y border-slate-100 flex items-baseline gap-1.5">
-                        <span className="text-3xl font-black text-slate-950">{pkg.currency || "ZMW"} {pkg.price}</span>
-                        <span className="text-slate-400 text-[10px] font-bold uppercase">/ {pkg.duration}</span>
-                      </div>
+                  // Evaluate prices & discounts dynamically
+                  let displayPrice = pkg.price;
+                  let billingText = "/month";
+                  let discountText = "";
+                  
+                  if (billingCycle === "yearly") {
+                    if (isMonthly) {
+                      displayPrice = pkg.yearly_price_zmw || 1944.00;
+                      billingText = "/year";
+                      discountText = "10% Off — Save ZMW 216/year";
+                    } else if (isEnterprise) {
+                      displayPrice = pkg.yearly_price_zmw || 25500.00;
+                      billingText = "/year";
+                      discountText = "15% Off — Save ZMW 4,500/year";
+                    }
+                  }
 
-                      <div className="space-y-2">
-                        <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider block">Granted Credits Allotment:</span>
-                        <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-500/10 border border-amber-300/20 rounded font-bold font-mono text-[11px] text-amber-800">
-                          <Coins className="w-4 h-4 text-amber-500 shrink-0" />
-                          <span>{pkg.credits?.toLocaleString()} Write action credits included</span>
-                        </div>
-                      </div>
+                  // Target Audience mapping
+                  let targetAudience = "Farmers & Vet Practitioners";
+                  if (isEnterprise) {
+                    targetAudience = "Commercial Farmers";
+                  }
 
-                      <div className="space-y-3.5 pt-4 text-xs font-semibold text-slate-750">
-                        <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider block">Features Highlight:</span>
-                        {pkg.features?.split(", ").map((feat: string, idx: number) => (
-                          <div key={idx} className="flex gap-2.5 items-start">
-                            <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                            <span className="leading-snug text-slate-600">{feat}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={onSignUp}
-                      className={`w-full py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                        isPopular
-                          ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/10"
-                          : "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                  return (
+                    <div 
+                      key={pkg.id} 
+                      className={`bg-white rounded-3xl p-8 border hover:shadow-xl transition-all flex flex-col justify-between space-y-6 relative ${
+                        isMonthly 
+                          ? "border-emerald-500 ring-2 ring-emerald-550/10 shadow-lg" 
+                          : "border-slate-200/80"
                       }`}
                     >
-                      Choose {pkg.name}
-                    </button>
-                  </div>
-                );
-              })}
+                      {isMonthly && (
+                        <span className="absolute top-0 right-8 transform -translate-y-1/2 bg-emerald-600 text-white font-bold text-[9px] uppercase tracking-wider font-mono py-1 px-3 rounded-full shadow-md shadow-emerald-650/20">
+                          Popular Choice
+                        </span>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[8.5px] font-black uppercase rounded tracking-wider inline-block">
+                            {targetAudience}
+                          </span>
+                          <h3 className="text-lg font-extrabold text-slate-900 pt-1.5">{pkg.name}</h3>
+                          <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                            {pkg.features || "Zambian localized farm management"}
+                          </p>
+                        </div>
+                        
+                        <div className="py-4 border-y border-slate-100 flex flex-col gap-1">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-2.5xl font-black text-slate-950">ZMW {displayPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                            <span className="text-slate-400 text-[10px] font-bold uppercase">{billingText}</span>
+                          </div>
+                          {discountText && (
+                            <span className="text-[10px] text-red-600 font-extrabold uppercase tracking-wide">
+                              🎉 {discountText}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider block">Granted Credits Allotment:</span>
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 border border-amber-300/20 rounded font-bold font-mono text-[11px] text-amber-800">
+                            <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>
+                              {isDaily ? "Unmetered Write Access" : `${pkg.credits?.toLocaleString()} write action credits included`}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isEnterprise && (
+                          <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-300/10 text-amber-800 font-bold text-xs flex gap-2 animate-pulse">
+                            <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>Includes 2 Agronomist & 2 Vet clinic visits!</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <button 
+                        onClick={onSignUp}
+                        className={`w-full py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          isMonthly
+                            ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/10"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                        }`}
+                      >
+                        Choose {pkg.name}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* AGRO VENDORS FREE ONBOARDING CALLOUT */}
+            <div className="mt-16 pt-10 border-t border-slate-200/60 grid grid-cols-1 lg:grid-cols-3 gap-8 items-center bg-white p-8 rounded-3xl border">
+              <div className="lg:col-span-2 space-y-3">
+                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded font-mono font-black text-[9px] uppercase tracking-wider">
+                  Vendor Network
+                </span>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Are you an Agro Supplier or Vendor?</h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                  Merchant listing onboardings are completely free! Map seeds, fertilizers, feeds, chemicals, formulations, veterinary drugs, or instruments with full clarity at no subscription rate. Instantly advertise catalogs straight to verified farmers across all provinces.
+                </p>
+              </div>
+              <div className="lg:col-span-1 text-center lg:text-right">
+                <button
+                  onClick={onSignUp}
+                  className="w-full lg:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer transition duration-300"
+                >
+                  Register as a Vendor (Free)
+                </button>
+              </div>
+            </div>
+
+            {/* VET PRACTITIONERS CLARIFICATION BANNER */}
+            <div className="mt-8 bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-start gap-4 text-xs leading-relaxed">
+              <Info className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <strong className="text-indigo-900 block font-black uppercase tracking-wider text-[9px]">Vet Practitioners Notice</strong>
+                <p className="text-indigo-750 font-semibold">
+                  Veterinarians operate under the standard farmer pricing cards. No clinical premium tiers! Select the <strong className="text-indigo-950 font-sans">Daily Bundle</strong> or the <strong className="text-indigo-950 font-sans">Monthly Plan</strong> to access dynamic animal medical logging systems, client histories, movement tracks, and livestock records.
+                </p>
+              </div>
             </div>
           </div>
         </section>

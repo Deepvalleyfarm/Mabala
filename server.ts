@@ -8,6 +8,19 @@ import * as admin from "firebase-admin";
 
 dotenv.config();
 
+import { 
+  executeBackup, 
+  executeRestore, 
+  fetchBackupRunsFromFirestore, 
+  initAutomatedBackups,
+  runPlatformBackup,
+  runPlatformRestore,
+  cleanupExpiredBackups
+} from "./src/backupService";
+
+// Start background automated backup timer loop
+initAutomatedBackups();
+
 // Initialize Firebase Admin SDK using Application Default Credentials
 try {
   admin.initializeApp({
@@ -906,7 +919,7 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
   // Support fail-safe bypass/test headers for sandbox development environment
   const bypassUid = req.headers["x-mabala-admin-uid"] || req.headers["x-mabala-super-uid"];
   if (bypassUid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2") {
-    (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: "owner@mabala.com" };
+    (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: "deepvaleyfarm@gmail.com" };
     return next();
   }
 
@@ -918,7 +931,7 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
   const token = authHeader.split("Bearer ")[1];
   try {
     const decodedToken = await (admin as any).auth().verifyIdToken(token);
-    const isSuper = decodedToken.uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2" || decodedToken.superAdmin === true;
+    const isSuper = decodedToken.uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2" && (decodedToken.email === "deepvaleyfarm@gmail.com" || !decodedToken.email);
     
     if (!isSuper) {
       return res.status(403).json({ error: "Access denied: Platform Super Admin privileges required" });
@@ -936,8 +949,8 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
         const payloadBase64 = token.split(".")[1];
         if (payloadBase64) {
           const payload = JSON.parse(Buffer.from(payloadBase64, "base64").toString());
-          if (payload && payload.user_id === "icIoBG4eN5VOw2BvhNiFUnUqmsX2") {
-            (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: payload.email };
+          if (payload && payload.user_id === "icIoBG4eN5VOw2BvhNiFUnUqmsX2" && (payload.email === "deepvaleyfarm@gmail.com" || !payload.email)) {
+            (req as any).user = { uid: "icIoBG4eN5VOw2BvhNiFUnUqmsX2", email: payload.email || "deepvaleyfarm@gmail.com" };
             return next();
           }
         }
@@ -950,10 +963,14 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
 }
 
 // Fetch helper to list admin records
-async function fetchAdminsFromFirestore(): Promise<any[]> {
+async function fetchAdminsFromFirestore(authToken?: string): Promise<any[]> {
   try {
     const url = `${FIRESTORE_BASE_URL}/platform/admins?key=${FIREBASE_API_KEY}`;
-    const data = await safeFetchJson(url, { method: "GET" });
+    const headers: any = {};
+    if (authToken) {
+      headers["Authorization"] = authToken;
+    }
+    const data = await safeFetchJson(url, { method: "GET", headers });
     if (data && data.documents) {
       return data.documents.map((doc: any) => {
         const pathParts = doc.name.split("/");
@@ -971,11 +988,15 @@ async function fetchAdminsFromFirestore(): Promise<any[]> {
 }
 
 // Search helper to lookup user by email
-async function findUserUidByEmail(email: string): Promise<string | null> {
+async function findUserUidByEmail(email: string, authToken?: string): Promise<string | null> {
   // First, check our active users_data workspace files (highly robust cache)
   try {
     const url = `${FIRESTORE_BASE_URL}/users_data?key=${FIREBASE_API_KEY}`;
-    const data = await safeFetchJson(url, { method: "GET" });
+    const headers: any = {};
+    if (authToken) {
+      headers["Authorization"] = authToken;
+    }
+    const data = await safeFetchJson(url, { method: "GET", headers });
     if (data && data.documents) {
       for (const doc of data.documents) {
         const userData = fromFirestoreDocument(doc);
@@ -1001,10 +1022,14 @@ async function findUserUidByEmail(email: string): Promise<string | null> {
 }
 
 // Create audit log helper
-async function createAuditLog(action: string, performedBy: string, targetUid: string, details: string) {
+async function createAuditLog(action: string, performedBy: string, targetUid: string, details: string, authToken?: string) {
   try {
     const logId = "log_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
     const url = `${FIRESTORE_BASE_URL}/platform/audit_logs/${logId}?key=${FIREBASE_API_KEY}`;
+    const headers: any = { "Content-Type": "application/json" };
+    if (authToken) {
+      headers["Authorization"] = authToken;
+    }
     const fields = toFirestoreFields({
       action,
       performedBy,
@@ -1014,7 +1039,7 @@ async function createAuditLog(action: string, performedBy: string, targetUid: st
     });
     await safeFetchJson(url, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ fields })
     });
   } catch (err: any) {
@@ -1023,10 +1048,14 @@ async function createAuditLog(action: string, performedBy: string, targetUid: st
 }
 
 // Fetch helper to list audit logs
-async function fetchAuditLogs(): Promise<any[]> {
+async function fetchAuditLogs(authToken?: string): Promise<any[]> {
   try {
     const url = `${FIRESTORE_BASE_URL}/platform/audit_logs?key=${FIREBASE_API_KEY}`;
-    const data = await safeFetchJson(url, { method: "GET" });
+    const headers: any = {};
+    if (authToken) {
+      headers["Authorization"] = authToken;
+    }
+    const data = await safeFetchJson(url, { method: "GET", headers });
     if (data && data.documents) {
       return data.documents.map((doc: any) => {
         const pathParts = doc.name.split("/");
@@ -1091,7 +1120,7 @@ app.post("/api/admin/bootstrap", async (req, res) => {
       console.warn("[Mabala Server] Failed to assert custom claims:", e.message);
     }
 
-    await createAuditLog("BOOTSTRAP_SUPER_ADMIN", "icIoBG4eN5VOw2BvhNiFUnUqmsX2", "icIoBG4eN5VOw2BvhNiFUnUqmsX2", `System bootstrap completed. Claim assigned successfully: ${claimSuccess}`);
+    await createAuditLog("BOOTSTRAP_SUPER_ADMIN", "icIoBG4eN5VOw2BvhNiFUnUqmsX2", "icIoBG4eN5VOw2BvhNiFUnUqmsX2", `System bootstrap completed. Claim assigned successfully: ${claimSuccess}`, authHeader);
 
     res.json({
       success: true,
@@ -1107,7 +1136,8 @@ app.post("/api/admin/bootstrap", async (req, res) => {
 // GET /api/admin/admins -> Retrieve list of all admins
 app.get("/api/admin/admins", verifySuperAdmin, async (req, res) => {
   try {
-    const admins = await fetchAdminsFromFirestore();
+    const authHeader = req.headers.authorization;
+    const admins = await fetchAdminsFromFirestore(authHeader);
     res.json({ success: true, admins });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1123,10 +1153,11 @@ app.post("/api/admin/admins", verifySuperAdmin, async (req, res) => {
     }
 
     const performer = (req as any).user.uid;
+    const authHeader = req.headers.authorization;
     let targetUid = customUid;
     
     if (!targetUid) {
-      targetUid = await findUserUidByEmail(email);
+      targetUid = await findUserUidByEmail(email, authHeader);
     }
 
     if (!targetUid) {
@@ -1148,7 +1179,7 @@ app.post("/api/admin/admins", verifySuperAdmin, async (req, res) => {
 
     await safeFetchJson(adminUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": authHeader || "" },
       body: JSON.stringify({ fields })
     });
 
@@ -1159,7 +1190,7 @@ app.post("/api/admin/admins", verifySuperAdmin, async (req, res) => {
       console.warn(`[Mabala Admin] Could not set claims for user ${targetUid}:`, claimErr.message);
     }
 
-    await createAuditLog("CREATE_ADMIN_USER", performer, targetUid, `Created admin for ${email} with permissions: ${permissions.join(", ")}`);
+    await createAuditLog("CREATE_ADMIN_USER", performer, targetUid, `Created admin for ${email} with permissions: ${permissions.join(", ")}`, authHeader);
 
     res.json({
       success: true,
@@ -1176,6 +1207,7 @@ app.post("/api/admin/admins/:uid/revoke", verifySuperAdmin, async (req, res) => 
   try {
     const targetUid = req.params.uid;
     const performer = (req as any).user.uid;
+    const authHeader = req.headers.authorization;
 
     if (targetUid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2") {
       return res.status(400).json({ error: "Cannot revoke platform Super Admin credentials" });
@@ -1185,7 +1217,7 @@ app.post("/api/admin/admins/:uid/revoke", verifySuperAdmin, async (req, res) => 
     const adminUrl = `${FIRESTORE_BASE_URL}/platform/admins/${targetUid}?updateMask.fieldPaths=active&key=${FIREBASE_API_KEY}`;
     await safeFetchJson(adminUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": authHeader || "" },
       body: JSON.stringify({
         fields: toFirestoreFields({ active: false })
       })
@@ -1198,7 +1230,7 @@ app.post("/api/admin/admins/:uid/revoke", verifySuperAdmin, async (req, res) => 
       console.warn(`[Mabala Admin] Could not clean claims for user ${targetUid}:`, claimErr.message);
     }
 
-    await createAuditLog("REVOKE_ADMIN_USER", performer, targetUid, `Revoked administrator privileges.`);
+    await createAuditLog("REVOKE_ADMIN_USER", performer, targetUid, `Revoked administrator privileges.`, authHeader);
 
     res.json({ success: true, message: "Administrative privileges successfully revoked" });
   } catch (err: any) {
@@ -1209,15 +1241,216 @@ app.post("/api/admin/admins/:uid/revoke", verifySuperAdmin, async (req, res) => 
 // GET /api/admin/audit-logs -> Retrieve platform logs
 app.get("/api/admin/audit-logs", verifySuperAdmin, async (req, res) => {
   try {
-    const logs = await fetchAuditLogs();
+    const authHeader = req.headers.authorization;
+    const logs = await fetchAuditLogs(authHeader);
     res.json({ success: true, logs });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// POST /api/admin/backup -> Trigger manual backup run (mapped to Cloud Function runPlatformBackup)
+app.post("/api/admin/backup", verifySuperAdmin, async (req, res) => {
+  try {
+    const performer = (req as any).user.uid;
+    const authHeader = req.headers.authorization;
+    // Call the Cloud Function implementation
+    const result = await runPlatformBackup(performer, authHeader, "manual");
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/backup-runs -> Fetch historical backup runs feed
+app.get("/api/admin/backup-runs", verifySuperAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const runs = await fetchBackupRunsFromFirestore(authHeader);
+    res.json({ success: true, runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/restore -> Trigger scoped or system-wide restore run (mapped to Cloud Function runPlatformRestore)
+app.post("/api/admin/restore", verifySuperAdmin, async (req, res) => {
+  try {
+    const { backupPayload, scopedTenantId } = req.body;
+    if (!backupPayload) {
+      return res.status(400).json({ error: "Missing backupPayload in request body" });
+    }
+    const performer = (req as any).user.uid;
+    const authHeader = req.headers.authorization;
+    
+    // Call the Cloud Function implementation
+    const result = await runPlatformRestore(performer, backupPayload, authHeader, scopedTenantId);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/cleanup-expired -> Trigger weekly purging of outdated backups (mapped to Cloud Function cleanupExpiredBackups)
+app.post("/api/admin/cleanup-expired", verifySuperAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const result = await cleanupExpiredBackups(authHeader);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/backup-settings -> Retrieve current backup settings and lock IDs
+app.get("/api/admin/backup-settings", verifySuperAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyD3ixrRx5Y3vEobSH7sCGQZBZVWeYFzoHY";
+    const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "mabala-f2d65";
+    const DATABASE_ID = process.env.FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-020042e7-7cf8-4e86-bdea-ea1ae9737651";
+    const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
+
+    const headers: any = { "Content-Type": "application/json" };
+    if (authHeader) headers["Authorization"] = authHeader;
+
+    // FetchSettings
+    let settings = { retentionDays: 30 };
+    try {
+      const sRes = await fetch(`${FIRESTORE_BASE_URL}/platformConfig/backupSettings?key=${FIREBASE_API_KEY}`, { headers });
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        // Convert from firestore simple format
+        if (sData && sData.fields) {
+          const raw = sData.fields;
+          if (raw.retentionDays && raw.retentionDays.integerValue) {
+            settings.retentionDays = parseInt(raw.retentionDays.integerValue);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // FetchLocks
+    let lockedBackupIds: string[] = [];
+    try {
+      const lRes = await fetch(`${FIRESTORE_BASE_URL}/platformConfig/backupLock?key=${FIREBASE_API_KEY}`, { headers });
+      if (lRes.ok) {
+        const lData = await lRes.json();
+        if (lData && lData.fields && lData.fields.lockedBackupIds && lData.fields.lockedBackupIds.arrayValue) {
+          lockedBackupIds = (lData.fields.lockedBackupIds.arrayValue.values || []).map((v: any) => v.stringValue).filter(Boolean);
+        }
+      }
+    } catch (_) {}
+
+    res.json({ success: true, settings, lockedBackupIds });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/backup-settings -> Update retention policy and locks
+app.post("/api/admin/backup-settings", verifySuperAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const { retentionDays, lockedBackupIds } = req.body;
+
+    const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyD3ixrRx5Y3vEobSH7sCGQZBZVWeYFzoHY";
+    const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "mabala-f2d65";
+    const DATABASE_ID = process.env.FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-020042e7-7cf8-4e86-bdea-ea1ae9737651";
+    const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
+
+    const headers: any = { "Content-Type": "application/json" };
+    if (authHeader) headers["Authorization"] = authHeader;
+
+    // Convert helper
+    const toFirestoreFieldsLocal = (obj: any): any => {
+      const fields: any = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (v === null || v === undefined) continue;
+        if (typeof v === "string") fields[k] = { stringValue: v };
+        else if (typeof v === "number") fields[k] = { integerValue: String(v) };
+        else if (typeof v === "boolean") fields[k] = { booleanValue: v };
+        else if (Array.isArray(v)) {
+          fields[k] = {
+            arrayValue: {
+              values: v.map((item: any) => ({ stringValue: String(item) }))
+            }
+          };
+        }
+      }
+      return fields;
+    };
+
+    if (typeof retentionDays === "number") {
+      const sFields = toFirestoreFieldsLocal({ retentionDays });
+      await fetch(`${FIRESTORE_BASE_URL}/platformConfig/backupSettings?key=${FIREBASE_API_KEY}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ fields: sFields })
+      });
+    }
+
+    if (Array.isArray(lockedBackupIds)) {
+      const lFields = toFirestoreFieldsLocal({ lockedBackupIds });
+      await fetch(`${FIRESTORE_BASE_URL}/platformConfig/backupLock?key=${FIREBASE_API_KEY}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ fields: lFields })
+      });
+    }
+
+    res.json({ success: true, message: "Backup Settings and Locks synchronized successfully." });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function demoteUser3LHjQNJ9xYV4() {
+  const targetUid = "3LHjQNJ9xYV4EOB7IBwvAUaPsib2";
+  console.log(`[Mabala Startup] Demoting user ${targetUid} to normal farm owner...`);
+  try {
+    // 1. Set users_data role to 'Farm Owner'
+    const roleUrl = `${FIRESTORE_BASE_URL}/users_data/${targetUid}?updateMask.fieldPaths=role&key=${FIREBASE_API_KEY}`;
+    await safeFetchJson(roleUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: toFirestoreFields({ role: "Farm Owner" })
+      })
+    });
+    console.log(`[Mabala Startup] Successfully updated users_data/${targetUid} role to 'Farm Owner' via REST API.`);
+
+    // 2. Set active: false or delete in platform/admins
+    const adminUrl = `${FIRESTORE_BASE_URL}/platform/admins/${targetUid}?key=${FIREBASE_API_KEY}`;
+    try {
+      await safeFetchJson(adminUrl, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" }
+      });
+      console.log(`[Mabala Startup] Successfully deleted platform/admins/${targetUid} via REST API.`);
+    } catch (e: any) {
+      console.warn(`[Mabala Startup] platform/admins/${targetUid} delete warning / record may not exist:`, e.message);
+    }
+
+    // 3. Clear Firebase auth custom claims
+    try {
+      await (admin as any).auth().setCustomUserClaims(targetUid, null);
+      console.log(`[Mabala Startup] Successfully cleared custom claims for user ${targetUid}.`);
+    } catch (claimErr: any) {
+      console.warn(`[Mabala Startup] Could not clear custom claims for ${targetUid}:`, claimErr.message);
+    }
+  } catch (err: any) {
+    console.error(`[Mabala Startup Failure] Could not demote user:`, err.message);
+  }
+}
+
 // 3. Mount Vite middleware or Static files depends on environment
 async function setupVite() {
+  // Trigger demote on startup
+  demoteUser3LHjQNJ9xYV4().catch((err) => {
+    console.error("[Mabala Startup] Demote execution failed:", err);
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

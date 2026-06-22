@@ -2313,7 +2313,7 @@ export default function ProfilesPlatformPanel({
                         <div className="bg-slate-850 p-5 rounded-2xl border border-slate-800 space-y-2">
                           <span className="text-[9px] text-slate-405 font-extrabold uppercase font-mono tracking-wider block">SaaS Subscription Tier</span>
                           <p className="text-xs font-black text-indigo-300 uppercase leading-none">
-                            🎖️ {selectedFinancialUser.subscriptionTier || "Commercial Growth Layer"}
+                            🎖️ {selectedFinancialUser.subscriptionTier || "Monthly Plan"}
                           </p>
                           <p className="text-[10px] text-slate-400">Workspace Mode: {selectedFinancialUser.workspaceMode || "Farmer"}</p>
                         </div>
@@ -2461,7 +2461,7 @@ export default function ProfilesPlatformPanel({
                               </td>
                               <td className="p-4">
                                 <span className="px-2 py-0.5 bg-indigo-50 text-indigo-750 text-[9px] font-black uppercase rounded">
-                                  {u.subscriptionTier || "Commercial Growth Layer"}
+                                  {u.subscriptionTier || "Monthly Plan"}
                                 </span>
                               </td>
                               <td className="p-4 font-mono font-bold text-slate-900">
@@ -2523,7 +2523,7 @@ export default function ProfilesPlatformPanel({
                           <div className="space-y-2">
                             <div className="flex justify-between items-start gap-2">
                               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded text-[9px] font-black uppercase border border-emerald-200 font-mono">
-                                {n.subscriptionTier || "Commercial Growth Layer"}
+                                {n.subscriptionTier || "Monthly Plan"}
                               </span>
                               <span className="text-[9.5px] font-mono text-slate-400">ID: {n.farm.id}</span>
                             </div>
@@ -3442,12 +3442,12 @@ export default function ProfilesPlatformPanel({
                       type="button"
                       onClick={() => {
                         const names = ["Maiko Phiri", "Nalukui Mwanamwambwa", "Chipo Hakainde", "Mulenga Kabwe"];
-                        const packages = ["Commercial Growth Layer", "Smallholder Standard Pack", "Standard Fuel Top-up block"];
+                        const packages = ["Monthly Plan", "Daily Bundle", "Enterprise Plan", "Starter Pack"];
                         const carrier = ["097", "096", "077"][Math.floor(Math.random() * 3)];
                         const newTx = {
                           id: "tx-sim-" + Date.now(),
                           referenceId: `ref-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-                          amount: [500, 1500, 100, 2000][Math.floor(Math.random() * 4)],
+                          amount: [180, 25, 2500, 100][Math.floor(Math.random() * 4)],
                           currency: "ZMW",
                           phone: `260${carrier}${Math.floor(1000000 + Math.random() * 9000000)}`,
                           holderName: names[Math.floor(Math.random() * names.length)],
@@ -3466,12 +3466,12 @@ export default function ProfilesPlatformPanel({
                       type="button"
                       onClick={() => {
                         const names = ["Lungowe Sipalo", "Mwamba Mwila", "Zondani Sakala"];
-                        const packages = ["Standard Fuel Top-up block", "Commercial Growth Layer"];
+                        const packages = ["Monthly Plan", "Season Pack"];
                         const carrier = ["097", "096", "077"][Math.floor(Math.random() * 3)];
                         const newTx = {
                           id: "tx-sim-fail-" + Date.now(),
                           referenceId: `ref-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-                          amount: [500, 100][Math.floor(Math.random() * 2)],
+                          amount: [180, 500][Math.floor(Math.random() * 2)],
                           currency: "ZMW",
                           phone: `260${carrier}${Math.floor(1000000 + Math.random() * 9000000)}`,
                           holderName: names[Math.floor(Math.random() * names.length)],

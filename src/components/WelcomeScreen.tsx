@@ -3,8 +3,10 @@ import { COUNTRIES, CountryInfo } from "../data/countries";
 import { 
   isConfigured, 
   auth, 
-  sendPasswordResetEmail 
+  sendPasswordResetEmail,
+  db
 } from "../firebase";
+import { collection, addDoc, setDoc, doc } from "firebase/firestore";
 import { 
   LogIn, 
   UserPlus, 
@@ -26,7 +28,9 @@ import {
   ChevronRight,
   TrendingUp,
   Coins,
-  ShieldCheck
+  ShieldCheck,
+  Check,
+  Info
 } from "lucide-react";
 
 interface WelcomeScreenProps {
@@ -251,6 +255,7 @@ export default function WelcomeScreen({
   const [isProcessingRecovery, setIsProcessingRecovery] = useState(false);
 
   // Marketing states
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [closedInterstitialId, setClosedInterstitialId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState({ name: "", email: "", message: "" });
   const [submittedContact, setSubmittedContact] = useState(false);
@@ -1322,98 +1327,198 @@ export default function WelcomeScreen({
 
         {/* PRICING SECTION - PULLS LIVE FROM PLATFORM ADMIN TIERS WITH PREMIUM THEME */}
         <section id="pricing" className="py-20 px-6 max-w-7xl mx-auto border-b border-slate-200 bg-[#1a3d0f] text-white rounded-3xl my-12 shadow-xl">
-          <div className="text-center space-y-3 mb-16">
-            <span className="text-xs uppercase tracking-widest text-[#5cb83a] font-bold">Simple Pricing</span>
-            <h2 className="text-2xl md:text-3.5xl font-black text-white tracking-tight">Start free. Grow on your terms.</h2>
-            <p className="text-xs text-slate-300 max-w-lg mx-auto leading-relaxed">
-              These subscription plans are configured dynamically by the Platform Admin. No credit card required. Cancel anytime. All plans support Mobile Money (MoMo).
+          <div className="text-center space-y-4 mb-16">
+            <span className="text-xs uppercase tracking-widest text-[#5cb83a] font-black">Flexible SaaS pricing</span>
+            <h2 className="text-2xl md:text-3.5xl font-black text-white tracking-tight">Flexible platform subscription tiers</h2>
+            <p className="text-xs text-slate-300 max-w-xl mx-auto leading-relaxed">
+              Find standard tier structures matching your agriculture setup. Fast local payments supported via Lipila MoMo integrations.
             </p>
+
+            {/* BILLING TOGGLE */}
+            <div className="flex justify-center items-center gap-3 pt-4">
+              <span className={`text-xs font-bold ${billingCycle === "monthly" ? "text-[#5cb83a]" : "text-white/60"}`}>Monthly Billing</span>
+              <button
+                type="button"
+                onClick={() => setBillingCycle(prev => prev === "monthly" ? "yearly" : "monthly")}
+                className="w-12 h-6 bg-[#2d6a1f] rounded-full p-1 relative transition-all duration-300 border border-[#5cb83a]/30 focus:outline-none flex items-center"
+                aria-label="Toggle Billing Period"
+              >
+                <div className={`w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${billingCycle === "yearly" ? "translate-x-6" : "translate-x-0"}`} />
+              </button>
+              <span className={`text-xs font-bold flex items-center gap-1.5 ${billingCycle === "yearly" ? "text-[#5cb83a]" : "text-white/60"}`}>
+                <span>Yearly Billing</span>
+                <span className="bg-amber-500 text-[#1a3d0f] text-[9px] px-2 py-0.5 rounded-full font-black tracking-wider animate-pulse">SAVE UP TO 15%</span>
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {platformPackages.filter(pkg => !pkg.id?.startsWith("vet-") && !pkg.name?.toLowerCase().includes("veterinary") && !pkg.name?.toLowerCase().includes("clinic") && pkg.name !== "Agro-Vet Clinical Suite").map((pkg, idx) => {
-              const isPopular = pkg.name.toLowerCase().includes("farmer");
-              return (
-                <div 
-                  key={pkg.id || idx} 
-                  className={`rounded-2xl border p-6 flex flex-col justify-between space-y-6 relative hover:scale-[1.02] hover:shadow-2xl transition-all duration-300 ${
-                    isPopular 
-                      ? "bg-white text-slate-900 border-[#5cb83a] shadow-xl shadow-emerald-950/25" 
-                      : "bg-white/[0.06] text-white border-white/10"
-                  }`}
-                >
-                  {isPopular && (
-                    <span className="absolute top-0 left-1/2 translate-x-[-50%] translate-y-[-50%] bg-[#5cb83a] text-[#1a3d0f] font-black tracking-wider text-[8px] uppercase px-3 py-1 rounded-full shadow-sm whitespace-nowrap">
-                      ⭐ Most Popular check
-                    </span>
-                  )}
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className={`font-black text-sm uppercase tracking-wide ${isPopular ? "text-[#1a3d0f]" : "text-slate-100"}`}>{pkg.name}</h3>
-                      <p className={`text-[10px] leading-normal mt-1.5 font-medium ${isPopular ? "text-slate-500" : "text-white/60"}`}>
-                        {pkg.description || pkg.features || "Zambian localized farm management"}
-                      </p>
-                    </div>
-                    
-                    <div className={`flex flex-col py-2.5 border-y space-y-0.5 ${isPopular ? "border-slate-100" : "border-white/10"}`}>
-                      <div className="flex items-baseline gap-1">
-                        <span className={`text-2xl font-mono font-black ${isPopular ? "text-[#1a3d0f]" : "text-white"}`}>
-                          {pkg.price === 0 ? "Free" : `ZMW ${pkg.price}`}
-                        </span>
-                        {pkg.price > 0 && <span className={`text-[9.5px] font-bold ${isPopular ? "text-slate-400" : "text-white/50"}`}>/month</span>}
-                        {pkg.price === 0 && <span className={`text-[9.5px] font-bold ${isPopular ? "text-slate-400" : "text-white/50"}`}>forever</span>}
-                      </div>
-                      <div className={`text-[10.5px] font-bold ${isPopular ? "text-[#2d6a1f]" : "text-[#5cb83a]"}`}>
-                        {pkg.price === 0 ? "For starting operations" : <>or <span className="font-mono font-black">USD ${pkg.priceUSD || Math.round(pkg.price / 20)}</span>/mo</>}
-                      </div>
-                    </div>
+          {/* SUBSCRIPTION PLAN GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {platformPackages
+              .filter(pkg => {
+                // If yearly cycle is active, hide Daily Bundle because it cannot be billed yearly
+                if (billingCycle === "yearly" && pkg.id === "PLAN_DAILY") {
+                  return false;
+                }
+                return true;
+              })
+              .map((pkg, idx) => {
+                const isMonthly = pkg.id === "PLAN_MONTHLY";
+                const isEnterprise = pkg.id === "PLAN_ENTERPRISE";
+                const isDaily = pkg.id === "PLAN_DAILY";
 
-                    <ul className="space-y-2 text-xs">
-                      <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isPopular ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
-                        <Zap className="w-3.5 h-3.5 fill-current animate-pulse shrink-0" />
-                        <span>{pkg.credits?.toLocaleString() || "60"} Operations Credits</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Continuous ledger accounting</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Tax compliance summaries (ZRA)</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Integrated crops & poultry registers</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                        <span className={isPopular ? "text-slate-600" : "text-white/80"}>Priority support channel Access</span>
-                      </li>
-                    </ul>
-                  </div>
+                // Evaluate prices & discounts dynamically
+                let displayPrice = pkg.price;
+                let billingText = "/month";
+                let discountText = "";
+                
+                if (billingCycle === "yearly") {
+                  if (isMonthly) {
+                    displayPrice = pkg.yearly_price_zmw || 1944.00;
+                    billingText = "/year";
+                    discountText = "10% Off — Save ZMW 216/year";
+                  } else if (isEnterprise) {
+                    displayPrice = pkg.yearly_price_zmw || 25500.00;
+                    billingText = "/year";
+                    discountText = "15% Off — Save ZMW 4,500/year";
+                  }
+                }
 
-                  <button 
-                    onClick={() => {
-                      setSubscriptionTier(pkg.name);
-                      if (pkg.name === "Marketplace Supplier") {
-                        setActiveTab("register-vendor");
-                      } else {
-                        setActiveTab("register");
-                      }
-                      setIsViewingLanding(false);
-                    }}
-                    className={`w-full py-2.5 rounded-xl text-xs font-black tracking-wide transition transform hover:scale-[1.01] cursor-pointer ${
-                      isPopular 
-                        ? "bg-[#2d6a1f] hover:bg-[#1a3d0f] text-white shadow-md shadow-emerald-700/20" 
-                        : "bg-white text-[#1a3d0f] hover:bg-slate-100 shadow-md"
+                // Customer Group Label mapping
+                let targetAudience = "Farmers & Vet Practitioners";
+                if (isEnterprise) {
+                  targetAudience = "Commercial Farmers";
+                }
+
+                return (
+                  <div 
+                    key={pkg.id || idx} 
+                    className={`rounded-3xl border p-8 flex flex-col justify-between space-y-6 relative hover:scale-[1.01] transition-all duration-300 ${
+                      isMonthly 
+                        ? "bg-white text-slate-900 border-[#5cb83a] shadow-xl shadow-emerald-950/25" 
+                        : "bg-white/[0.06] text-white border-white/10"
                     }`}
                   >
-                    {pkg.price === 0 ? "Get Started Free" : "Get Plan"}
-                  </button>
-                </div>
-              );
-            })}
+                    {isMonthly && (
+                      <span className="absolute top-0 left-1/2 translate-x-[-50%] translate-y-[-50%] bg-[#5cb83a] text-[#1a3d0f] font-black tracking-widest text-[8px] uppercase px-4 py-1.5 rounded-full shadow shadow-emerald-800/20 whitespace-nowrap leading-none">
+                        RECOMMENDED
+                      </span>
+                    )}
+                    
+                    <div className="space-y-5">
+                      <div className="space-y-1">
+                        <span className={`text-[8.5px] uppercase tracking-widest font-black px-2 py-0.5 rounded ${isMonthly ? "bg-emerald-50 text-emerald-800" : "bg-white/10 text-[#5cb83a]"}`}>
+                          {targetAudience}
+                        </span>
+                        <h3 className={`font-black text-lg pt-1.5 ${isMonthly ? "text-[#1a3d0f]" : "text-slate-100"}`}>{pkg.name}</h3>
+                        <p className={`text-[10.5px] leading-relaxed font-semibold ${isMonthly ? "text-slate-500" : "text-white/60"}`}>
+                          {pkg.features || "High performance connectivity modules"}
+                        </p>
+                      </div>
+                      
+                      {/* Price Tag */}
+                      <div className={`flex flex-col py-3 border-y space-y-0.5 ${isMonthly ? "border-slate-100" : "border-white/10"}`}>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className={`text-2xl font-mono font-black ${isMonthly ? "text-[#1a3d0f]" : "text-white"}`}>
+                            ZMW {displayPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </span>
+                          <span className={`text-[9.5px] font-bold ${isMonthly ? "text-slate-400" : "text-white/50"}`}>{billingText}</span>
+                        </div>
+                        {discountText && (
+                          <div className="text-[10px] font-black text-rose-500 uppercase tracking-wide">
+                            🎉 {discountText}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Operations credits & Features bullets */}
+                      <ul className="space-y-2.5 text-xs">
+                        <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isMonthly ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
+                          <Zap className="w-4 h-4 fill-current animate-pulse shrink-0" />
+                          <span>
+                            {isDaily ? "Unmetered Write Access" : `${pkg.credits?.toLocaleString()} Allotted Operations Credits`}
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                            Full Double-entry general ledgers
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                            Live animal registries & vaccination trackers
+                          </span>
+                        </li>
+                        {isEnterprise && (
+                          <li className="flex gap-2 p-1.5 bg-amber-500/10 rounded-lg border border-amber-300/10 text-amber-300 font-black animate-pulse">
+                            <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                            <span>Includes 2 Agronomist & 2 Vet clinic visits!</span>
+                          </li>
+                        )}
+                        <li className="flex gap-2">
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                            Tax summaries exports
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        setSubscriptionTier(pkg.name);
+                        setActiveTab("register");
+                        setIsViewingLanding(false);
+                      }}
+                      className={`w-full py-3 rounded-xl text-xs font-black tracking-wide cursor-pointer transition ${
+                        isMonthly 
+                          ? "bg-[#2d6a1f] hover:bg-[#1a3d0f] text-white shadow shadow-emerald-700/20" 
+                          : "bg-white text-[#1a3d0f] hover:bg-slate-100 shadow"
+                      }`}
+                    >
+                      Connect {pkg.name}
+                    </button>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* AGRO VENDORS FREE ONBOARDING CALLOUT */}
+          <div className="mt-16 pt-10 border-t border-white/10 grid grid-cols-1 lg:grid-cols-3 gap-8 items-center font-sans">
+            <div className="lg:col-span-2 space-y-3">
+              <span className="px-2.5 py-1 bg-[#5cb83a]/10 text-[#5cb83a] rounded font-mono font-black text-[9px] uppercase tracking-wider">
+                Partner Networks
+              </span>
+              <h3 className="text-xl font-black text-white tracking-tight">Are you an Agro Supplier or Vendor?</h3>
+              <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                Merchant listing onboardings are completely free! Map seeds, fertilizers, feeds, chemicals, formulations, veterinary drugs, or instruments with full clarity at no subscription rate. Instantly advertise catalogs straight to verified farmers across all provinces.
+              </p>
+            </div>
+            <div className="lg:col-span-1 text-center lg:text-right">
+              <button
+                onClick={() => {
+                  setSubscriptionTier("Free Vendor Onboarding");
+                  setActiveTab("register-vendor");
+                  setIsViewingLanding(false);
+                }}
+                className="w-full lg:w-auto px-6 py-3.5 bg-[#5cb83a] hover:bg-[#4ea230] text-[#1a3d0f] font-black rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer transition duration-300"
+              >
+                Register as a Vendor (Free)
+              </button>
+            </div>
+          </div>
+
+          {/* VET PRACTITIONERS CLARIFICATION BANNER */}
+          <div className="mt-8 bg-indigo-950/40 p-5 rounded-2xl border border-indigo-500/25 flex items-start gap-4 font-sans text-xs leading-relaxed">
+            <Info className="w-5 h-5 text-indigo-400 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <strong className="text-indigo-200 block font-black uppercase tracking-wider text-[9px]">Vet Practitioners Notice</strong>
+              <p className="text-slate-300 font-medium">
+                Veterinarians operate under the standard farmer pricing cards. No clinical premium tiers! Select the <strong className="text-white">Daily Bundle</strong> or the <strong className="text-white font-sans">Monthly Plan</strong> to access dynamic animal medical logging systems, client histories, movement tracks, and livestock records.
+              </p>
+            </div>
           </div>
         </section>
 

@@ -1146,11 +1146,15 @@ export default function App() {
         if (data.credits !== undefined) setCredits(data.credits);
         if (data.subscriptionTier) setSubscriptionTier(data.subscriptionTier);
         if (data.workspaceMode) setWorkspaceMode(data.workspaceMode);
-        if (data.role) {
+        const isSuper = email.trim().toLowerCase() === "deepvaleyfarm@gmail.com" && uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+        if (isSuper) {
+          setCurrentRole("Super Admin");
+        } else if (data.role === "Super Admin") {
+          setCurrentRole("Farm Owner");
+        } else if (data.role) {
           setCurrentRole(data.role);
         } else {
-          const isSuper = email.trim().toLowerCase() === "deepvaleyfarm@gmail.com" && uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
-          setCurrentRole(isSuper ? "Super Admin" : "Farm Owner");
+          setCurrentRole("Farm Owner");
         }
         
         console.log("[Mabala Cloud] Restored persistent cloud data successfully.");
@@ -2089,17 +2093,55 @@ export default function App() {
     return [];
   });
   const [platformPackages, setPlatformPackages] = useState<any[]>([
-    { id: "pkg-1", name: "Smallholder Pack", duration: "1 Month", credits: 60, price: 0, priceUSD: 0, currency: "ZMW", features: "1 farm node, up to 3 plots, basic crop tracking, manual ledger mapping", isActive: true },
-    { id: "pkg-2", name: "Farmer Growth Pack", duration: "1 Month", credits: 5000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited plots & animals, poultry + livestock modules, full ZRA-ready double-entry ledger & payroll, priority WhatsApp support", isActive: true },
-    { id: "pkg-3", name: "Enterprise Suite", duration: "1 Month", credits: 25000, price: 2000, priceUSD: 99, currency: "ZMW", features: "Multi-farm nodes, 10 team users, advanced analytics, dedicated account manager, API access", isActive: true },
-    { id: "pkg-4", name: "Marketplace Supplier", duration: "1 Month", credits: 2000, price: 500, priceUSD: 25, currency: "ZMW", features: "Unlimited product listings in Mabala marketplace, targeted promotions, order management system, sales analytics dashboard", isActive: true },
-    { id: "pass-daily", name: "Daily Access Pass", duration: "24 Hours", credits: 0, price: 15, priceUSD: 1, currency: "ZMW", features: "24-hour unmetered platform access (Emergency Bridge)", is_unmetered_access: true, duration_hours: 24, requires_zero_balance: true, isActive: true },
-    { id: "pass-weekly", name: "Weekly Access Pass", duration: "7 Days", credits: 0, price: 35, priceUSD: 2, currency: "ZMW", features: "7-day unmetered platform access (Emergency Bridge)", is_unmetered_access: true, duration_hours: 168, requires_zero_balance: true, isActive: true },
-    { id: "vet-payg-starter", name: "Veterinary PAYG Starter", duration: "Pay As You Go", credits: 500, price: 150, priceUSD: 7, currency: "ZMW", features: "Starter clinic package: 500 credits, SMS notifications integration", isActive: true },
-    { id: "vet-payg-growth", name: "Veterinary PAYG Growth", duration: "Pay As You Go", credits: 1500, price: 400, priceUSD: 16, currency: "ZMW", features: "Growth clinic package: 1500 credits, WhatsApp alerts integration", isActive: true },
-    { id: "vet-payg-expert", name: "Veterinary PAYG Expert", duration: "Pay As You Go", credits: 5000, price: 1200, priceUSD: 49, currency: "ZMW", features: "Expert clinic package: 5000 credits, full AI Co-pilot priority limits", isActive: true },
-    { id: "vet-monthly-suite", name: "Agro-Vet Clinical Suite", duration: "1 Month", credits: 10000, price: 600, priceUSD: 30, currency: "ZMW", features: "Full Veterinary clinic multi-practitioner tools, client directories, treatment logs, drug inventory integration", isActive: true },
-    { id: "vet-yearly-pro", name: "Veterinary Yearly Clinic Pro", duration: "Yearly Subscription", credits: 3000, price: 4800, priceUSD: 199, currency: "ZMW", features: "All-inclusive clinic subscription: 3,000 monthly credits allotted automatically, unlimited clinic records & movements, priority multi-vet coordination", isActive: true }
+    {
+      id: "PLAN_DAILY",
+      name: "Daily Bundle",
+      price: 25.00,
+      priceUSD: 1.25,
+      currency: "ZMW",
+      credits: null,
+      is_unmetered: true,
+      duration: "24 Hours",
+      duration_hours: 24,
+      yearly_enabled: false,
+      available_to: ["FARMER", "VET_PRACTITIONER"],
+      features: "24-hour unmetered connectivity, unmetered access, credit actions bypass the ledger, 100% full features, no lockouts",
+      isActive: true
+    },
+    {
+      id: "PLAN_MONTHLY",
+      name: "Monthly Plan",
+      price: 180.00,
+      yearly_price_zmw: 1944.00,
+      yearly_discount_pct: 10,
+      priceUSD: 9.00,
+      currency: "ZMW",
+      credits: 1500,
+      is_unmetered: false,
+      duration: "1 Month",
+      yearly_enabled: true,
+      available_to: ["FARMER", "VET_PRACTITIONER"],
+      features: "1,500 operations write credits, rollover of unused state, in-app top-ups permitted, priority support, full modules",
+      isActive: true
+    },
+    {
+      id: "PLAN_ENTERPRISE",
+      name: "Enterprise Plan",
+      price: 2500.00,
+      yearly_price_zmw: 25500.00,
+      yearly_discount_pct: 15,
+      priceUSD: 125.00,
+      currency: "ZMW",
+      credits: 12000,
+      is_unmetered: false,
+      duration: "1 Month",
+      included_agro_visits: 2,
+      included_vet_visits: 2,
+      yearly_enabled: true,
+      available_to: ["FARMER"],
+      features: "12,000 operations write credits, 2 free agronomist visits, 2 free vet visits included, multi-farm nodes, 10 team users",
+      isActive: true
+    }
   ]);
 
   const [isAllFarmsActive, setIsAllFarmsActive] = useState<boolean>(false);
@@ -2246,10 +2288,10 @@ export default function App() {
   }, [creditTransactions]);
 
   const activeFarm = farms[activeFarmIndex] || farms[0];
-  const isPassActive = activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date();
+  const isPassActive = (activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date()) || (subscriptionTier === "Daily Bundle");
   const isReadonly = (credits === 0 && !isPassActive) || farmStatus === "FROZEN";
 
-  const isAllFarmsSelected = isAllFarmsActive && subscriptionTier === "Enterprise Suite";
+  const isAllFarmsSelected = isAllFarmsActive && (subscriptionTier === "Enterprise Plan" || subscriptionTier === "Enterprise Suite");
 
   const currentMember = useMemo(() => {
     return teamMembers.find(m => m.email.trim().toLowerCase() === userProfile.email.trim().toLowerCase());
@@ -2486,6 +2528,10 @@ export default function App() {
 
   // Handle write activity credit penalty
   const deductCredits = (weight: number) => {
+    if (subscriptionTier === "Daily Bundle") {
+      // Unmetered Daily Bundle active
+      return;
+    }
     if (activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date()) {
       // Unmetered access activated via Emergency Access Pass
       return;
@@ -2968,23 +3014,129 @@ export default function App() {
       }
     }
 
-    // Mapping package details
-    const pkgs = [
-      { id: "Basic", name: "Mabala Basic Merchant", price: 150, credits: 300, desc: "Publish up to 5 items inside farm catalogs directories." },
-      { id: "Elite", name: "Mabala Elite Vendor", price: 500, credits: 5000, desc: "Publish 25 items, prioritize results directories, analytics." },
-      { id: "Cooperative Pro", name: "Cooperative Pro", price: 1000, credits: 25000, desc: "Infinite product catalogue, multi-agent store logins, VIP bike riders." }
-    ];
-    const matched = pkgs.find(p => p.id === data.subscriptionPackage || p.name === data.subscriptionPackage) || pkgs[0];
+    // 2. Perform direct free merchant onboarding
+    let uid = "uid-" + Date.now();
+    
+    if (isConfigured && data.email && data.password) {
+      try {
+        localStorage.setItem("registrations_in_progress_" + data.email.toLowerCase(), "true");
+        localStorage.setItem("mabala_google_bypass_" + data.email.toLowerCase(), "true");
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        uid = userCred.user.uid;
+      } catch (err: any) {
+        console.error("Auth creation in free vendor onboarding failed:", err);
+      }
+    }
 
-    // Launch Lipila Mobile Money terminal for Vendor plan, no premature Auth account creation to respect collection layout
-    setLipilaCheckout({
-      type: "vendor-subscription",
-      name: matched.name,
-      price: matched.price,
-      creditsToAward: matched.credits,
-      description: matched.desc,
-      registrationData: { ...data, isVendor: true }
+    const randomColors = ["bg-emerald-600", "bg-indigo-600", "bg-sky-600", "bg-amber-600", "bg-purple-600"];
+    const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+    const newVendor: MarketVendor = {
+      id: `vend-custom-${Date.now()}`,
+      name: data.storeName,
+      category: data.category,
+      location: data.location,
+      distanceKm: Number(data.distanceKm || 15),
+      phone: data.phone,
+      email: data.email,
+      subscriptionPackage: "Free Vendor Onboarding",
+      status: "Active", // Land straight on storefront
+      joinedDate: new Date().toISOString().split("T")[0],
+      expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      credits: 999999, // Infinite credits
+      logoColor: randomColor,
+      logoUrl: data.logoUrl
+    };
+
+    setMarketplaceVendors(prev => {
+      const updated = [...prev, newVendor];
+      localStorage.setItem("mabala_marketplace_vendors", JSON.stringify(updated));
+      return updated;
     });
+
+    const uProfile = {
+      name: data.storeName,
+      email: data.email,
+      phone: data.phone
+    };
+    setUserProfile(uProfile);
+
+    const initialFarms = [
+      {
+        id: "farm-1",
+        name: data.storeName + " Farm Workspace",
+        tpin: "100431290",
+        address: data.location,
+        phone: data.phone,
+        email: data.email,
+        financialYearStart: "2026-01-01",
+        financialYearEnd: "2026-12-31",
+        currency: "ZMK",
+        currencySymbol: "ZK",
+        taxSystem: "VAT"
+      }
+    ];
+    
+    setFarms(initialFarms);
+    setSuppliers([]);
+    setCustomers([]);
+    setExpenses([]);
+    setInvoices([]);
+    setQuotations([]);
+    setCrops([]);
+    setEmployees([]);
+    setPoultry([]);
+    setFish([]);
+    setInventory([]);
+    setLoans([]);
+    setInvestments([]);
+    setCashSales([]);
+    setLivestock([]);
+    const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+    setAccounts(initialAccounts);
+
+    setIsAuthenticated(true);
+    setCredits(999999);
+    setSubscriptionTier("Free Vendor Onboarding");
+    setActiveTab("marketplace"); // Navigate merchant directly into the marketplace workspace
+
+    if (isConfigured && uid) {
+      try {
+        const docRef = doc(db, "users_data", uid);
+        await setDoc(docRef, {
+          uid,
+          email: data.email.trim().toLowerCase(),
+          credits: 999999,
+          subscriptionTier: "Free Vendor Onboarding",
+          workspaceMode: "Farmer",
+          farms: initialFarms,
+          accounts: initialAccounts,
+          suppliers: [],
+          customers: [],
+          expenses: [],
+          invoices: [],
+          quotations: [],
+          crops: [],
+          employees: [],
+          payslips: [],
+          poultry: [],
+          fish: [],
+          inventory: [],
+          loans: [],
+          investments: [],
+          cashSales: [],
+          livestock: []
+        });
+        console.log("Successfully wrote free vendor account profile into firestore:", data.email);
+      } catch (dbErr) {
+        console.error("Failed to write free vendor users_data to firestore:", dbErr);
+      }
+    }
+    
+    if (data.email) {
+      localStorage.removeItem("registrations_in_progress_" + data.email.toLowerCase());
+    }
+    addNotification("Free Vendor Account Registered Successfully!", "success");
   };
 
   const handleLogin = async (email: string, password?: string) => {
@@ -6238,48 +6390,78 @@ export default function App() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 min-h-screen">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 border border-slate-200 animate-scale-up">
             <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest pb-2 border-b">Top Up Transaction Credits</h4>
-            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-              Purchase pre-packaged credit blocks to perform write actions (e.g. posting expenses, executing payroll operations, generating invoices, creating animal registers) in Mabala.
-            </p>
+            
+            {(() => {
+              const isEligibleForTopUp = subscriptionTier === "Monthly Plan" || subscriptionTier === "Enterprise Plan" || subscriptionTier === "Enterprise Suite";
+              const creditTopUpPackages = [
+                { id: "TOPUP_STARTER", name: "Starter Pack", price: 100.00, creditsToAward: 500, description: "Adds 500 write operations credits" },
+                { id: "TOPUP_FIELD", name: "Field Pack", price: 250.00, creditsToAward: 1500, description: "Adds 1,500 write operations credits" },
+                { id: "TOPUP_SEASON", name: "Season Pack", price: 500.00, creditsToAward: 3500, description: "Adds 3,500 write operations credits" },
+                { id: "TOPUP_BULK", name: "Bulk Pack", price: 1000.00, creditsToAward: 8000, description: "Adds 8,000 write operations credits" }
+              ];
 
-            <div className="space-y-2.5 mt-4 max-h-[320px] overflow-y-auto pr-1">
-              {platformPackages.filter(pkg => pkg.isActive).map((pkg) => (
-                <button
-                  key={pkg.id}
-                  onClick={() => {
-                    if (pkg.requires_zero_balance && credits > 0) {
-                      alert(`You still have ${credits} credits available. Emergency Access Passes are only available once your balance reaches zero.`);
-                      return;
-                    }
-                    setLipilaCheckout({
-                      type: "credits",
-                      name: pkg.name,
-                      price: pkg.price,
-                      creditsToAward: pkg.credits || 0,
-                      is_unmetered_access: pkg.is_unmetered_access,
-                      duration_hours: pkg.duration_hours,
-                      description: pkg.features || pkg.description || "Credit Plan"
-                    });
-                    setShowTopUpModal(false);
-                  }}
-                  className="w-full font-bold p-3 rounded-xl border border-slate-200 text-xs hover:border-emerald-500 hover:bg-emerald-50/50 hover:text-emerald-700 text-slate-700 block text-left transition-all active:scale-[0.98] bg-slate-50/40"
-                >
-                  <span className="flex justify-between items-center font-bold">
-                    <span>{pkg.name}</span>
-                    <span className="text-emerald-600 font-mono">
-                      {pkg.is_unmetered_access ? "Unmetered Access" : `+${pkg.credits} CR`}
-                    </span>
-                  </span>
-                  <p className="text-[9.5px] text-slate-400 font-medium font-sans mt-0.5">{pkg.features}</p>
-                  <span className="text-[10px] text-slate-500 font-black block mt-1.5 uppercase font-mono tracking-wider">
-                    Price: {selectedCountry.symbol} {pkg.price} (~{pkg.duration})
-                  </span>
-                </button>
-              ))}
-            </div>
+              if (!isEligibleForTopUp) {
+                return (
+                  <div className="mt-4 space-y-4">
+                    <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs leading-relaxed space-y-2">
+                      <p className="font-extrabold uppercase text-[10px] tracking-wider text-amber-800 flex items-center gap-1">
+                        ⚠️ Top-Up Restriction Active
+                      </p>
+                      <p>
+                        In-app operations credit top-up packages are reserved exclusively for active <strong>Monthly Plan</strong> and <strong>Enterprise Plan</strong> connection holders.
+                      </p>
+                      <p className="font-sans text-[11px] text-slate-500">
+                        Your current access tier: <strong className="text-slate-700 bg-amber-100 px-1 py-0.5 rounded text-[10px]">{subscriptionTier || "Daily Bundle / None"}</strong>.
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Upgrade from a Daily unmetered bundle to a standard monthly structural layout to top up and roll over operations credits at any period.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3 mt-4">
+                  <p className="text-xs text-slate-500 leading-relaxed mb-1">
+                    Select a localized operation capacity block to replenish write credits. All requests route securely through the Lipila MoMo gateway.
+                  </p>
+                  <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                    {creditTopUpPackages.map((pkg) => (
+                      <button
+                        key={pkg.id}
+                        onClick={() => {
+                          setLipilaCheckout({
+                            type: "credits",
+                            name: pkg.name,
+                            price: pkg.price,
+                            creditsToAward: pkg.creditsToAward,
+                            is_unmetered_access: false,
+                            description: pkg.description
+                          });
+                          setShowTopUpModal(false);
+                        }}
+                        className="w-full font-semibold p-3.5 rounded-2xl border border-slate-200 text-xs hover:border-emerald-500 hover:bg-emerald-50/50 hover:text-emerald-700 text-slate-705 block text-left transition-all active:scale-[0.98] bg-slate-50/40"
+                      >
+                        <span className="flex justify-between items-center font-bold">
+                          <span className="text-slate-900 font-extrabold">{pkg.name}</span>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                            +{pkg.creditsToAward.toLocaleString()} CR
+                          </span>
+                        </span>
+                        <p className="text-[10px] text-slate-400 font-medium font-sans mt-0.5">{pkg.description}</p>
+                        <span className="text-[10px] text-[#2d6a1f] font-black block mt-2 uppercase font-mono tracking-wider">
+                          Price: ZMW {pkg.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-              <button onClick={() => setShowTopUpModal(false)} className="px-4 py-2 bg-slate-100 rounded text-xs font-semibold">Close</button>
+              <button onClick={() => setShowTopUpModal(false)} className="px-4 py-2 bg-slate-100 rounded text-xs font-semibold cursor-pointer">Close</button>
             </div>
           </div>
         </div>
