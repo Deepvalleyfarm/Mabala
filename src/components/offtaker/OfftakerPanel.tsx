@@ -79,7 +79,12 @@ export default function OfftakerPanel({
 }: OfftakerPanelProps) {
   
   // Tab states: 'offtaker-dashboard', 'deliveries', 'farmers', 'wallet-ledger', 'fee-config', 'farmer-sell-hub'
-  const [activeSubTab, setActiveSubTab] = useState<string>("offtaker-dashboard");
+  const [activeSubTab, setActiveSubTab] = useState<string>(
+    workspaceMode === "Farmer" ? "farmer-sell-hub" : "offtaker-dashboard"
+  );
+
+  const isFarmerWorkspace = workspaceMode === "Farmer";
+  const effectiveActiveSubTab = isFarmerWorkspace ? "farmer-sell-hub" : activeSubTab;
 
   // Offtaker staff session sub-role: 'Offtaker Admin' | 'Offtaker Staff (Record-Only)' | 'Offtaker Staff (Record and Pay)'
   const [offtakerStaffRole, setOfftakerStaffRole] = useState<string>("Offtaker Admin");
@@ -223,6 +228,13 @@ export default function OfftakerPanel({
       processSynchronizationQueue();
     }
   }, [isOnline]);
+
+  // Force active subtab configuration in Farmer portal view
+  useEffect(() => {
+    if (workspaceMode === "Farmer" && activeSubTab !== "farmer-sell-hub") {
+      setActiveSubTab("farmer-sell-hub");
+    }
+  }, [workspaceMode, activeSubTab]);
 
   const loadAllOfflineData = async () => {
     try {
@@ -1985,112 +1997,116 @@ STATUS:       ${dn.status} (Verified)
       ) : (
         <>
           {/* Persona Role Switcher Panel */}
-          <div className="bg-indigo-50/60 border border-indigo-100 p-4.5 rounded-2xl flex flex-wrap items-center justify-between gap-4" id="offtaker-persona-role-switcher-panel">
-        <div className="space-y-1">
-          <span className="text-[10px] font-black uppercase text-indigo-600 font-mono tracking-wider">Active Offtaker Persona & Scoped Permissions Router</span>
-          <p className="text-xs text-indigo-950 font-semibold leading-normal">
-            Switch between offtaker company administration and scoped staff roles to test permission rules and dual-signed delivery clearances.
-          </p>
-        </div>
-        
-        <div className="flex bg-white border border-indigo-100 p-1 rounded-xl shadow-xs gap-1">
-          {["Offtaker Admin", "Offtaker Staff (Record-Only)", "Offtaker Staff (Record & Pay)"].map((roleOpt) => {
-            const actualRole = roleOpt === "Offtaker Staff (Record & Pay)" ? "Offtaker Staff (Record and Pay)" : roleOpt;
-            const isSel = offtakerStaffRole === actualRole;
-            return (
+          {workspaceMode !== "Farmer" && (
+            <div className="bg-indigo-50/60 border border-indigo-100 p-4.5 rounded-2xl flex flex-wrap items-center justify-between gap-4" id="offtaker-persona-role-switcher-panel">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-indigo-600 font-mono tracking-wider">Active Offtaker Persona & Scoped Permissions Router</span>
+                <p className="text-xs text-indigo-950 font-semibold leading-normal">
+                  Switch between offtaker company administration and scoped staff roles to test permission rules and dual-signed delivery clearances.
+                </p>
+              </div>
+              
+              <div className="flex bg-white border border-indigo-100 p-1 rounded-xl shadow-xs gap-1">
+                {["Offtaker Admin", "Offtaker Staff (Record-Only)", "Offtaker Staff (Record & Pay)"].map((roleOpt) => {
+                  const actualRole = roleOpt === "Offtaker Staff (Record & Pay)" ? "Offtaker Staff (Record and Pay)" : roleOpt;
+                  const isSel = offtakerStaffRole === actualRole;
+                  return (
+                    <button
+                      key={roleOpt}
+                      type="button"
+                      onClick={() => setOfftakerStaffRole(actualRole)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        isSel ? "bg-[#0f172a] text-white shadow-xs" : "text-slate-600 hover:text-slate-800"
+                      }`}
+                    >
+                      {roleOpt}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tabs Menu Navigation */}
+          {workspaceMode !== "Farmer" && (
+            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
               <button
-                key={roleOpt}
-                type="button"
-                onClick={() => setOfftakerStaffRole(actualRole)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  isSel ? "bg-[#0f172a] text-white shadow-xs" : "text-slate-600 hover:text-slate-800"
+                onClick={() => setActiveSubTab("offtaker-dashboard")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "offtaker-dashboard"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
                 }`}
               >
-                {roleOpt}
+                📈 Offtaker Analytics
               </button>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Tabs Menu Navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        <button
-          onClick={() => setActiveSubTab("offtaker-dashboard")}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === "offtaker-dashboard"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-          }`}
-        >
-          📈 Offtaker Analytics
-        </button>
+              <button
+                onClick={() => setActiveSubTab("deliveries")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "deliveries"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                🧾 Delivery Notes Accruals ({deliveryNotes.length})
+              </button>
 
-        <button
-          onClick={() => setActiveSubTab("deliveries")}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === "deliveries"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-          }`}
-        >
-          🧾 Delivery Notes Accruals ({deliveryNotes.length})
-        </button>
+              <button
+                onClick={() => setActiveSubTab("farmers")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "farmers"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                🌾 Farmers Registry ({registeredFarmers.length})
+              </button>
 
-        <button
-          onClick={() => setActiveSubTab("farmers")}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === "farmers"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-          }`}
-        >
-          🌾 Farmers Registry ({registeredFarmers.length})
-        </button>
+              <button
+                onClick={() => setActiveSubTab("wallet-ledger")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "wallet-ledger"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                💼 Lipila Wallet Balance
+              </button>
 
-        <button
-          onClick={() => setActiveSubTab("wallet-ledger")}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === "wallet-ledger"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-          }`}
-        >
-          💼 Lipila Wallet Balance
-        </button>
+              <button
+                onClick={() => setActiveSubTab("quality-pricing")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "quality-pricing"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                ⚙️ Quality & Pricing
+              </button>
 
-        <button
-          onClick={() => setActiveSubTab("quality-pricing")}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === "quality-pricing"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-          }`}
-        >
-          ⚙️ Quality & Pricing
-        </button>
+              {isFarmerPlayer && (
+                <button
+                  onClick={() => setActiveSubTab("farmer-sell-hub")}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer bg-[#FFF9E6] border border-amber-300 text-amber-900`}
+                >
+                  🌽 Farmer Portal ("Sell to Offtakers")
+                </button>
+              )}
 
-        {isFarmerPlayer && (
-          <button
-            onClick={() => setActiveSubTab("farmer-sell-hub")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer bg-[#FFF9E6] border border-amber-300 text-amber-900`}
-          >
-            🌽 Farmer Portal ("Sell to Offtakers")
-          </button>
-        )}
-
-        {isPlatformAdmin && (
-          <button
-            onClick={() => setActiveSubTab("fee-config")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer bg-slate-900 hover:bg-slate-800 text-slate-100`}
-          >
-            ⚙️ Platform Fee Config (Admin Only)
-          </button>
-        )}
-      </div>
+              {isPlatformAdmin && (
+                <button
+                  onClick={() => setActiveSubTab("fee-config")}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer bg-slate-900 hover:bg-slate-800 text-slate-100`}
+                >
+                  ⚙️ Platform Fee Config (Admin Only)
+                </button>
+              )}
+            </div>
+          )}
 
       {/* TAB CONTENT: OFFTAKER ANALYTICS */}
-      {activeSubTab === "offtaker-dashboard" && (
+      {effectiveActiveSubTab === "offtaker-dashboard" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           {/* Dashboard Metrics Cards */}
@@ -2185,7 +2201,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: DELIVERY NOTES */}
-      {activeSubTab === "deliveries" && (
+      {effectiveActiveSubTab === "deliveries" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 border border-slate-200/80 rounded-2xl gap-4">
@@ -2308,7 +2324,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: FARMERS REGISTRY */}
-      {activeSubTab === "farmers" && (
+      {effectiveActiveSubTab === "farmers" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="flex justify-between items-center">
@@ -2412,7 +2428,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: QUALITY & PRICING SETTINGS */}
-      {activeSubTab === "quality-pricing" && (
+      {effectiveActiveSubTab === "quality-pricing" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 border border-slate-200/80 rounded-2xl gap-4">
@@ -2678,7 +2694,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: WALLET & LIPILA TRANSACTION LEDGER */}
-      {activeSubTab === "wallet-ledger" && (
+      {effectiveActiveSubTab === "wallet-ledger" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="flex justify-between items-center bg-white p-4 border border-slate-200/80 rounded-2xl">
@@ -2740,7 +2756,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: FARMER SELL PORTAL */}
-      {activeSubTab === "farmer-sell-hub" && (
+      {effectiveActiveSubTab === "farmer-sell-hub" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="p-6 bg-[#FEFDF9] border border-amber-250 rounded-2xl space-y-4">
@@ -2788,7 +2804,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: ADMIN CONFIG COA FEES */}
-      {activeSubTab === "fee-config" && (
+      {effectiveActiveSubTab === "fee-config" && workspaceMode !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2878,7 +2894,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: FARMER PORTAL ("SELL TO OFFTAKERS") */}
-      {activeSubTab === "farmer-sell-hub" && (
+      {effectiveActiveSubTab === "farmer-sell-hub" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in text-slate-900 font-sans" id="farmer-portal-sell-hub">
           {/* Left Column: Settlement & Preferences preferences view / modifier Form */}
           <div className="lg:col-span-1 space-y-6">
@@ -3259,7 +3275,7 @@ STATUS:       ${dn.status} (Verified)
          ----------------------------- */}
 
       {/* OVERLAY: ADD FARMER */}
-      {showAddFarmer && (
+      {showAddFarmer && workspaceMode !== "Farmer" && (
         <AgriSupplierLinkForm
           offtakerId={currentTenantId}
           offtakerName={offtakerProfile?.legalName || "Mabala Agrichain Ltd"}
@@ -3273,7 +3289,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* OVERLAY: RECORD NEW DELIVERY */}
-      {showRecordDelivery && (
+      {showRecordDelivery && workspaceMode !== "Farmer" && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <form onSubmit={handleRecordDeliverySubmit} className="w-full max-w-md bg-white rounded-3xl p-6 text-slate-900 border border-slate-200 shadow-2xl space-y-4 animate-scale-up">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -3388,7 +3404,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* OVERLAY: FUND WALLET */}
-      {showFundWallet && (
+      {showFundWallet && workspaceMode !== "Farmer" && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <form onSubmit={handleFundWalletSubmit} className="w-full max-w-md bg-white rounded-3xl p-6 text-slate-900 border border-slate-200 shadow-2xl space-y-4 animate-scale-up">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">

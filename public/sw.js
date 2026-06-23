@@ -73,7 +73,8 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => {
           // Fallback if offline and asset not registered
-          if (event.request.headers.get("accept").includes("text/html")) {
+          const acceptHeader = event.request.headers.get("accept");
+          if (acceptHeader && acceptHeader.includes("text/html")) {
             return caches.match("/");
           }
         });

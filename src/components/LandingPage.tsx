@@ -381,31 +381,30 @@ export default function LandingPage({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {platformPackages
                 .filter(pkg => {
-                  // Hide Daily Bundle in yearly billing cycle
-                  if (billingCycle === "yearly" && pkg.id === "PLAN_DAILY") {
-                    return false;
-                  }
-                  return true;
+                  return pkg.id === "PLAN_FREE" || pkg.id === "PLAN_HARVESTER" || pkg.id === "PLAN_ENTERPRISE";
                 })
                 .map((pkg) => {
-                  const isMonthly = pkg.id === "PLAN_MONTHLY";
+                  const isPopular = pkg.id === "PLAN_HARVESTER";
                   const isEnterprise = pkg.id === "PLAN_ENTERPRISE";
                   const isDaily = pkg.id === "PLAN_DAILY";
 
                   // Evaluate prices & discounts dynamically
                   let displayPrice = pkg.price;
-                  let billingText = "/month";
+                  let billingText = isDaily ? "/day" : "/month";
                   let discountText = "";
                   
                   if (billingCycle === "yearly") {
-                    if (isMonthly) {
-                      displayPrice = pkg.yearly_price_zmw || 1944.00;
+                    if (pkg.yearly_price_zmw) {
+                      displayPrice = pkg.yearly_price_zmw;
                       billingText = "/year";
-                      discountText = "10% Off — Save ZMW 216/year";
-                    } else if (isEnterprise) {
-                      displayPrice = pkg.yearly_price_zmw || 25500.00;
-                      billingText = "/year";
-                      discountText = "15% Off — Save ZMW 4,500/year";
+                      if (pkg.id === "PLAN_HARVESTER") {
+                        discountText = "10% Off — Save ZMW 180/year";
+                      } else if (pkg.id === "PLAN_ENTERPRISE") {
+                        discountText = "15% Off — Save ZMW 4,500/year";
+                      } else {
+                        const savings = (pkg.price * 12) - pkg.yearly_price_zmw;
+                        discountText = `Discounted — Save ZMW ${savings}/year`;
+                      }
                     }
                   }
 
@@ -419,12 +418,12 @@ export default function LandingPage({
                     <div 
                       key={pkg.id} 
                       className={`bg-white rounded-3xl p-8 border hover:shadow-xl transition-all flex flex-col justify-between space-y-6 relative ${
-                        isMonthly 
+                        isPopular 
                           ? "border-emerald-500 ring-2 ring-emerald-550/10 shadow-lg" 
                           : "border-slate-200/80"
                       }`}
                     >
-                      {isMonthly && (
+                      {isPopular && (
                         <span className="absolute top-0 right-8 transform -translate-y-1/2 bg-emerald-600 text-white font-bold text-[9px] uppercase tracking-wider font-mono py-1 px-3 rounded-full shadow-md shadow-emerald-650/20">
                           Popular Choice
                         </span>
@@ -474,7 +473,7 @@ export default function LandingPage({
                       <button 
                         onClick={onSignUp}
                         className={`w-full py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                          isMonthly
+                          isPopular
                             ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/10"
                             : "bg-slate-100 hover:bg-slate-200 text-slate-800"
                         }`}

@@ -65,7 +65,7 @@ import {
   sendEmailVerification
 } from "./firebase";
 
-import { doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
 
 // Models & data presets
 import { COUNTRIES, CountryInfo } from "./data/countries";
@@ -1374,6 +1374,23 @@ export default function App() {
     }
   }, [isAuthenticated, workspaceMode, subscriptionTier, activeTab]);
 
+  // Farmer & Vet Role Enforcement Guard - prevents workspace boundary violations
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (workspaceMode === "Farmer") {
+        const disallowed = ["veterinary"];
+        if (disallowed.includes(activeTab)) {
+          setActiveTab("dashboard");
+        }
+      } else if (workspaceMode === "Veterinary") {
+        const allowed = ["veterinary", "profile", "platform-admin", "backup-restore", "audit-archive", "permissions"];
+        if (!allowed.includes(activeTab)) {
+          setActiveTab("veterinary");
+        }
+      }
+    }
+  }, [isAuthenticated, workspaceMode, activeTab]);
+
   // Auto-logout after 5 minutes of inactivity to protect farm workspace
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -2094,6 +2111,20 @@ export default function App() {
   });
   const [platformPackages, setPlatformPackages] = useState<any[]>([
     {
+      id: "PLAN_FREE",
+      name: "Free Plan",
+      price: 0,
+      priceUSD: 0,
+      currency: "ZMW",
+      credits: 60,
+      is_unmetered: false,
+      duration: "Free Forever",
+      yearly_enabled: false,
+      available_to: ["FARMER", "VET_PRACTITIONER"],
+      features: "Free Forever, 60 free credits on creation/refresh, in-platform upgrade path",
+      isActive: true
+    },
+    {
       id: "PLAN_DAILY",
       name: "Daily Bundle",
       price: 25.00,
@@ -2105,23 +2136,71 @@ export default function App() {
       duration_hours: 24,
       yearly_enabled: false,
       available_to: ["FARMER", "VET_PRACTITIONER"],
-      features: "24-hour unmetered connectivity, unmetered access, credit actions bypass the ledger, 100% full features, no lockouts",
+      features: "24-hour unmetered connectivity, unmetered access, credit actions bypass the ledger, 100% full features, no lockout",
       isActive: true
     },
     {
       id: "PLAN_MONTHLY",
       name: "Monthly Plan",
-      price: 180.00,
-      yearly_price_zmw: 1944.00,
+      price: 25.00,
+      yearly_price_zmw: 270.00,
       yearly_discount_pct: 10,
-      priceUSD: 9.00,
+      priceUSD: 1.25,
       currency: "ZMW",
       credits: 1500,
       is_unmetered: false,
       duration: "1 Month",
       yearly_enabled: true,
       available_to: ["FARMER", "VET_PRACTITIONER"],
-      features: "1,500 operations write credits, rollover of unused state, in-app top-ups permitted, priority support, full modules",
+      features: "1,500 operations write credits, rollover of unused state, in-app top-ups permitted, priority support",
+      isActive: true
+    },
+    {
+      id: "PLAN_SEEDLING",
+      name: "Seedling Plan",
+      price: 75.00,
+      yearly_price_zmw: 810.00,
+      yearly_discount_pct: 10,
+      priceUSD: 3.75,
+      currency: "ZMW",
+      credits: 3000,
+      is_unmetered: false,
+      duration: "1 Month",
+      yearly_enabled: true,
+      available_to: ["FARMER"],
+      features: "Seedling growth monitoring, soil tracking, 3,000 operations credits, full farm cycle tags, email reports",
+      isActive: true
+    },
+    {
+      id: "PLAN_HARVESTER",
+      name: "Harvester Plan",
+      price: 150.00,
+      yearly_price_zmw: 1620.00,
+      yearly_discount_pct: 10,
+      priceUSD: 7.50,
+      currency: "ZMW",
+      credits: 7500,
+      is_unmetered: false,
+      duration: "1 Month",
+      yearly_enabled: true,
+      available_to: ["FARMER"],
+      features: "7,500 operations write credits, advanced yield prediction, multi-depot storage sync, accounting tools",
+      isActive: true
+    },
+    {
+      id: "PLAN_COMMERCIAL",
+      name: "Commercial Plan",
+      price: 350.00,
+      yearly_price_zmw: 3780.00,
+      yearly_discount_pct: 10,
+      priceUSD: 17.50,
+      currency: "ZMW",
+      credits: 15000,
+      is_unmetered: false,
+      duration: "1 Month",
+      yearly_enabled: true,
+      available_to: ["FARMER"],
+      features: "15,000 operations write credits, statutory ledger integration, automated payslips, high limit API access",
       isActive: true
     },
     {
@@ -2132,14 +2211,12 @@ export default function App() {
       yearly_discount_pct: 15,
       priceUSD: 125.00,
       currency: "ZMW",
-      credits: 12000,
+      credits: 120000,
       is_unmetered: false,
       duration: "1 Month",
-      included_agro_visits: 2,
-      included_vet_visits: 2,
       yearly_enabled: true,
       available_to: ["FARMER"],
-      features: "12,000 operations write credits, 2 free agronomist visits, 2 free vet visits included, multi-farm nodes, 10 team users",
+      features: "120,000 operations write credits, 2 free agronomist visits, 2 free vet visits included, multi-farm nodes",
       isActive: true
     }
   ]);
@@ -2490,7 +2567,7 @@ export default function App() {
       const matchedTier = creditTiers.find(t => t.id === tierId);
       const cost = matchedTier ? matchedTier.cost : 1;
       
-      if (cost > 0) {
+      if (cost > 0 && subscriptionTier !== "Daily Bundle") {
         setCredits(prev => Math.max(prev - cost, 0));
         
         // Push transactions straight to credit ledger audits
@@ -2507,6 +2584,76 @@ export default function App() {
     
     setPrevTab(activeTab);
   }, [activeTab, prevTab, creditTiers]);
+
+  // Monthly credit refresh logic for "Free Plan"
+  useEffect(() => {
+    if (isAuthenticated && subscriptionTier === "Free Plan") {
+      const now = new Date();
+      const currentYearMonth = `${now.getFullYear()}-${now.getMonth() + 1}`; // e.g. "2026-6"
+      const lastRefresh = localStorage.getItem("mabala_last_refresh_month") || "";
+      
+      if (lastRefresh !== currentYearMonth) {
+        // A new month has arrived, refresh/top-up credits to exactly 60!
+        if (credits < 60) {
+          setCredits(60);
+          // Sync to Firestore if configured
+          if (isConfigured && auth.currentUser) {
+            const docRef = doc(db, "users_data", auth.currentUser.uid);
+            updateDoc(docRef, { credits: 60 }).catch(e => console.error("Refresh sync error:", e));
+          }
+          setSessionError("Welcome to a new month! Your Free Plan credits have been topped up to exactly 60 free operations.");
+        }
+        localStorage.setItem("mabala_last_refresh_month", currentYearMonth);
+      }
+    }
+  }, [isAuthenticated, subscriptionTier, credits, isConfigured]);
+
+  // Read-only deterrent listeners
+  useEffect(() => {
+    if (!isReadonly) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Block Ctrl+P / Cmd+P
+      if ((e.key === 'p' || e.key === 'P') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setSessionError("Printing is disabled. This Free Plan account is in a read-only state due to credit depletion. Please upgrade to a paid bundle or top up credits to enable full-feature operations.");
+      }
+      // Print Screen key
+      if (e.key === 'PrintScreen') {
+        e.preventDefault();
+        try {
+          navigator.clipboard.writeText('');
+        } catch (err) {}
+        setSessionError("Screenshots are restricted. This account is in a read-only state. Please upgrade your plan to unlock.");
+      }
+    };
+
+    const handleBeforePrint = (e: Event) => {
+      setSessionError("Printing is disabled. This Free Plan account is in a read-only state due to credit depletion. Please upgrade to a paid bundle or top up credits to enable full-feature operations.");
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      setSessionError("Right-click is restricted in Read-Only Lock State.");
+    };
+
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      setSessionError("Text copy operations are restricted in Read-Only Lock State.");
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('copy', handleCopy);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('copy', handleCopy);
+    };
+  }, [isReadonly]);
 
   const handleUpdateActiveFarm = (updatedFields: Partial<any>) => {
     setFarms(prev => prev.map((f, i) => {
@@ -2729,17 +2876,24 @@ export default function App() {
       setCurrentRole("Veterinary Doctor");
       localStorage.setItem("mabala_clinic_name", "Lusaka Metropolitan Veterinary Clinic");
       localStorage.setItem("mabala_clinic_license", "ZVC-CLINIC-9024X");
+      setCredits(800);
     } else if (role === "Input Supplier") {
       setSubscriptionTier("Commercial Growth Layer");
       setWorkspaceMode("Farmer");
       setCurrentRole("Farm Owner");
+      setCredits(800);
+    } else if (role === "Free Plan") {
+      setSubscriptionTier("Free Plan");
+      setWorkspaceMode("Farmer");
+      setCurrentRole("Farm Owner");
+      setCredits(60);
     } else {
       setSubscriptionTier("Commercial Growth Layer");
       setWorkspaceMode("Farmer");
       setCurrentRole("Farm Owner");
+      setCredits(800);
     }
 
-    setCredits(800); 
     setIsAuthenticated(true);
     setActiveTab("dashboard");
   };
@@ -2773,8 +2927,8 @@ export default function App() {
     // Look up package pricing dynamically from config
     const matchedPkg = platformPackages.find(p => p.name === data.subscriptionTier) || platformPackages[0];
     
-    if (matchedPkg.name === "Smallholder Pack") {
-      // Smallholder Pack: Disable payment gateway and grant direct dashboard access immediately!
+    if (matchedPkg.name === "Smallholder Pack" || matchedPkg.name === "Free Plan") {
+      // Smallholder Pack & Free Plan: Disable payment gateway and grant direct dashboard access immediately!
       // In compliance with user requirement, we create accounts directly.
       if (isConfigured && data.email && data.password) {
         try {
@@ -2810,7 +2964,7 @@ export default function App() {
           const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
           setAccounts(initialAccounts);
           
-          setSubscriptionTier("Smallholder Pack");
+          setSubscriptionTier(matchedPkg.name);
           setCredits(60);
           setIsAuthenticated(true);
           setIsUnverifiedUser(false);
@@ -2822,7 +2976,7 @@ export default function App() {
             uid,
             email: emailLower,
             credits: 60,
-            subscriptionTier: "Smallholder Pack",
+            subscriptionTier: matchedPkg.name,
             workspaceMode: "Farmer",
             farms: initialFarms,
             accounts: initialAccounts,
@@ -4922,6 +5076,25 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      {isReadonly && (
+        <style>{`
+          @media print {
+            body {
+              display: none !important;
+            }
+          }
+        `}</style>
+      )}
+      
+      {isReadonly && (
+        <div className="watermark-overlay opacity-[0.03] select-none pointer-events-none fixed inset-0 z-[9999] grid grid-cols-4 grid-rows-6 gap-4 text-slate-900 font-extrabold tracking-widest uppercase text-[10px] rotate-[-30deg] scale-125">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-center whitespace-nowrap p-4">
+              MABALA READ-ONLY MODE — UPGRADE TO UNLOCK
+            </div>
+          ))}
+        </div>
+      )}
       
       {/* Dynamic Left Menu Bar Navigation */}
       <Sidebar 
@@ -6275,7 +6448,7 @@ export default function App() {
               setPlatformPackages={setPlatformPackages}
               currencySymbol={selectedCountry.symbol}
               currentRole={currentRole}
-               viewMode="profile"
+              viewMode="profile"
               subscriptionTier={subscriptionTier}
               setSubscriptionTier={setSubscriptionTier}
               workspaceMode={workspaceMode}
@@ -6294,8 +6467,12 @@ export default function App() {
               creditTiers={creditTiers}
               setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
-                if (pkg.name === "Smallholder Pack") {
-                  // Direct bypass of Lipila payment gateway for Smallholder Pack
+                if (pkg.price <= 0 && pkg.name !== "Free Plan") {
+                  alert("Error: Cannot purchase a paid bundle or package configured with zero or negative price.");
+                  return;
+                }
+                if (pkg.name === "Smallholder Pack" || pkg.name === "Free Plan") {
+                  // Direct bypass of Lipila payment gateway for Smallholder Pack or Free Plan
                   handlePaymentSuccessAllocation({
                     type: "subscription",
                     name: pkg.name,
@@ -6357,8 +6534,12 @@ export default function App() {
               creditTiers={creditTiers}
               setCreditTiers={setCreditTiers}
               onTriggerCheckout={(pkg) => {
-                if (pkg.name === "Smallholder Pack") {
-                  // Direct bypass of Lipila payment gateway for Smallholder Pack
+                if (pkg.price <= 0 && pkg.name !== "Free Plan") {
+                  alert("Error: Cannot purchase a paid bundle or package configured with zero or negative price.");
+                  return;
+                }
+                if (pkg.name === "Smallholder Pack" || pkg.name === "Free Plan") {
+                  // Direct bypass of Lipila payment gateway for Smallholder Pack or Free Plan
                   handlePaymentSuccessAllocation({
                     type: "subscription",
                     name: pkg.name,

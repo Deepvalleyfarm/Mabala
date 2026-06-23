@@ -36,7 +36,7 @@ import {
 interface WelcomeScreenProps {
   key?: any;
   onStartDemo: () => void;
-  onInitDemoWorkspace?: (role: "Farmer" | "Vet Practitioner" | "Input Supplier") => void | Promise<void>;
+  onInitDemoWorkspace?: (role: "Farmer" | "Vet Practitioner" | "Input Supplier" | "Free Plan") => void | Promise<void>;
   onRegister: (data: {
     fullName: string;
     email: string;
@@ -150,6 +150,21 @@ export default function WelcomeScreen({
   const [onboardPassword, setOnboardPassword] = useState("");
   const [onboardConfirmPassword, setOnboardConfirmPassword] = useState("");
   const [onboardPkg, setOnboardPkg] = useState<string>("Basic");
+
+  // Registration Confirmation Email States
+  const [confirmRegisterEmail, setConfirmRegisterEmail] = useState("");
+  const [confirmOfftakerEmail, setConfirmOfftakerEmail] = useState("");
+  const [confirmOnboardEmail, setConfirmOnboardEmail] = useState("");
+  const [confirmVetEmail, setConfirmVetEmail] = useState("");
+
+  // Request a Demo States
+  const [demoFullName, setDemoFullName] = useState("");
+  const [demoFarmName, setDemoFarmName] = useState("");
+  const [demoMobile, setDemoMobile] = useState("");
+  const [demoProvince, setDemoProvince] = useState("Central");
+  const [demoTown, setDemoTown] = useState("");
+  const [demoCrops, setDemoCrops] = useState("");
+  const [demoSubmitted, setDemoSubmitted] = useState(false);
 
   // GPS Geolocation and landmark properties
   const [onboardCity, setOnboardCity] = useState("Lusaka");
@@ -327,8 +342,13 @@ export default function WelcomeScreen({
     e.preventDefault();
     setFormError("");
     setOtpError("");
-    if (!fullName || !registerEmail || !farmName || !password || !confirmPassword) {
+    if (!fullName || !registerEmail || !confirmRegisterEmail || !farmName || !password || !confirmPassword) {
       setFormError("Please fill in all fields.");
+      return;
+    }
+
+    if (registerEmail.trim().toLowerCase() !== confirmRegisterEmail.trim().toLowerCase()) {
+      setFormError("⚠️ Primary email and Confirm email fields do not match. Please verify your email.");
       return;
     }
 
@@ -368,8 +388,13 @@ export default function WelcomeScreen({
     setFormError("");
     setOtpError("");
 
-    if (!offtakerLegalName.trim() || !offtakerPacraNumber.trim() || !offtakerTpin.trim() || !offtakerContactPhone.trim() || !offtakerDepotLocation.trim() || !offtakerEmail.trim() || !offtakerPassword.trim() || !offtakerConfirmPassword.trim()) {
+    if (!offtakerLegalName.trim() || !offtakerPacraNumber.trim() || !offtakerTpin.trim() || !offtakerContactPhone.trim() || !offtakerDepotLocation.trim() || !offtakerEmail.trim() || !confirmOfftakerEmail.trim() || !offtakerPassword.trim() || !offtakerConfirmPassword.trim()) {
       setFormError("Please fill in all organization fields.");
+      return;
+    }
+
+    if (offtakerEmail.trim().toLowerCase() !== confirmOfftakerEmail.trim().toLowerCase()) {
+      setFormError("⚠️ Primary corporate email and Confirm corporate email fields do not match. Please verify your email.");
       return;
     }
 
@@ -405,8 +430,13 @@ export default function WelcomeScreen({
     e.preventDefault();
     setFormError("");
     setOtpError("");
-    if (!onboardVendorName.trim() || !onboardPhone.trim() || !onboardEmail.trim() || !onboardPassword.trim() || !onboardConfirmPassword.trim()) {
+    if (!onboardVendorName.trim() || !onboardPhone.trim() || !onboardEmail.trim() || !confirmOnboardEmail.trim() || !onboardPassword.trim() || !onboardConfirmPassword.trim()) {
       setFormError("Please fill in all vendor onboarding fields.");
+      return;
+    }
+
+    if (onboardEmail.trim().toLowerCase() !== confirmOnboardEmail.trim().toLowerCase()) {
+      setFormError("⚠️ Primary email and Confirm email fields do not match. Please verify your email.");
       return;
     }
 
@@ -450,8 +480,13 @@ export default function WelcomeScreen({
     setFormError("");
     setOtpError("");
 
-    if (!vetClinicName.trim() || !vetDirectorName.trim() || !vetEmail.trim() || !vetPassword.trim() || !vetConfirmPassword.trim() || !vetPhone.trim()) {
+    if (!vetClinicName.trim() || !vetDirectorName.trim() || !vetEmail.trim() || !confirmVetEmail.trim() || !vetPassword.trim() || !vetConfirmPassword.trim() || !vetPhone.trim()) {
       setFormError("Please fill in all veterinary clinic onboarding fields: Clinic Name, Vet Name, Email, Phone, and Password.");
+      return;
+    }
+
+    if (vetEmail.trim().toLowerCase() !== confirmVetEmail.trim().toLowerCase()) {
+      setFormError("⚠️ Primary email and Confirm email fields do not match. Please verify your email.");
       return;
     }
 
@@ -726,6 +761,15 @@ export default function WelcomeScreen({
       setSubmittedContact(false);
       setContactForm({ name: "", email: "", message: "" });
     }, 5000);
+  };
+
+  const handleDemoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!demoFullName || !demoFarmName || !demoMobile || !demoProvince || !demoTown || !demoCrops) {
+      setFormError("Please fill in all demo request fields.");
+      return;
+    }
+    setDemoSubmitted(true);
   };
 
   // Rendering the Marketing Landing Page Page
@@ -1313,13 +1357,18 @@ export default function WelcomeScreen({
           {/* CTA ON FEATURES CARD */}
           <div className="text-center mt-12">
             <button
-              onClick={() => {
-                setActiveTab("register");
-                setIsViewingLanding(false);
+              onClick={async () => {
+                if (onInitDemoWorkspace) {
+                  try {
+                    await onInitDemoWorkspace("Free Plan");
+                  } catch (e) {
+                    console.error("Failed to start free plan workspace:", e);
+                  }
+                }
               }}
               className="px-8 py-4 bg-[#4ade80] hover:bg-[#3ec470] text-slate-950 font-black rounded-xl text-sm shadow-md hover:shadow-xl transition-all cursor-pointer inline-flex items-center gap-2 transform hover:-translate-y-0.5"
             >
-              <span>Start Farming Smarter — Free 30 Days</span>
+              <span>Start Farming Smarter - Free Plan</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -1356,31 +1405,30 @@ export default function WelcomeScreen({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {platformPackages
               .filter(pkg => {
-                // If yearly cycle is active, hide Daily Bundle because it cannot be billed yearly
-                if (billingCycle === "yearly" && pkg.id === "PLAN_DAILY") {
-                  return false;
-                }
-                return true;
+                return pkg.id === "PLAN_FREE" || pkg.id === "PLAN_HARVESTER" || pkg.id === "PLAN_ENTERPRISE";
               })
               .map((pkg, idx) => {
-                const isMonthly = pkg.id === "PLAN_MONTHLY";
+                const isPopular = pkg.id === "PLAN_HARVESTER";
                 const isEnterprise = pkg.id === "PLAN_ENTERPRISE";
                 const isDaily = pkg.id === "PLAN_DAILY";
 
                 // Evaluate prices & discounts dynamically
                 let displayPrice = pkg.price;
-                let billingText = "/month";
+                let billingText = isDaily ? "/day" : "/month";
                 let discountText = "";
                 
                 if (billingCycle === "yearly") {
-                  if (isMonthly) {
-                    displayPrice = pkg.yearly_price_zmw || 1944.00;
+                  if (pkg.yearly_price_zmw) {
+                    displayPrice = pkg.yearly_price_zmw;
                     billingText = "/year";
-                    discountText = "10% Off — Save ZMW 216/year";
-                  } else if (isEnterprise) {
-                    displayPrice = pkg.yearly_price_zmw || 25500.00;
-                    billingText = "/year";
-                    discountText = "15% Off — Save ZMW 4,500/year";
+                    if (pkg.id === "PLAN_HARVESTER") {
+                      discountText = "10% Off — Save ZMW 180/year";
+                    } else if (pkg.id === "PLAN_ENTERPRISE") {
+                      discountText = "15% Off — Save ZMW 4,500/year";
+                    } else {
+                      const savings = (pkg.price * 12) - pkg.yearly_price_zmw;
+                      discountText = `Discounted — Save ZMW ${savings}/year`;
+                    }
                   }
                 }
 
@@ -1394,12 +1442,12 @@ export default function WelcomeScreen({
                   <div 
                     key={pkg.id || idx} 
                     className={`rounded-3xl border p-8 flex flex-col justify-between space-y-6 relative hover:scale-[1.01] transition-all duration-300 ${
-                      isMonthly 
+                      isPopular 
                         ? "bg-white text-slate-900 border-[#5cb83a] shadow-xl shadow-emerald-950/25" 
                         : "bg-white/[0.06] text-white border-white/10"
                     }`}
                   >
-                    {isMonthly && (
+                    {isPopular && (
                       <span className="absolute top-0 left-1/2 translate-x-[-50%] translate-y-[-50%] bg-[#5cb83a] text-[#1a3d0f] font-black tracking-widest text-[8px] uppercase px-4 py-1.5 rounded-full shadow shadow-emerald-800/20 whitespace-nowrap leading-none">
                         RECOMMENDED
                       </span>
@@ -1407,22 +1455,22 @@ export default function WelcomeScreen({
                     
                     <div className="space-y-5">
                       <div className="space-y-1">
-                        <span className={`text-[8.5px] uppercase tracking-widest font-black px-2 py-0.5 rounded ${isMonthly ? "bg-emerald-50 text-emerald-800" : "bg-white/10 text-[#5cb83a]"}`}>
+                        <span className={`text-[8.5px] uppercase tracking-widest font-black px-2 py-0.5 rounded ${isPopular ? "bg-emerald-50 text-emerald-800" : "bg-white/10 text-[#5cb83a]"}`}>
                           {targetAudience}
                         </span>
-                        <h3 className={`font-black text-lg pt-1.5 ${isMonthly ? "text-[#1a3d0f]" : "text-slate-100"}`}>{pkg.name}</h3>
-                        <p className={`text-[10.5px] leading-relaxed font-semibold ${isMonthly ? "text-slate-500" : "text-white/60"}`}>
+                        <h3 className={`font-black text-lg pt-1.5 ${isPopular ? "text-[#1a3d0f]" : "text-slate-100"}`}>{pkg.name}</h3>
+                        <p className={`text-[10.5px] leading-relaxed font-semibold ${isPopular ? "text-slate-500" : "text-white/60"}`}>
                           {pkg.features || "High performance connectivity modules"}
                         </p>
                       </div>
                       
                       {/* Price Tag */}
-                      <div className={`flex flex-col py-3 border-y space-y-0.5 ${isMonthly ? "border-slate-100" : "border-white/10"}`}>
+                      <div className={`flex flex-col py-3 border-y space-y-0.5 ${isPopular ? "border-slate-100" : "border-white/10"}`}>
                         <div className="flex items-baseline gap-1.5">
-                          <span className={`text-2xl font-mono font-black ${isMonthly ? "text-[#1a3d0f]" : "text-white"}`}>
+                          <span className={`text-2xl font-mono font-black ${isPopular ? "text-[#1a3d0f]" : "text-white"}`}>
                             ZMW {displayPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                           </span>
-                          <span className={`text-[9.5px] font-bold ${isMonthly ? "text-slate-400" : "text-white/50"}`}>{billingText}</span>
+                          <span className={`text-[9.5px] font-bold ${isPopular ? "text-slate-400" : "text-white/50"}`}>{billingText}</span>
                         </div>
                         {discountText && (
                           <div className="text-[10px] font-black text-rose-500 uppercase tracking-wide">
@@ -1433,21 +1481,21 @@ export default function WelcomeScreen({
 
                       {/* Operations credits & Features bullets */}
                       <ul className="space-y-2.5 text-xs">
-                        <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isMonthly ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
+                        <li className={`flex items-center gap-1.5 font-black p-2 rounded w-fit ${isPopular ? "text-[#2d6a1f] bg-[#e8f5e2]" : "text-[#5cb83a] bg-white/10"}`}>
                           <Zap className="w-4 h-4 fill-current animate-pulse shrink-0" />
                           <span>
                             {isDaily ? "Unmetered Write Access" : `${pkg.credits?.toLocaleString()} Allotted Operations Credits`}
                           </span>
                         </li>
                         <li className="flex gap-2">
-                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isPopular ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
                             Full Double-entry general ledgers
                           </span>
                         </li>
                         <li className="flex gap-2">
-                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isPopular ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
                             Live animal registries & vaccination trackers
                           </span>
                         </li>
@@ -1458,8 +1506,8 @@ export default function WelcomeScreen({
                           </li>
                         )}
                         <li className="flex gap-2">
-                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isMonthly ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
-                          <span className={isMonthly ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
+                          <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isPopular ? "text-[#3d8c2a]" : "text-[#5cb83a]"}`} />
+                          <span className={isPopular ? "text-slate-600 font-semibold" : "text-white/80 font-medium"}>
                             Tax summaries exports
                           </span>
                         </li>
@@ -1473,7 +1521,7 @@ export default function WelcomeScreen({
                         setIsViewingLanding(false);
                       }}
                       className={`w-full py-3 rounded-xl text-xs font-black tracking-wide cursor-pointer transition ${
-                        isMonthly 
+                        isPopular 
                           ? "bg-[#2d6a1f] hover:bg-[#1a3d0f] text-white shadow shadow-emerald-700/20" 
                           : "bg-white text-[#1a3d0f] hover:bg-slate-100 shadow"
                       }`}
@@ -1628,57 +1676,96 @@ export default function WelcomeScreen({
             </div>
           </div>
 
-          <div className="md:col-span-7 bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-wide">Write an Inquiry Message</h3>
-            <p className="text-xs text-slate-400">Fill in the security audited portal inbox to route questions to platform admins immediately.</p>
+          <div className="md:col-span-7 bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4" id="mabala-request-demo-card">
+            <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-wide">Request a demo</h3>
+            <p className="text-xs text-slate-400">Tell us about your farm or business and we'll set up a walkthrough of Mabala tailored to your operation.</p>
             
-            <form onSubmit={handleSendMessage} className="space-y-4 text-xs font-semibold">
-              {submittedContact ? (
+            <form onSubmit={handleDemoSubmit} className="space-y-4 text-xs font-semibold">
+              {demoSubmitted ? (
                 <div className="p-4 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 animate-fade-in text-center space-y-2">
-                  <strong className="block text-xs uppercase font-extrabold text-emerald-900">✔ Message Dispatched</strong>
-                  <p className="text-[11px] leading-relaxed text-emerald-700">Your agricultural inquiry has been routed successfully to <strong>support@mabala.com</strong> via Mabala Secure Message Link. Expect an official response within 24 operational hours.</p>
+                  <strong className="block text-xs uppercase font-extrabold text-emerald-950">✔ Demo Request Logged</strong>
+                  <p className="text-[11px] leading-relaxed text-emerald-700">Thank you, <strong>{demoFullName}</strong>. Your walkthrough of Mabala has been scheduled! We will contact you at <strong>{demoMobile}</strong> shortly.</p>
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Your Full Name</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Full name</label>
                       <input 
                         type="text" 
                         required
-                        value={contactForm.name}
-                        onChange={e => setContactForm(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="Miyanda Chinkuba"
+                        value={demoFullName}
+                        onChange={e => setDemoFullName(e.target.value)}
+                        placeholder="e.g. Miyanda Chinkuba"
                         className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold" 
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Email Address</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Farm or company name</label>
                       <input 
-                        type="email" 
+                        type="text" 
                         required
-                        value={contactForm.email}
-                        onChange={e => setContactForm(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="miyanda@chinkubafarms.com"
+                        value={demoFarmName}
+                        onChange={e => setDemoFarmName(e.target.value)}
+                        placeholder="e.g. Chinkuba Farms"
                         className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold" 
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Mobile number</label>
+                      <input 
+                        type="tel" 
+                        required
+                        value={demoMobile}
+                        onChange={e => setDemoMobile(e.target.value)}
+                        placeholder="e.g. 097 123 4567"
+                        className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Province</label>
+                      <select 
+                        required
+                        value={demoProvince}
+                        onChange={e => setDemoProvince(e.target.value)}
+                        className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold"
+                      >
+                        {["Central", "Copperbelt", "Eastern", "Luapula", "Lusaka", "Muchinga", "Northern", "North-Western", "Southern", "Western"].map(prov => (
+                          <option key={prov} value={prov}>{prov}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-400">Detailed Message</label>
-                    <textarea 
-                      rows={4}
+                    <label className="text-[10px] uppercase font-bold text-slate-400">Town</label>
+                    <input 
+                      type="text" 
                       required
-                      value={contactForm.message}
-                      onChange={e => setContactForm(prev => ({ ...prev, message: e.target.value }))}
-                      placeholder="Input billing, compliance, or biological setup queries..."
+                      value={demoTown}
+                      onChange={e => setDemoTown(e.target.value)}
+                      placeholder="e.g. Mumbwa"
+                      className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400">Crops you grow</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={demoCrops}
+                      onChange={e => setDemoCrops(e.target.value)}
+                      placeholder="e.g. Maize, soybeans, groundnuts"
                       className="w-full text-xs mt-1 p-2.5 border bg-slate-50/50 hover:bg-slate-100/50 focus:bg-white rounded outline-none focus:border-emerald-500 transition-all font-semibold" 
                     />
                   </div>
 
                   <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition cursor-pointer">
-                    Submit Query Securely
+                    Submit request
                   </button>
                 </>
               )}
@@ -2311,6 +2398,18 @@ export default function WelcomeScreen({
                       </div>
                     </div>
 
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Confirm Email Address</label>
+                      <input
+                        type="email"
+                        placeholder="Re-enter email to confirm"
+                        value={confirmRegisterEmail}
+                        onChange={(e) => setConfirmRegisterEmail(e.target.value)}
+                        required
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Farm / Practice Name</label>
@@ -2360,12 +2459,16 @@ export default function WelcomeScreen({
                       >
                         {platformPackages.filter(p => p.isActive && !p.id?.startsWith("vet-") && !p.name?.toLowerCase().includes("veterinary") && !p.name?.toLowerCase().includes("clinic") && p.name !== "Agro-Vet Clinical Suite").map((p) => {
                           const isZm = selectedCountryCode === "ZM";
+                          const billingSuffix = p.id === "PLAN_DAILY" ? "/day" : "/month";
                           const rateLabel = isZm 
-                            ? `ZK ${p.price}` 
-                            : `USD $${p.priceUSD || Math.round(p.price / 20)}`;
+                            ? `ZK ${p.price}${billingSuffix}` 
+                            : `USD $${p.priceUSD || Math.round(p.price / 20)}${billingSuffix}`;
+                          const creditsLabel = p.is_unmetered 
+                            ? "Unmetered Usage" 
+                            : `+${p.credits} Monthly Credits`;
                           return (
                             <option key={p.id || p.name} value={p.name}>
-                              {p.name} (+{p.credits} Monthly Credits) — {rateLabel}
+                              {p.name} ({creditsLabel}) — {rateLabel}
                             </option>
                           );
                         })}
@@ -2552,6 +2655,18 @@ export default function WelcomeScreen({
                           className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Confirm Login Email Address</label>
+                      <input
+                        type="email"
+                        placeholder="vendor@store.com to confirm"
+                        value={confirmOnboardEmail}
+                        onChange={(e) => setConfirmOnboardEmail(e.target.value)}
+                        required
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-medium"
+                      />
                     </div>
 
                     {/* Store Logo Drag & Drop and Select field */}
@@ -2773,6 +2888,18 @@ export default function WelcomeScreen({
                       />
                     </div>
 
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block">Confirm Corporate Registered Email</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="buyer@organisation.com to confirm"
+                        value={confirmOfftakerEmail}
+                        onChange={(e) => setConfirmOfftakerEmail(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-555 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-800"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-[10px] uppercase font-bold text-slate-500 block">Secure Password</label>
@@ -2868,6 +2995,18 @@ export default function WelcomeScreen({
                           className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-medium text-indigo-700"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-indigo-950 block">Confirm Official Vet Email</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="doctor@vetclinic.com to confirm"
+                        value={confirmVetEmail}
+                        onChange={(e) => setConfirmVetEmail(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all mt-1 font-medium"
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
