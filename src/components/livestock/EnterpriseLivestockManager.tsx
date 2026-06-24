@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { safeLocalStorage as localStorage } from "../../utils/safeStorage";
 import { jsPDF } from "jspdf";
 import { 
   ShieldCheck, UserSquare2, RefreshCw, Calendar, Plus, Save, DollarSign, 

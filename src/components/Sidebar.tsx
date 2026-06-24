@@ -39,7 +39,7 @@ interface SidebarProps {
   rolePermissions: { [moduleId: string]: OptionalModulePermission };
   userEmail: string;
   subscriptionTier: string;
-  workspaceMode: "Farmer" | "Veterinary" | "Offtaker";
+  workspaceMode: "Farmer" | "Veterinary" | "Offtaker" | "Partner";
   activeFarmName: string;
   onOpenAnimalWizard?: () => void;
 }
@@ -58,6 +58,22 @@ export default function Sidebar({
   activeFarmName,
   onOpenAnimalWizard
 }: SidebarProps) {
+
+  // Define Partner-focused logical categories
+  const partnerCategories = [
+    {
+      id: "partner-portal",
+      label: "Referral Dashboard",
+      icon: LayoutDashboard,
+      tabId: "partner-portal"
+    },
+    {
+      id: "profile",
+      label: "Account Settings",
+      icon: Settings,
+      tabId: "profile"
+    }
+  ];
 
   // Define 12 Farmer-focused logical categories
   const categories = [
@@ -185,9 +201,11 @@ export default function Sidebar({
 
   const { isSuperAdmin } = useSuperAdmin();
   const isAdmin = isSuperAdmin || currentRole === "Platform Administrator";
-  const displayedCategories = workspaceMode === "Offtaker" 
-    ? [...offtakerCategories] 
-    : [...categories];
+  const displayedCategories = workspaceMode === "Partner"
+    ? [...partnerCategories]
+    : workspaceMode === "Offtaker" 
+      ? [...offtakerCategories] 
+      : [...categories];
 
   if (isAdmin) {
     displayedCategories.push({
@@ -200,6 +218,15 @@ export default function Sidebar({
 
   // Check sub-item filtering based on permissions & isolations
   const isTabAllowed = (tabId: string) => {
+    // Partner restrictions
+    if (workspaceMode === "Partner") {
+      return (
+        tabId === "partner-portal" ||
+        tabId === "profile" ||
+        tabId === "platform-admin"
+      );
+    }
+
     // If in offtaker view, restrict strictly
     if (workspaceMode === "Offtaker") {
       return (
@@ -260,7 +287,7 @@ export default function Sidebar({
   const [openCategory, setOpenCategory] = useState<string | null>(() => {
     const activeCat = displayedCategories.find(c => 
       c.tabId === activeTab || 
-      (c.subItems && c.subItems.some(sub => sub.id === activeTab))
+      ((c as any).subItems && (c as any).subItems.some((sub: any) => sub.id === activeTab))
     );
     return activeCat ? activeCat.id : "dashboard";
   });
@@ -269,7 +296,7 @@ export default function Sidebar({
   useEffect(() => {
     const matchingCat = displayedCategories.find(c => 
       c.tabId === activeTab || 
-      (c.subItems && c.subItems.some(sub => sub.id === activeTab))
+      ((c as any).subItems && (c as any).subItems.some((sub: any) => sub.id === activeTab))
     );
     if (matchingCat) {
       setOpenCategory(matchingCat.id);

@@ -67,6 +67,15 @@ interface WelcomeScreenProps {
     email: string;
     password?: string;
   }) => void | Promise<void>;
+  onRegisterPartner?: (data: {
+    fullName: string;
+    phoneNumber: string;
+    mobileMoneyProvider: string;
+    email: string;
+    facebookGroupOrPageName?: string;
+    whatsappGroupName?: string;
+    password?: string;
+  }) => void | Promise<void>;
   onLogin: (email: string, password?: string) => void | Promise<void>;
   onGoogleSignIn?: () => void | Promise<void>;
   onGoogleSignInBypass?: (email: string) => void | Promise<void>;
@@ -90,6 +99,7 @@ export default function WelcomeScreen({
   onRegister, 
   onRegisterVendor,
   onRegisterOfftaker,
+  onRegisterPartner,
   onLogin,
   onGoogleSignIn,
   onGoogleSignInBypass,
@@ -114,7 +124,7 @@ export default function WelcomeScreen({
   const [showDemoRoleModal, setShowDemoRoleModal] = useState<boolean>(false);
   const [selectedDemoRole, setSelectedDemoRole] = useState<"Farmer" | "Vet Practitioner" | "Input Supplier">("Farmer");
   const [isLaunchingDemo, setIsLaunchingDemo] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet" | "register-offtaker">("login");
+  const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet" | "register-offtaker" | "register-partner">("login");
   const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
   
   // Offtaker onboarding states
@@ -127,6 +137,16 @@ export default function WelcomeScreen({
   const [offtakerEmail, setOfftakerEmail] = useState("");
   const [offtakerPassword, setOfftakerPassword] = useState("");
   const [offtakerConfirmPassword, setOfftakerConfirmPassword] = useState("");
+
+  // Partner onboarding states
+  const [partnerFullName, setPartnerFullName] = useState("");
+  const [partnerPhoneNumber, setPartnerPhoneNumber] = useState("");
+  const [partnerMobileMoneyProvider, setPartnerMobileMoneyProvider] = useState<"airtel" | "mtn" | "zamtel">("airtel");
+  const [partnerEmail, setPartnerEmail] = useState("");
+  const [partnerFacebookGroup, setPartnerFacebookGroup] = useState("");
+  const [partnerWhatsappGroup, setPartnerWhatsappGroup] = useState("");
+  const [partnerPassword, setPartnerPassword] = useState("");
+  const [partnerConfirmPassword, setPartnerConfirmPassword] = useState("");
 
   // Veterinary onboarding states
   const [vetClinicName, setVetClinicName] = useState("");
@@ -421,6 +441,48 @@ export default function WelcomeScreen({
     } catch (err: any) {
       console.error("[Mabala Welcome] Error registering offtaker:", err);
       setFormError(`⚠️ Registration Error: ${err.message || "Failed to register offtaker organizational account."}`);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handlePartnerRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!partnerFullName || !partnerPhoneNumber || !partnerEmail || !partnerPassword) {
+      setFormError("All required fields must be completed.");
+      return;
+    }
+
+    if (partnerPassword !== partnerConfirmPassword) {
+      setFormError("Passwords do not match. Please verify your set password.");
+      return;
+    }
+
+    const phoneClean = partnerPhoneNumber.trim();
+    if (!/^\+?[0-9]{9,15}$/.test(phoneClean)) {
+      setFormError("Please enter a valid phone/mobile wallet number (e.g. 260971234567).");
+      return;
+    }
+
+    setIsSendingOtp(true);
+
+    try {
+      if (onRegisterPartner) {
+        await onRegisterPartner({
+          fullName: partnerFullName,
+          phoneNumber: phoneClean,
+          mobileMoneyProvider: partnerMobileMoneyProvider,
+          email: partnerEmail,
+          facebookGroupOrPageName: partnerFacebookGroup,
+          whatsappGroupName: partnerWhatsappGroup,
+          password: partnerPassword
+        });
+      }
+    } catch (err: any) {
+      console.error("[Mabala Welcome] Error registering partner:", err);
+      setFormError(`⚠️ Registration Error: ${err.message || "Failed to register partner account."}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -2068,6 +2130,17 @@ export default function WelcomeScreen({
                   >
                     🌾 Offtaker
                   </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("register-partner");
+                      setFormError("");
+                    }}
+                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                      activeTab === "register-partner" ? "bg-amber-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    🤝 Partner
+                  </button>
                 </div>
 
                 {activeTab === "login" ? (
@@ -2940,7 +3013,7 @@ export default function WelcomeScreen({
                       <span>{isSendingOtp ? "Initializing..." : "REGISTER FREE OFFTAKER ORG"}</span>
                     </button>
                   </form>
-                ) : (
+                ) : activeTab === "register-vet" ? (
                   <form onSubmit={handleVetRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div>
                       <h2 className="text-xl font-sans font-extrabold tracking-tight text-indigo-900">Veterinary Clinic Onboarding</h2>
@@ -3213,6 +3286,129 @@ export default function WelcomeScreen({
                                 : "ZK 4,800"
                             } VIA LIPILA`}
                       </span>
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handlePartnerRegisterSubmit} className="space-y-3 font-semibold text-xs text-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-200 font-sans">
+                    <div>
+                      <h2 className="text-xl font-sans font-extrabold tracking-tight text-amber-950">Partner Referral Program Signup</h2>
+                      <p className="text-[11px] text-slate-500 font-medium leading-normal">
+                        Refer farmers to Mabala and earn recurring commission on paid subscriptions.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block">Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. John Banda"
+                        value={partnerFullName}
+                        onChange={(e) => setPartnerFullName(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Mobile Money Wallet Phone *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 260971111111"
+                          value={partnerPhoneNumber}
+                          onChange={(e) => setPartnerPhoneNumber(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                        <span className="text-[9px] text-slate-400 font-medium block mt-0.5">Used for commission payouts.</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Wallet Network *</label>
+                        <select
+                          value={partnerMobileMoneyProvider}
+                          onChange={(e) => setPartnerMobileMoneyProvider(e.target.value as any)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        >
+                          <option value="airtel">Airtel Money</option>
+                          <option value="mtn">MTN Mobile Money</option>
+                          <option value="zamtel">Zamtel Kwacha</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block">Account Email *</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. partner@example.com"
+                        value={partnerEmail}
+                        onChange={(e) => setPartnerEmail(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Facebook Group/Page (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Zambia Farmers Alliance"
+                          value={partnerFacebookGroup}
+                          onChange={(e) => setPartnerFacebookGroup(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">WhatsApp Group Name (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Agro Dealers Hub"
+                          value={partnerWhatsappGroup}
+                          onChange={(e) => setPartnerWhatsappGroup(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Secure Password *</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={partnerPassword}
+                          onChange={(e) => setPartnerPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Confirm Password *</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={partnerConfirmPassword}
+                          onChange={(e) => setPartnerConfirmPassword(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    {formError && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-[10.5px] font-bold leading-relaxed animate-fade-in shadow-sm">
+                        ⚠️ {formError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSendingOtp}
+                      className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{isSendingOtp ? "Onboarding Partner..." : "JOIN MABALA PARTNER NETWORK"}</span>
                     </button>
                   </form>
                 )}

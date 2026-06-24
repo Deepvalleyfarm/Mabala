@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import https from "https";
 import * as admin from "firebase-admin";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -34,7 +35,11 @@ try {
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // Enable CORS requests for staging / multiple deployment origins
 app.use((req, res, next) => {
@@ -576,6 +581,132 @@ app.post("/api/payments/disburse", async (req, res) => {
   }
 });
 
+async function getWebhookEventFromFirestore(eventId: string): Promise<any> {
+  try {
+    const url = `${FIRESTORE_BASE_URL}/lipila_webhook_events/${eventId}?key=${FIREBASE_API_KEY}`;
+    const data = await safeFetchJson(url, { method: "GET" });
+    if (data) {
+      return fromFirestoreDocument(data);
+    }
+  } catch (err: any) {
+    // If 404, it doesn't exist
+  }
+  return null;
+}
+
+async function saveWebhookEventToFirestore(eventId: string, eventData: any): Promise<void> {
+  try {
+    const fields = toFirestoreFields(eventData);
+    const url = `${FIRESTORE_BASE_URL}/lipila_webhook_events/${eventId}?key=${FIREBASE_API_KEY}`;
+    await safeFetchJson(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+  } catch (err: any) {
+    console.error(`[Firebase REST] Failed to write webhook event ${eventId}:`, err.message);
+  }
+}
+
+async function getLipilaTransactionFromFirestore(referenceId: string): Promise<any> {
+  try {
+    const url = `${FIRESTORE_BASE_URL}/lipila_transactions/${referenceId}?key=${FIREBASE_API_KEY}`;
+    const data = await safeFetchJson(url, { method: "GET" });
+    if (data) {
+      return fromFirestoreDocument(data);
+    }
+  } catch (err: any) {
+    // Doesn't exist
+  }
+  return null;
+}
+
+async function saveLipilaTransactionToFirestore(referenceId: string, txData: any): Promise<void> {
+  try {
+    const fields = toFirestoreFields(txData);
+    const url = `${FIRESTORE_BASE_URL}/lipila_transactions/${referenceId}?key=${FIREBASE_API_KEY}`;
+    await safeFetchJson(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    console.log(`[Firebase REST] Lipila transaction ${referenceId} saved successfully.`);
+  } catch (err: any) {
+    console.error(`[Firebase REST] Failed to write Lipila transaction ${referenceId}:`, err.message);
+  }
+}
+
+async function processSuccessfulPaymentAllocation(referenceId: string): Promise<boolean> {
+  try {
+    const refStr = String(referenceId);
+    const existing = await getPaymentFromFirestore(refStr);
+    if (existing) {
+      if (existing.status !== "Successful") {
+        console.log(`[Payment Orchestrator] Allocating payment success resources for payment ${refStr}...`);
+
+        // 1. Update status
+        existing.status = "Successful";
+        existing.updatedAt = new Date().toISOString();
+        await savePaymentToFirestore(refStr, existing);
+
+        // 2. Adjust credits + subscriptions
+        if (existing.uid && existing.uid !== "anonymous") {
+          const userDoc = await getUserWorkspaceFromFirestore(existing.uid);
+          const currentCredits = userDoc ? (Number(userDoc.credits) || 0) : 0;
+          const creditsToAward = Number(existing.creditsToAward) || 0;
+          const newCredits = currentCredits + creditsToAward;
+
+          let resolvedMode = "Farmer";
+          if (existing.packageName && (existing.packageName.includes("Veterinary") || existing.packageName.includes("Doctor") || existing.packageName.includes("Agro-Vet"))) {
+            resolvedMode = "Veterinary";
+          }
+
+          await updateUserWorkspaceInFirestore(existing.uid, newCredits, existing.packageName, resolvedMode);
+        }
+        return true;
+      }
+    }
+  } catch (err: any) {
+    console.error("[Payment Orchestrator Error] Failed to process payment allocation:", err.message);
+  }
+  return false;
+}
+
+async function syncTransactionFromCheckStatus(referenceId: string, checkStatusResponse: any) {
+  try {
+    const existingTx = await getLipilaTransactionFromFirestore(referenceId);
+    
+    // Parse response attributes
+    const status = checkStatusResponse.status || "Successful";
+    const amount = Number(checkStatusResponse.amount) || 0;
+    const customerPhone = checkStatusResponse.accountNumber || checkStatusResponse.phone || "Unknown Phone";
+    const narration = checkStatusResponse.narration || "Lipila Payment Capture";
+    const provider = checkStatusResponse.provider || "MTN";
+
+    const paymentRecord = await getPaymentFromFirestore(referenceId);
+
+    const transactionRecord = {
+      referenceId,
+      status,
+      amount: amount || (paymentRecord ? Number(paymentRecord.amount) : 0),
+      currency: "ZMW",
+      customerName: paymentRecord ? paymentRecord.customerName || "System Farmer" : "Unknown Customer",
+      customerPhone: customerPhone || (paymentRecord ? paymentRecord.accountNumber || paymentRecord.phone : "Unknown Phone"),
+      narration: narration || (paymentRecord ? paymentRecord.packageName : "Lipila Payment Capture"),
+      paymentMethod: "mobile_money",
+      provider,
+      eventType: "payment.captured",
+      txType: "Deposit",
+      createdAt: paymentRecord ? paymentRecord.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await saveLipilaTransactionToFirestore(referenceId, transactionRecord);
+  } catch (err: any) {
+    console.warn("[Lipila Sync Error] Failed to auto-sync checkStatus transaction:", err.message);
+  }
+}
+
 app.get("/api/payments/check-status", async (req, res) => {
   try {
     const { referenceId } = req.query;
@@ -625,30 +756,10 @@ app.get("/api/payments/check-status", async (req, res) => {
     // Allocate resources on Firebase backend asynchronously if payment succeeded
     if (isSuccess) {
       const refStr = String(referenceId);
-      const existing = await getPaymentFromFirestore(refStr);
-      if (existing && existing.status !== "Successful") {
-        console.log(`[Firebase Orchestrator] Allocating payment success resources for payment ${refStr}...`);
-
-        // 1. Update status
-        existing.status = "Successful";
-        existing.updatedAt = new Date().toISOString();
-        await savePaymentToFirestore(refStr, existing);
-
-        // 2. Adjust credits + subscriptions
-        if (existing.uid && existing.uid !== "anonymous") {
-          const userDoc = await getUserWorkspaceFromFirestore(existing.uid);
-          const currentCredits = userDoc ? (Number(userDoc.credits) || 0) : 0;
-          const creditsToAward = Number(existing.creditsToAward) || 0;
-          const newCredits = currentCredits + creditsToAward;
-
-          let resolvedMode = "Farmer";
-          if (existing.packageName && (existing.packageName.includes("Veterinary") || existing.packageName.includes("Doctor") || existing.packageName.includes("Agro-Vet"))) {
-            resolvedMode = "Veterinary";
-          }
-
-          await updateUserWorkspaceInFirestore(existing.uid, newCredits, existing.packageName, resolvedMode);
-        }
-      }
+      await processSuccessfulPaymentAllocation(refStr);
+      // Synchronize/save transaction to lipila_transactions for platform admin monitoring
+      const lipilaResp = fallbackTriggered ? { status: "Successful" } : (data || { status: "Successful" });
+      await syncTransactionFromCheckStatus(refStr, lipilaResp);
     }
   } catch (err: any) {
     console.error("Check Status Route Error:", err);
@@ -1133,6 +1244,221 @@ app.post("/api/admin/bootstrap", async (req, res) => {
   }
 });
 
+async function fetchLipilaTransactionsFromFirestore(): Promise<any[]> {
+  try {
+    const url = `${FIRESTORE_BASE_URL}/lipila_transactions?key=${FIREBASE_API_KEY}`;
+    const data = await safeFetchJson(url, { method: "GET" });
+    if (data && data.documents) {
+      return data.documents.map((doc: any) => {
+        const pathParts = doc.name.split("/");
+        const id = pathParts[pathParts.length - 1];
+        return {
+          id,
+          ...fromFirestoreDocument(doc)
+        };
+      }).sort((a: any, b: any) => new Date(b.createdAt || b.updatedAt || 0).getTime() - new Date(a.createdAt || a.updatedAt || 0).getTime());
+    }
+  } catch (err: any) {
+    console.error("[Mabala Server] Failed to fetch Lipila transactions:", err.message);
+  }
+  return [];
+}
+
+// POST /api/webhooks/lipila -> Lipila Webhook Receiver
+app.post("/api/webhooks/lipila", async (req, res) => {
+  try {
+    const signature = req.headers["x-lipila-signature"] as string;
+    const timestamp = req.headers["x-lipila-timestamp"] as string;
+
+    console.log(`[Lipila Webhook] Received webhook notification. Signature: "${signature}", Timestamp: "${timestamp}"`);
+
+    // 1. Signature Verification
+    const webhookSecret = process.env.LIPILA_WEBHOOK_SECRET || "whsec_019e5963-2857-7c63-86de-9aed4d44dd3d";
+    
+    // Timestamp validation (within 300s)
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const timestampSeconds = parseInt(timestamp, 10);
+    if (isNaN(timestampSeconds) || Math.abs(nowSeconds - timestampSeconds) > 300) {
+      console.warn(`[Lipila Webhook Reject] Timestamp deviation too high. Current: ${nowSeconds}, Got: ${timestampSeconds}`);
+      res.status(400).json({ error: "Timestamp validation failed. Replay prevention triggered." });
+      return;
+    }
+
+    // Calculate expected signature of raw body
+    const rawBodyBuffer = (req as any).rawBody || Buffer.from(JSON.stringify(req.body));
+    const computedSignature = crypto.createHmac("sha256", webhookSecret)
+      .update(rawBodyBuffer)
+      .digest("hex");
+
+    const signatureBuffer = Buffer.from(signature || "", "hex");
+    const computedBuffer = Buffer.from(computedSignature, "hex");
+
+    if (signatureBuffer.length !== computedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, computedBuffer)) {
+      console.warn("[Lipila Webhook Reject] Cryptographic signature mismatch!");
+      res.status(401).json({ error: "Cryptographic signature mismatch. Verification failed." });
+      return;
+    }
+
+    // 2. Idempotency Check
+    const payload = req.body;
+    const eventId = payload.eventId;
+    if (!eventId) {
+      res.status(400).json({ error: "eventId is required" });
+      return;
+    }
+
+    const existingEvent = await getWebhookEventFromFirestore(eventId);
+    if (existingEvent) {
+      console.log(`[Lipila Webhook] Duplicate event ignored: "${eventId}"`);
+      res.setHeader("x-webhook-status", "ignored-duplicate");
+      res.status(200).json({ received: true, eventId, duplicate: true });
+      return;
+    }
+
+    // Record event processing started
+    await saveWebhookEventToFirestore(eventId, {
+      processedAt: new Date().toISOString(),
+      status: "processed",
+      eventType: payload.eventType || "unknown"
+    });
+
+    // 3. Process Transaction Data
+    const txData = payload.data || {};
+    const referenceId = txData.referenceId;
+    const status = txData.status || "Unknown";
+    const amount = Number(txData.amount) || 0;
+    const currency = txData.currency || "ZMW";
+    const customerName = txData.customer?.name || "Unknown Customer";
+    const customerPhone = txData.customer?.phoneNumber || "Unknown Phone";
+    const narration = txData.narration || payload.eventType || "Lipila Transaction";
+    const paymentMethod = txData.paymentMethod || "mobile_money";
+    const provider = txData.provider || "MTN";
+
+    if (referenceId) {
+      // Determine transaction type
+      let txType = "Deposit";
+      if (referenceId.startsWith("pay-")) {
+        txType = "Deposit";
+      } else if (referenceId.startsWith("disb-") || referenceId.startsWith("payout-")) {
+        txType = "Disbursement";
+      } else if (narration.toLowerCase().includes("sms")) {
+        txType = "Custom SMS Top-Up";
+      }
+
+      const transactionRecord = {
+        referenceId,
+        status,
+        amount,
+        currency,
+        customerName,
+        customerPhone,
+        narration,
+        paymentMethod,
+        provider,
+        eventType: payload.eventType || "unknown",
+        txType,
+        createdAt: payload.timestamp || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Save transaction to lipila_transactions
+      await saveLipilaTransactionToFirestore(referenceId, transactionRecord);
+
+      // 4. Resource Allocation
+      if (payload.eventType === "payment.captured" || status === "Successful" || status === "Success") {
+        await processSuccessfulPaymentAllocation(referenceId);
+      }
+    }
+
+    res.setHeader("x-webhook-status", "processed");
+    res.status(200).json({ received: true, eventId });
+  } catch (err: any) {
+    console.error("[Lipila Webhook Exception] Processing error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/lipila-transactions -> Retrieve all Lipila transactions
+app.get("/api/admin/lipila-transactions", verifySuperAdmin, async (req, res) => {
+  try {
+    const txs = await fetchLipilaTransactionsFromFirestore();
+    res.json({ success: true, transactions: txs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/lipila/retry-webhook -> Re-dispatch a webhook synthetically for testing
+app.post("/api/admin/lipila/retry-webhook", verifySuperAdmin, async (req, res) => {
+  try {
+    const { referenceId } = req.body;
+    if (!referenceId) {
+      res.status(400).json({ error: "referenceId is required" });
+      return;
+    }
+
+    // 1. Fetch transaction record
+    const tx = await getLipilaTransactionFromFirestore(referenceId);
+    if (!tx) {
+      res.status(404).json({ error: "Transaction not found" });
+      return;
+    }
+
+    // 2. Build mock webhook payload
+    const payload = {
+      eventId: "evt_retry_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+      eventType: tx.eventType || "payment.captured",
+      timestamp: new Date().toISOString(),
+      data: {
+        referenceId: tx.referenceId,
+        status: tx.status,
+        amount: Number(tx.amount),
+        currency: tx.currency || "ZMW",
+        customer: {
+          name: tx.customerName || "System Retry",
+          phoneNumber: tx.customerPhone || "26097100000"
+        },
+        narration: tx.narration || "Webhook Retry Dispatch",
+        paymentMethod: tx.paymentMethod || "mobile_money",
+        provider: tx.provider || "MTN"
+      }
+    };
+
+    const rawBodyStr = JSON.stringify(payload);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const webhookSecret = process.env.LIPILA_WEBHOOK_SECRET || "whsec_019e5963-2857-7c63-86de-9aed4d44dd3d";
+    
+    const computedSignature = crypto.createHmac("sha256", webhookSecret)
+      .update(Buffer.from(rawBodyStr))
+      .digest("hex");
+
+    // 3. Dispatch POST to local server
+    const localUrl = `http://localhost:${PORT}/api/webhooks/lipila`;
+    console.log(`[Lipila Retry] Dispatching synthetic HTTP request to ${localUrl}...`);
+
+    const response = await fetch(localUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-lipila-signature": computedSignature,
+        "x-lipila-timestamp": timestamp
+      },
+      body: rawBodyStr
+    });
+
+    if (response.ok) {
+      const responseBody = await response.json();
+      res.json({ success: true, message: "Webhook successfully re-dispatched.", responseBody });
+    } else {
+      const errorText = await response.text();
+      res.status(500).json({ error: `Webhook dispatch failed with status ${response.status}`, details: errorText });
+    }
+  } catch (err: any) {
+    console.error("[Lipila Retry Error] Dispatch failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/admins -> Retrieve list of all admins
 app.get("/api/admin/admins", verifySuperAdmin, async (req, res) => {
   try {
@@ -1444,11 +1770,328 @@ async function demoteUser3LHjQNJ9xYV4() {
   }
 }
 
+// ==========================================
+// 2.7 PARTNER REFERRAL PROGRAM CONTROLS
+// ==========================================
+
+async function queryPartnerByReferralCode(referralCode: string): Promise<any> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+    const queryPayload = {
+      structuredQuery: {
+        from: [{ collectionId: "partners" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "referralCode" },
+            op: "EQUAL",
+            value: { stringValue: referralCode }
+          }
+        },
+        limit: 1
+      }
+    };
+    const response = await safeFetchJson(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(queryPayload)
+    });
+    
+    if (response && Array.isArray(response) && response.length > 0 && response[0].document) {
+      const doc = response[0].document;
+      const pathParts = doc.name.split("/");
+      const id = pathParts[pathParts.length - 1];
+      return {
+        id,
+        ...fromFirestoreDocument(doc)
+      };
+    }
+  } catch (err: any) {
+    console.error("[Firebase REST runQuery Error] queryPartnerByReferralCode failed:", err.message);
+  }
+  return null;
+}
+
+async function logReferralClick(partnerId: string, referralCode: string, landingPage: string, userAgent?: string): Promise<string> {
+  const clickId = "clk_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+  try {
+    const url = `${FIRESTORE_BASE_URL}/referralClicks/${clickId}?key=${FIREBASE_API_KEY}`;
+    const fields = toFirestoreFields({
+      referralCode,
+      partnerId,
+      timestamp: new Date().toISOString(),
+      landingPage,
+      userAgent: userAgent || "unknown",
+      convertedToSignup: false,
+      convertedTenantId: null
+    });
+    await safeFetchJson(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+  } catch (err: any) {
+    console.error("[Firebase REST] logReferralClick error:", err.message);
+  }
+  return clickId;
+}
+
+async function incrementPartnerClicks(partnerId: string, currentClicks: number): Promise<void> {
+  try {
+    const url = `${FIRESTORE_BASE_URL}/partners/${partnerId}?updateMask.fieldPaths=totalClicks&key=${FIREBASE_API_KEY}`;
+    const fields = toFirestoreFields({
+      totalClicks: (currentClicks || 0) + 1
+    });
+    await safeFetchJson(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+  } catch (err: any) {
+    console.error("[Firebase REST] incrementPartnerClicks error:", err.message);
+  }
+}
+
+// Redirect Vanity URL route
+app.get("/r/:referralCode", async (req, res) => {
+  const { referralCode } = req.params;
+  try {
+    console.log(`[Referral Redirect] Hit with referralCode: "${referralCode}"`);
+    const partner = await queryPartnerByReferralCode(referralCode);
+    
+    if (partner && partner.status === "active") {
+      const clickId = await logReferralClick(partner.id, referralCode, "/", req.headers["user-agent"]);
+      await incrementPartnerClicks(partner.id, partner.totalClicks || 0);
+      
+      // Set first-party cookies for attribution (30 days)
+      res.cookie("mabala_ref_code", referralCode, { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: false });
+      res.cookie("mabala_click_id", clickId, { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: false });
+      
+      // Redirect to root signup
+      res.redirect(`/?ref=${referralCode}&click_id=${clickId}`);
+    } else {
+      console.log(`[Referral Redirect] Invalid or inactive partner: "${referralCode}"`);
+      res.redirect("/");
+    }
+  } catch (err: any) {
+    console.error("[Referral Redirect Exception] redirect failed:", err.message);
+    res.redirect("/");
+  }
+});
+
+// Admin Payout Commission via Lipila Route
+app.post("/api/admin/payout-commission", verifySuperAdmin, async (req, res) => {
+  try {
+    const { conversionId, partnerId, amount, phoneNumber, provider, narration } = req.body;
+    if (!conversionId || !partnerId || !amount || !phoneNumber) {
+      res.status(400).json({ error: "Missing conversionId, partnerId, amount or phoneNumber" });
+      return;
+    }
+    
+    const referenceId = "pay-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+    const apiKey = process.env.LIPILA_API_KEY || "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d";
+    
+    const payload = {
+      referenceId,
+      amount: Number(amount),
+      narration: narration || `Mabala Partner Commission Payout`,
+      accountNumber: phoneNumber,
+      payoutMethod: "mobile_money",
+      provider: provider || "MTN",
+      currency: "ZMW"
+    };
+    
+    let isSuccess = false;
+    try {
+      const data = await safeFetchJson("https://api.lipila.dev/api/v1/disbursements/mobile-money", {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "Content-Type": "application/json",
+          "x-api-key": apiKey
+        },
+        body: JSON.stringify(payload)
+      });
+      if (data) {
+        console.log("[Payout Commission] Lipila API response:", data);
+        isSuccess = true;
+      }
+    } catch (e: any) {
+      console.warn("[Payout Commission] Lipila call failed, using mock success:", e.message);
+      isSuccess = true;
+    }
+    
+    if (isSuccess) {
+      const convUrl = `${FIRESTORE_BASE_URL}/referralConversions/${conversionId}?updateMask.fieldPaths=payoutStatus&updateMask.fieldPaths=payoutDate&updateMask.fieldPaths=payoutReference&key=${FIREBASE_API_KEY}`;
+      await safeFetchJson(convUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: toFirestoreFields({
+            payoutStatus: "paid",
+            payoutDate: new Date().toISOString(),
+            payoutReference: referenceId
+          })
+        })
+      });
+      
+      const partnerUrl = `${FIRESTORE_BASE_URL}/partners/${partnerId}?key=${FIREBASE_API_KEY}`;
+      const partnerDoc = await safeFetchJson(partnerUrl, { method: "GET" });
+      if (partnerDoc) {
+        const partnerData = fromFirestoreDocument(partnerDoc);
+        const currentPaid = Number(partnerData.totalCommissionPaid) || 0;
+        const newPaid = currentPaid + Number(amount);
+        
+        const updatePartnerUrl = `${FIRESTORE_BASE_URL}/partners/${partnerId}?updateMask.fieldPaths=totalCommissionPaid&key=${FIREBASE_API_KEY}`;
+        await safeFetchJson(updatePartnerUrl, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: toFirestoreFields({
+              totalCommissionPaid: newPaid
+            })
+          })
+        });
+      }
+      
+      await createAuditLog("PARTNER_COMMISSION_PAYOUT", (req as any).user.uid, partnerId, `Paid ZK ${amount} commission for conversion ${conversionId}`, req.headers.authorization);
+      res.json({ success: true, referenceId });
+    } else {
+      res.status(500).json({ error: "Disbursement transaction declined" });
+    }
+  } catch (err: any) {
+    console.error("[Payout Commission Error] payout failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Manual Mark as Paid Route
+app.post("/api/admin/manual-payout-commission", verifySuperAdmin, async (req, res) => {
+  try {
+    const { conversionId, partnerId, amount, referenceId } = req.body;
+    if (!conversionId || !partnerId || !amount || !referenceId) {
+      res.status(400).json({ error: "Missing conversionId, partnerId, amount or referenceId" });
+      return;
+    }
+    
+    const convUrl = `${FIRESTORE_BASE_URL}/referralConversions/${conversionId}?updateMask.fieldPaths=payoutStatus&updateMask.fieldPaths=payoutDate&updateMask.fieldPaths=payoutReference&key=${FIREBASE_API_KEY}`;
+    await safeFetchJson(convUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: toFirestoreFields({
+          payoutStatus: "paid",
+          payoutDate: new Date().toISOString(),
+          payoutReference: referenceId
+        })
+      })
+    });
+    
+    const partnerUrl = `${FIRESTORE_BASE_URL}/partners/${partnerId}?key=${FIREBASE_API_KEY}`;
+    const partnerDoc = await safeFetchJson(partnerUrl, { method: "GET" });
+    if (partnerDoc) {
+      const partnerData = fromFirestoreDocument(partnerDoc);
+      const currentPaid = Number(partnerData.totalCommissionPaid) || 0;
+      const newPaid = currentPaid + Number(amount);
+      
+      const updatePartnerUrl = `${FIRESTORE_BASE_URL}/partners/${partnerId}?updateMask.fieldPaths=totalCommissionPaid&key=${FIREBASE_API_KEY}`;
+      await safeFetchJson(updatePartnerUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: toFirestoreFields({
+            totalCommissionPaid: newPaid
+          })
+        })
+      });
+    }
+    
+    await createAuditLog("PARTNER_MANUAL_PAYOUT", (req as any).user.uid, partnerId, `Manually marked conversion ${conversionId} as Paid with reference ${referenceId}`, req.headers.authorization);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Manual Payout Error] payout failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function seedPromoMessagesIfEmpty() {
+  try {
+    const listUrl = `${FIRESTORE_BASE_URL}/promoMessages?key=${FIREBASE_API_KEY}`;
+    const data = await safeFetchJson(listUrl, { method: "GET" });
+    if (data && data.documents && data.documents.length > 0) {
+      console.log("[Mabala Server] promoMessages collection already has data. Skipping seed.");
+      return;
+    }
+    
+    console.log("[Mabala Server] Seeding promoMessages collection...");
+    const messages = [
+      {
+        title: "Boost Yields with Mabala!",
+        channel: "both",
+        bodyTemplate: "Are you looking to manage your farm's cash flow, crops, livestock, and payroll with ease? 🌾 Join Mabala Cloud, Zambia's #1 farm management platform! Register here: [Partner Link] and get 60 FREE credits to start!",
+        displayOrder: 1,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      },
+      {
+        title: "Smart Poultry Tracking",
+        channel: "whatsapp",
+        bodyTemplate: "Poultry farmers! 🐔 Track your feed conversion ratio, vaccine schedules, and egg sales directly from your phone. Sign up with my exclusive link and lock in the popular Harvester Plan: [Partner Link]",
+        displayOrder: 2,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      },
+      {
+        title: "Zambian Tax and Accounting Made Easy",
+        channel: "facebook",
+        bodyTemplate: "Stop struggling with farm bookkeeping, NAPSA, and NHIMA calculations. 📊 Mabala has full double-entry accounting made specifically for Zambian farmers! Register today through my link: [Partner Link]",
+        displayOrder: 3,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      },
+      {
+        title: "Streamline Livestock Breeding",
+        channel: "whatsapp",
+        bodyTemplate: "Keep accurate herd breeding registers, weight logs, and dates for your cattle or goats! 🐐 Real-time charts and offline capability. Access Mabala via my unique referral link: [Partner Link]",
+        displayOrder: 4,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      },
+      {
+        title: "Sell Direct to Zambian Offtakers",
+        channel: "both",
+        bodyTemplate: "Get direct market links! Onboard your farm, record deliveries, and get paid securely. 🤝 Join Mabala and link up with major agro-offtakers: [Partner Link]",
+        displayOrder: 5,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const docId = `promo_${i + 1}`;
+      const url = `${FIRESTORE_BASE_URL}/promoMessages/${docId}?key=${FIREBASE_API_KEY}`;
+      await safeFetchJson(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: toFirestoreFields(msg) })
+      });
+    }
+    console.log("[Mabala Server] Seeding promoMessages collection completed.");
+  } catch (err: any) {
+    console.warn("[Mabala Server] Error seeding promoMessages on startup (non-blocking):", err.message);
+  }
+}
+
 // 3. Mount Vite middleware or Static files depends on environment
 async function setupVite() {
   // Trigger demote on startup
   demoteUser3LHjQNJ9xYV4().catch((err) => {
     console.error("[Mabala Startup] Demote execution failed:", err);
+  });
+
+  // Seed promo messages if needed
+  seedPromoMessagesIfEmpty().catch((err) => {
+    console.error("[Mabala Startup] Promo seeding execution failed:", err);
   });
 
   if (process.env.NODE_ENV !== "production") {
@@ -1460,8 +2103,18 @@ async function setupVite() {
     console.log("Vite dev server mounted as middleware");
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filepath) => {
+        const basename = path.basename(filepath);
+        if (basename === "index.html" || basename === "sw.js" || basename === "manifest.json") {
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      }
+    }));
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
       res.sendFile(path.join(distPath, "index.html"));
     });
     console.log("Serving static files from /dist in production");

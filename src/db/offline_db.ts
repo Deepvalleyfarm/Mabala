@@ -1,4 +1,5 @@
 import { db } from "../firebase";
+import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { collection, addDoc, updateDoc, doc, setDoc } from "firebase/firestore";
 
 export interface PendingOperation {
@@ -24,62 +25,81 @@ export interface AuditLogEntry {
 }
 
 const DB_NAME = "mabala_offline_db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export function initOfflineDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.indexedDB) {
+    if (typeof window === "undefined") {
       reject(new Error("IndexedDB is not supported in this environment"));
       return;
     }
 
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    let idb: IDBFactory | undefined;
+    try {
+      idb = window.indexedDB;
+    } catch (e) {
+      console.warn("[Mabala Sandbox] Access to window.indexedDB property was denied:", e);
+    }
 
-    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      
-      const stores = [
-        "pending_operations",
-        "livestock",
-        "poultry",
-        "crops",
-        "inventory",
-        "sales",
-        "finance",
-        "employees",
-        "veterinary",
-        "wallet",
-        "user_settings",
-        "offtakers",
-        "delivery_notes",
-        "audit_logs",
-        "offtaker_products",
-        "farmer_offtaker_links",
-        "adjustment_notes",
-        "offtaker_wallets",
-        "wallet_transactions",
-        "payouts",
-        "fee_configs"
-      ];
+    if (!idb) {
+      reject(new Error("IndexedDB is not supported or accessible in this environment"));
+      return;
+    }
 
-      stores.forEach(store => {
-        if (!db.objectStoreNames.contains(store)) {
-          if (store === "pending_operations") {
-            db.createObjectStore(store, { keyPath: "operationId" });
-          } else {
-            db.createObjectStore(store, { keyPath: "id" });
+    try {
+      const request = idb.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        
+        const stores = [
+          "pending_operations",
+          "livestock",
+          "poultry",
+          "crops",
+          "inventory",
+          "sales",
+          "finance",
+          "employees",
+          "veterinary",
+          "wallet",
+          "user_settings",
+          "offtakers",
+          "delivery_notes",
+          "audit_logs",
+          "offtaker_products",
+          "farmer_offtaker_links",
+          "adjustment_notes",
+          "offtaker_wallets",
+          "wallet_transactions",
+          "payouts",
+          "fee_configs",
+          "farmers",
+          "registered_farmers"
+        ];
+
+        stores.forEach(store => {
+          if (!db.objectStoreNames.contains(store)) {
+            if (store === "pending_operations") {
+              db.createObjectStore(store, { keyPath: "operationId" });
+            } else {
+              db.createObjectStore(store, { keyPath: "id" });
+            }
           }
-        }
-      });
-    };
+        });
+      };
 
-    request.onsuccess = (event) => {
-      resolve((event.target as IDBOpenDBRequest).result);
-    };
+      request.onsuccess = (event) => {
+        resolve((event.target as IDBOpenDBRequest).result);
+      };
 
-    request.onerror = (event) => {
-      reject((event.target as IDBOpenDBRequest).error);
-    };
+      request.onerror = (event) => {
+        reject((event.target as IDBOpenDBRequest).error);
+      };
+    } catch (openError) {
+      console.warn("[Mabala Sandbox] Failed to execute 'open' on IDBFactory:", openError);
+      reject(new Error("IndexedDB open was blocked or failed"));
+    }
   });
 }
 
@@ -117,52 +137,101 @@ export function getTenantSubscriptionStatus(tenantId: string): {
 }
 
 // Primary DB helpers
-export async function saveToOfflineStore(storeName: string, data: any): Promise<void> {
-  const dbInst = await initOfflineDb();
-  return new Promise((resolve, reject) => {
-    const tx = dbInst.transaction(storeName, "readwrite");
-    const store = tx.objectStore(storeName);
-    const request = store.put(data);
+let useMemoryDb = false;
+const memoryDb: Record<string, Record<string, any>> = {};
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+export async function saveToOfflineStore(storeName: string, data: any): Promise<void> {
+  if (useMemoryDb) {
+    if (!memoryDb[storeName]) memoryDb[storeName] = {};
+    const key = storeName === "pending_operations" ? data.operationId : data.id;
+    memoryDb[storeName][key] = data;
+    return;
+  }
+  try {
+    const dbInst = await initOfflineDb();
+    return new Promise((resolve, reject) => {
+      const tx = dbInst.transaction(storeName, "readwrite");
+      const store = tx.objectStore(storeName);
+      const request = store.put(data);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`[Offline DB] saveToOfflineStore failed for ${storeName}, falling back to memory storage:`, e);
+    useMemoryDb = true;
+    if (!memoryDb[storeName]) memoryDb[storeName] = {};
+    const key = storeName === "pending_operations" ? data.operationId : data.id;
+    memoryDb[storeName][key] = data;
+  }
 }
 
 export async function getFromOfflineStore(storeName: string, id: string): Promise<any> {
-  const dbInst = await initOfflineDb();
-  return new Promise((resolve, reject) => {
-    const tx = dbInst.transaction(storeName, "readonly");
-    const store = tx.objectStore(storeName);
-    const request = store.get(id);
+  if (useMemoryDb) {
+    return memoryDb[storeName]?.[id] || null;
+  }
+  try {
+    const dbInst = await initOfflineDb();
+    return new Promise((resolve, reject) => {
+      const tx = dbInst.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const request = store.get(id);
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`[Offline DB] getFromOfflineStore failed for ${storeName}, falling back to memory storage:`, e);
+    useMemoryDb = true;
+    return memoryDb[storeName]?.[id] || null;
+  }
 }
 
 export async function getAllFromOfflineStore(storeName: string): Promise<any[]> {
-  const dbInst = await initOfflineDb();
-  return new Promise((resolve, reject) => {
-    const tx = dbInst.transaction(storeName, "readonly");
-    const store = tx.objectStore(storeName);
-    const request = store.getAll();
+  if (useMemoryDb) {
+    return Object.values(memoryDb[storeName] || {});
+  }
+  try {
+    const dbInst = await initOfflineDb();
+    return new Promise((resolve, reject) => {
+      const tx = dbInst.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const request = store.getAll();
 
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`[Offline DB] getAllFromOfflineStore failed for ${storeName}, falling back to memory storage:`, e);
+    useMemoryDb = true;
+    return Object.values(memoryDb[storeName] || {});
+  }
 }
 
 export async function deleteFromOfflineStore(storeName: string, id: string): Promise<void> {
-  const dbInst = await initOfflineDb();
-  return new Promise((resolve, reject) => {
-    const tx = dbInst.transaction(storeName, "readwrite");
-    const store = tx.objectStore(storeName);
-    const request = store.delete(id);
+  if (useMemoryDb) {
+    if (memoryDb[storeName]) {
+      delete memoryDb[storeName][id];
+    }
+    return;
+  }
+  try {
+    const dbInst = await initOfflineDb();
+    return new Promise((resolve, reject) => {
+      const tx = dbInst.transaction(storeName, "readwrite");
+      const store = tx.objectStore(storeName);
+      const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`[Offline DB] deleteFromOfflineStore failed for ${storeName}, falling back to memory storage:`, e);
+    useMemoryDb = true;
+    if (memoryDb[storeName]) {
+      delete memoryDb[storeName][id];
+    }
+  }
 }
 
 // Sync queue helpers

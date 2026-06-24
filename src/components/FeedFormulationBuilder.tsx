@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { Plus, Trash, Check, Info, Sparkles, Scale, DollarSign, Save, RefreshCw, ArrowRight, GitBranch, Layers, AlertTriangle, Printer } from "lucide-react";
 import { FeedFormula, FormulaIngredient, PoultryBatch } from "../types";
 

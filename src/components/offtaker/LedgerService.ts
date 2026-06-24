@@ -1,3 +1,4 @@
+import { safeLocalStorage as localStorage } from "../../utils/safeStorage";
 import { getActiveFeeRates } from "./PaymentService";
 
 export interface LedgerEntry {

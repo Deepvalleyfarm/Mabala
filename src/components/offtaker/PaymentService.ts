@@ -1,3 +1,5 @@
+import { safeLocalStorage as localStorage } from "../../utils/safeStorage";
+
 export interface CollectionRequest {
   referenceId: string;
   amount: number;

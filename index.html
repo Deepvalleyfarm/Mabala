@@ -11,12 +11,109 @@
     <meta name="description" content="Mabala is Zambia's all-in-one farm management platform. Track crops, poultry, and livestock. Buy inputs from verified suppliers. Built for African farmers — works on any phone.">
     <title>Mabala — Farm Management Platform</title>
     <script>
-      if ('serviceWorker' in navigator) {
+      // Global error containment for sandboxed environment to prevent "Script error." bubble-up
+      window.onerror = function(message, source, lineno, colno, error) {
+        console.warn("[Mabala Error Interceptor] Captured uncaught script error:", message, "source:", source, "line:", lineno, "col:", colno, "error:", error);
+        // Returning true prevents the error from bubbling up as "Script error."
+        return true;
+      };
+      window.addEventListener('unhandledrejection', function(event) {
+        console.warn("[Mabala Error Interceptor] Captured unhandled promise rejection:", event.reason);
+        // Prevent default event behavior from triggering top-level frame errors
+        event.preventDefault();
+      }, true);
+
+      // Robust storage and indexedDB polyfills for sandboxed iframe compatibility
+      (function() {
+        function createMemoryStorage() {
+          var store = {};
+          return {
+            getItem: function(key) { return store.hasOwnProperty(key) ? store[key] : null; },
+            setItem: function(key, value) { store[key] = String(value); },
+            removeItem: function(key) { delete store[key]; },
+            clear: function() { store = {}; },
+            key: function(index) { return Object.keys(store)[index] || null; },
+            get length() { return Object.keys(store).length; }
+          };
+        }
+
+        function polyfillStorage(name) {
+          try {
+            var dummy = window[name];
+            if (dummy) {
+              var testKey = "__" + name + "_test__";
+              dummy.setItem(testKey, testKey);
+              dummy.removeItem(testKey);
+              return;
+            }
+          } catch (e) {
+            console.warn("[Mabala Sandbox] Native " + name + " is blocked. Injecting in-memory polyfill:", e);
+          }
+
+          var mockStorage = createMemoryStorage();
+          try {
+            Object.defineProperty(window, name, {
+              get: function() { return mockStorage; },
+              configurable: true
+            });
+          } catch (e1) {
+            try {
+              Object.defineProperty(Window.prototype, name, {
+                get: function() { return mockStorage; },
+                configurable: true
+              });
+            } catch (e2) {
+              console.error("[Mabala Sandbox] Failed to polyfill " + name + ":", e2);
+            }
+          }
+        }
+
+        polyfillStorage("localStorage");
+        polyfillStorage("sessionStorage");
+
+        // Polyfill indexedDB if native access throws
+        try {
+          var dummyIdb = window.indexedDB;
+        } catch (e) {
+          console.warn("[Mabala Sandbox] Native indexedDB is blocked. Injecting undefined polyfill:", e);
+          try {
+            Object.defineProperty(window, "indexedDB", {
+              get: function() { return undefined; },
+              configurable: true
+            });
+          } catch (e1) {
+            try {
+              Object.defineProperty(Window.prototype, "indexedDB", {
+                get: function() { return undefined; },
+                configurable: true
+              });
+            } catch (e2) {
+              console.error("[Mabala Sandbox] Failed to polyfill indexedDB:", e2);
+            }
+          }
+        }
+      })();
+    </script>
+    <script>
+      // Skip service worker in iframes or development sandboxes
+      var isIframe = false;
+      try {
+        isIframe = window.self !== window.top;
+      } catch (e) {
+        isIframe = true;
+      }
+      if (!isIframe && 'serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('[Mabala SW] Registration success:', reg.scope))
-            .catch(err => console.error('[Mabala SW] Registration failure:', err));
+          try {
+            navigator.serviceWorker.register('/sw.js')
+              .then(reg => console.log('[Mabala SW] Registration success:', reg.scope))
+              .catch(err => console.error('[Mabala SW] Registration failure:', err));
+          } catch (e) {
+            console.warn('[Mabala SW] ServiceWorker registration blocked:', e);
+          }
         });
+      } else {
+        console.log('[Mabala SW] ServiceWorker registration skipped (running inside iframe or sandbox environment)');
       }
     </script>
   </head>

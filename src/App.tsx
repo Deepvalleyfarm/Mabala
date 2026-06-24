@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { safeLocalStorage as localStorage } from "./utils/safeStorage";
 import Sidebar from "./components/Sidebar";
 import WelcomeScreen from "./components/WelcomeScreen";
 import AiChatbot from "./components/AiChatbot";
 import AnimalRegistrationWizard from "./components/AnimalRegistrationWizard";
 import { useSuperAdmin } from "./hooks/useSuperAdmin";
+import { processReferralSignup } from "./utils/referral";
+import PartnerReferralPortal from "./components/PartnerReferralPortal";
 
 // Sub-panels
 import AccountsPanel from "./components/AccountsPanel";
@@ -735,7 +738,7 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<string>(() => {
     return localStorage.getItem("mabala_subscription_tier") || "Commercial Growth Layer";
   });
-  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary" | "Offtaker">(() => {
+  const [workspaceMode, setWorkspaceMode] = useState<"Farmer" | "Veterinary" | "Offtaker" | "Partner">(() => {
     return (localStorage.getItem("mabala_workspace_mode") as any) || "Farmer";
   });
   const [vetFeeActivation, setVetFeeActivation] = useState<boolean>(() => {
@@ -1374,6 +1377,16 @@ export default function App() {
     }
   }, [isAuthenticated, workspaceMode, subscriptionTier, activeTab]);
 
+  // Partner Role Enforcement Guard - prevents partners from accessing unauthorized sections
+  useEffect(() => {
+    if (isAuthenticated && workspaceMode === "Partner") {
+      const allowed = ["partner-portal", "profile", "platform-admin"];
+      if (!allowed.includes(activeTab)) {
+        setActiveTab("partner-portal");
+      }
+    }
+  }, [isAuthenticated, workspaceMode, activeTab]);
+
   // Farmer & Vet Role Enforcement Guard - prevents workspace boundary violations
   useEffect(() => {
     if (isAuthenticated) {
@@ -1688,6 +1701,12 @@ export default function App() {
               livestock: []
             });
             console.log("Successfully wrote paid registration account profile into firestore:", r.email);
+            // Log referral signup if any
+            try {
+              await processReferralSignup(uid, r.email.trim().toLowerCase(), r.fullName, checkoutObj.name, Number(checkoutObj.price) || 0);
+            } catch (refErr) {
+              console.error("[Referral Engine] Error logging signup in handlePaymentSuccessAllocation:", refErr);
+            }
           } catch (dbErr) {
             console.error("Failed to write users_data to firestore in success callback:", dbErr);
           }
@@ -2998,6 +3017,12 @@ export default function App() {
           });
           
           localStorage.removeItem("registrations_in_progress_" + emailLower);
+          // Log referral signup if any
+          try {
+            await processReferralSignup(uid, emailLower, data.fullName, matchedPkg.name, 0);
+          } catch (refErr) {
+            console.error("[Referral Engine] Error logging signup in handleRegister:", refErr);
+          }
           return;
         } catch (err: any) {
           const emailLower = data.email.trim().toLowerCase();
@@ -3138,6 +3163,136 @@ export default function App() {
       setIsAuthenticated(true);
       setActiveTab("offtaker-marketplace");
       addNotification("Free Offtaker Account Initialized Successfully in Offline Sandbox!", "success");
+    }
+  };
+
+  const handleRegisterPartner = async (data: {
+    fullName: string;
+    phoneNumber: string;
+    mobileMoneyProvider: string;
+    email: string;
+    facebookGroupOrPageName?: string;
+    whatsappGroupName?: string;
+    password?: string;
+  }) => {
+    if (isConfigured && data.email && data.password) {
+      try {
+        const emailLower = data.email.trim().toLowerCase();
+        
+        // Pre-flight check in Firestore
+        try {
+          const q = query(collection(db, "users_data"), where("email", "==", emailLower));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            throw new Error("This email is already linked to an active profile. Please use another email.");
+          }
+        } catch (err: any) {
+          if (err.message && err.message.includes("already linked")) {
+            throw err;
+          }
+        }
+
+        localStorage.setItem("registrations_in_progress_" + emailLower, "true");
+        localStorage.setItem("mabala_google_bypass_" + emailLower, "true");
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const uid = userCred.user.uid;
+        
+        setUserProfile({
+          name: data.fullName,
+          email: data.email,
+          phone: data.phoneNumber
+        });
+        
+        setSubscriptionTier("Mabala Partner");
+        setCredits(0);
+        setIsAuthenticated(true);
+        setIsUnverifiedUser(false);
+        setWorkspaceMode("Partner");
+        setActiveTab("partner-portal");
+
+        const initialFarms: any[] = [];
+        setFarms(initialFarms);
+        const initialAccounts: any[] = [];
+        setAccounts(initialAccounts);
+
+        // Generate custom alphanumeric referral code
+        const codeSuffix = Math.floor(100 + Math.random() * 900); // 3-digit randomized suffix
+        const cleanNameSlug = data.fullName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 6);
+        const refCode = `MB-${cleanNameSlug}${codeSuffix}`;
+
+        // 1. Write users_data
+        const docRef = doc(db, "users_data", uid);
+        await setDoc(docRef, {
+          uid,
+          email: emailLower,
+          credits: 0,
+          subscriptionTier: "Mabala Partner",
+          workspaceMode: "Partner",
+          tenantType: "partner",
+          role: "partner",
+          farms: initialFarms,
+          accounts: initialAccounts,
+          suppliers: [],
+          customers: [],
+          expenses: [],
+          invoices: [],
+          quotations: [],
+          crops: [],
+          employees: [],
+          payslips: [],
+          poultry: [],
+          fish: [],
+          inventory: [],
+          loans: [],
+          investments: [],
+          cashSales: [],
+          livestock: []
+        });
+
+        // 2. Write partners record
+        const partnerRef = doc(db, "partners", uid);
+        await setDoc(partnerRef, {
+          fullName: data.fullName,
+          phoneNumber: data.phoneNumber,
+          mobileMoneyProvider: data.mobileMoneyProvider,
+          email: emailLower,
+          facebookGroupOrPageName: data.facebookGroupOrPageName || "",
+          whatsappGroupName: data.whatsappGroupName || "",
+          referralCode: refCode,
+          referralLink: window.location.origin + "/r/" + refCode,
+          commissionRate: 0.15,
+          status: "pending_review",
+          totalClicks: 0,
+          totalSignups: 0,
+          totalPaidConversions: 0,
+          totalCommissionEarned: 0,
+          totalCommissionPaid: 0,
+          createdAt: new Date().toISOString(),
+          approvedAt: null
+        });
+        
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        addNotification("Partner Account Registered Successfully! Under Review.", "success");
+      } catch (err: any) {
+        const emailLower = data.email.trim().toLowerCase();
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        if (err.code === "auth/email-already-in-use") {
+          throw new Error("This email is already linked to an active profile. Please use another email.");
+        }
+        throw err;
+      }
+    } else {
+      // Simulation/Offline Flow
+      setUserProfile({
+        name: data.fullName,
+        email: data.email,
+        phone: data.phoneNumber
+      });
+      setSubscriptionTier("Mabala Partner");
+      setIsAuthenticated(true);
+      setWorkspaceMode("Partner");
+      setActiveTab("partner-portal");
+      addNotification("Partner Account Initialized Successfully in Simulation Sandbox!", "success");
     }
   };
 
@@ -3347,6 +3502,15 @@ export default function App() {
       phone: "+260977889900"
     });
     handleStartDemo(email);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error("Sign out error:", e);
+    }
+    setIsAuthenticated(false);
   };
 
   const handleCheckEmailExists = async (email: string): Promise<boolean> => {
@@ -4753,6 +4917,7 @@ export default function App() {
           onRegister={handleRegister} 
           onRegisterVendor={handleRegisterVendor}
           onRegisterOfftaker={handleRegisterOfftaker}
+          onRegisterPartner={handleRegisterPartner}
           onLogin={handleLogin} 
           onGoogleSignIn={handleGoogleSignIn} 
           onGoogleSignInBypass={handleGoogleSignInBypass}
@@ -6493,6 +6658,13 @@ export default function App() {
             />
           )}
 
+          {activeTab === "partner-portal" && (
+            <PartnerReferralPortal 
+              userProfile={userProfile} 
+              onLogout={handleLogout} 
+            />
+          )}
+
           {activeTab === "platform-admin" && (
             <ProfilesPlatformPanel
               userProfile={userProfile}
@@ -6573,7 +6745,8 @@ export default function App() {
             <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest pb-2 border-b">Top Up Transaction Credits</h4>
             
             {(() => {
-              const isEligibleForTopUp = subscriptionTier === "Monthly Plan" || subscriptionTier === "Enterprise Plan" || subscriptionTier === "Enterprise Suite";
+              // Allowed for all customer types, including free plans, free models, and smallholders
+              const isEligibleForTopUp = true;
               const creditTopUpPackages = [
                 { id: "TOPUP_STARTER", name: "Starter Pack", price: 100.00, creditsToAward: 500, description: "Adds 500 write operations credits" },
                 { id: "TOPUP_FIELD", name: "Field Pack", price: 250.00, creditsToAward: 1500, description: "Adds 1,500 write operations credits" },

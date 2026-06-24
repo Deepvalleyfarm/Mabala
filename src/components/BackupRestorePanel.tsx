@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { 
   BackupData, 
   CropCycle, 

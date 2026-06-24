@@ -116,5 +116,30 @@ service cloud.firestore {
       allow read: if request.auth != null && (request.auth.uid == farmerId || isSuperAdmin()) || request.auth == null;
       allow write: if true;
     }
+
+    // Partner Referral Program Rules
+    match /partners/{partnerId} {
+      allow read: if (request.auth != null && request.auth.uid == partnerId) || isSuperAdmin() || request.auth == null;
+      allow create: if (request.auth != null && request.auth.uid == partnerId) || isSuperAdmin() || request.auth == null;
+      allow update: if isSuperAdmin() || request.auth == null || (request.auth != null && request.auth.uid == partnerId && 
+                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['referralCode', 'commissionRate', 'status', 'totalClicks', 'totalSignups', 'totalPaidConversions', 'totalCommissionEarned', 'totalCommissionPaid', 'approvedAt', 'createdAt'])));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /referralClicks/{clickId} {
+      allow read: if isSuperAdmin() || request.auth == null;
+      allow create, update: if true; // Public click tracking
+      allow delete: if isSuperAdmin();
+    }
+
+    match /referralConversions/{conversionId} {
+      allow read: if (request.auth != null && (resource == null || resource.data.partnerId == request.auth.uid)) || isSuperAdmin() || request.auth == null;
+      allow write: if isSuperAdmin() || request.auth == null;
+    }
+
+    match /promoMessages/{messageId} {
+      allow read: if true; // Any user can read promo materials to share
+      allow write: if isSuperAdmin() || request.auth == null;
+    }
   }
 }

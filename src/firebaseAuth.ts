@@ -1,6 +1,8 @@
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { 
   getAuth, 
+  initializeAuth,
+  inMemoryPersistence,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   signOut
@@ -23,29 +25,63 @@ const config = {
 export const isConfigured = !!(config.apiKey && config.projectId && !config.apiKey.startsWith("placeholder") && config.apiKey !== "");
 
 let app;
-if (getApps().length === 0) {
-  if (isConfigured) {
-    app = initializeApp(config);
+try {
+  if (getApps().length === 0) {
+    if (isConfigured) {
+      app = initializeApp(config);
+    } else {
+      // Safe initialization block to prevent startup crash errors
+      console.warn(
+        "Warning: Firebase credentials are unconfigured or incomplete. Please verify settings in firebase-applet-config.json."
+      );
+      app = initializeApp({
+        apiKey: "placeholder-api-key-to-prevent-startup-crash-errors",
+        authDomain: "placeholder-auth-domain.firebaseapp.com",
+        projectId: "placeholder-project-id",
+        storageBucket: "placeholder-storage-bucket.appspot.com",
+        messagingSenderId: "00000000000",
+        appId: "1:00000000000:web:00000000000"
+      });
+    }
   } else {
-    // Safe initialization block to prevent startup crash errors
-    console.warn(
-      "Warning: Firebase credentials are unconfigured or incomplete. Please verify settings in firebase-applet-config.json."
-    );
-    app = initializeApp({
-      apiKey: "placeholder-api-key-to-prevent-startup-crash-errors",
-      authDomain: "placeholder-auth-domain.firebaseapp.com",
-      projectId: "placeholder-project-id",
-      storageBucket: "placeholder-storage-bucket.appspot.com",
-      messagingSenderId: "00000000000",
-      appId: "1:00000000000:web:00000000000"
-    });
+    app = getApp();
   }
-} else {
-  app = getApp();
+} catch (e) {
+  console.error("[Firebase] initializeApp failed in firebaseAuth.ts:", e);
 }
 
 // Critical: export initialized Firebase Auth client
-export const auth = getAuth(app);
+export let auth: any;
+try {
+  auth = initializeAuth(app, {
+    persistence: inMemoryPersistence
+  });
+} catch (authError: any) {
+  if (authError && authError.code === "auth/already-initialized") {
+    try {
+      auth = getAuth(app);
+    } catch (getAuthErr) {
+      console.error("[Firebase] getAuth failed after already-initialized error in firebaseAuth.ts:", getAuthErr);
+    }
+  } else {
+    console.warn("[Firebase] initializeAuth with inMemoryPersistence failed in firebaseAuth.ts, falling back to default or mock:", authError);
+    try {
+      auth = getAuth(app);
+    } catch (fallbackError) {
+      console.error("[Firebase] getAuth fallback failed in firebaseAuth.ts, setting up mock auth:", fallbackError);
+      auth = {
+        currentUser: null,
+        onAuthStateChanged: (callback: any) => {
+          setTimeout(() => callback(null), 0);
+          return () => {};
+        },
+        signOut: async () => {},
+        signInWithEmailAndPassword: async () => { throw new Error("Firebase Auth is unavailable in this sandbox."); },
+        createUserWithEmailAndPassword: async () => { throw new Error("Firebase Auth is unavailable in this sandbox."); },
+      } as any;
+    }
+  }
+}
 
 // Export specified auth operations
 export {

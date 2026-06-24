@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { jsPDF } from "jspdf";
 import EnterpriseLivestockManager from "./livestock/EnterpriseLivestockManager";
 import { PoultryBatch, LivestockRecord, Supplier, FeedFormula, VaccinationRecord, DefaultVaccineScheduleItem, PoultryHealthEvent, MedicationRegisterItem, EggSale, EggCollection } from "../types";
