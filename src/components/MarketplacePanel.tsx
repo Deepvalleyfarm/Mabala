@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { 
   Search, 
@@ -81,9 +81,30 @@ export default function MarketplacePanel({
   platformPackages = [],
   setPlatformPackages = () => {}
 }: MarketplacePanelProps) {
+  // Determine allowed sub tabs based on role
+  const isSuperAdminUser = currentRole === "Platform Administrator" || currentRole === "Super Admin" || userEmail === "deepvaleyfarm@gmail.com";
+  const isFarmerUser = !isSuperAdminUser && (
+    currentRole === "Farm Owner" || 
+    currentRole === "Manager" || 
+    currentRole === "Farm Worker" || 
+    currentRole === "Farm Admin" || 
+    currentRole === "Viewer"
+  );
+  const isVendorUser = !isSuperAdminUser && !isFarmerUser;
+
   // Navigation tabs
   // "buyer" | "vendor-portal" | "admin-config" | "analytics"
-  const [activeSubTab, setActiveSubTab] = useState<"buyer" | "vendor-portal" | "admin-config" | "analytics">("buyer");
+  const [activeSubTab, setActiveSubTab] = useState<"buyer" | "vendor-portal" | "admin-config" | "analytics">(
+    isVendorUser ? "vendor-portal" : "buyer"
+  );
+
+  useEffect(() => {
+    if (isFarmerUser) {
+      setActiveSubTab("buyer");
+    } else if (isVendorUser) {
+      setActiveSubTab("vendor-portal");
+    }
+  }, [currentRole, userEmail]);
 
   // Simulated subscription and expiry notifications dispatched/logged
   const [expiryNotifications, setExpiryNotifications] = useState<any[]>([
@@ -910,45 +931,47 @@ export default function MarketplacePanel({
         </div>
         
         {/* Switch Sub Tabs */}
-        <div className="bg-slate-100 p-1 rounded-xl flex items-center border self-stretch md:self-auto shrink-0 flex-wrap gap-1">
-          <button
-            onClick={() => setActiveSubTab("buyer")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === "buyer" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            🌽 Browse Catalogue
-          </button>
-          
-          <button
-            onClick={() => setActiveSubTab("vendor-portal")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === "vendor-portal" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            🏪 Vendor Registry Portal
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab("analytics")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === "analytics" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            📈 Market Analytics
-          </button>
-
-          {(currentRole === "Platform Administrator" || userEmail === "deepvaleyfarm@gmail.com") && (
+        {!isFarmerUser && !isVendorUser && (
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center border self-stretch md:self-auto shrink-0 flex-wrap gap-1">
             <button
-              onClick={() => setActiveSubTab("admin-config")}
+              onClick={() => setActiveSubTab("buyer")}
               className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeSubTab === "admin-config" ? "bg-white text-slate-800 shadow animate-pulse" : "text-slate-500 hover:text-slate-800"
+                activeSubTab === "buyer" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              🛠️ Market Super-Admin
+              🌽 Browse Catalogue
             </button>
-          )}
-        </div>
+            
+            <button
+              onClick={() => setActiveSubTab("vendor-portal")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeSubTab === "vendor-portal" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              🏪 Vendor Registry Portal
+            </button>
+
+            <button
+              onClick={() => setActiveSubTab("analytics")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeSubTab === "analytics" ? "bg-white text-slate-800 shadow" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              📈 Market Analytics
+            </button>
+
+            {isSuperAdminUser && (
+              <button
+                onClick={() => setActiveSubTab("admin-config")}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === "admin-config" ? "bg-white text-slate-800 shadow animate-pulse" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                🛠️ Market Super-Admin
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* RENDER BUYER DIRECTORY TABS */}

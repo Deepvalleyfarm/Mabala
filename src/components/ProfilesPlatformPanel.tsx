@@ -583,6 +583,45 @@ export default function ProfilesPlatformPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [submittingAdmin, setSubmittingAdmin] = useState<boolean>(false);
+  const [lipilaTransactionsLoading, setLipilaTransactionsLoading] = useState<boolean>(false);
+
+  const fetchLipilaTransactions = async () => {
+    setLipilaTransactionsLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers: any = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      headers["x-mabala-admin-uid"] = currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+      const res = await fetch("/api/admin/lipila-transactions", { headers });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && body.transactions) {
+          const mapped = body.transactions.map((t: any) => ({
+            id: t.id || t.referenceId,
+            referenceId: t.referenceId,
+            amount: Number(t.amount) || 0,
+            currency: t.currency || "ZMW",
+            phone: t.customerPhone || t.phone || "Unknown Phone",
+            holderName: t.customerName || t.holderName || "Unknown Customer",
+            packageName: t.narration || t.packageName || "Lipila Payment",
+            packageType: t.txType || t.packageType || "Deposit",
+            status: t.status,
+            date: t.createdAt ? t.createdAt.replace('T', ' ').slice(0, 19) : (t.date || new Date().toISOString().replace('T', ' ').slice(0, 19)),
+            errorDetails: t.errorDetails || ""
+          }));
+          setLipilaTransactions(mapped);
+        }
+      }
+    } catch (err: any) {
+      console.error("[ProfilesPlatformPanel] Failed to fetch Lipila transactions:", err);
+    } finally {
+      setLipilaTransactionsLoading(false);
+    }
+  };
 
   const fetchAdmins = async () => {
     setAdminsListLoading(true);
@@ -744,6 +783,7 @@ export default function ProfilesPlatformPanel({
     if (viewMode === "platform-admin" && isSuperAdmin) {
       fetchAdmins();
       fetchAuditLogs();
+      fetchLipilaTransactions();
     }
   }, [viewMode, isSuperAdmin]);
 
@@ -3353,15 +3393,26 @@ export default function ProfilesPlatformPanel({
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <div className="flex justify-between items-center border-b pb-3 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-indigo-505 bg-indigo-600 animate-pulse" />
+                    <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
                     <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
                       <Coins className="w-4 h-4 text-indigo-600" />
                       <span>Lipila Mobile Money Gateway Transactions Audit Trail</span>
                     </h4>
                   </div>
-                  <span className="px-2.5 py-0.5 text-[9px] font-extrabold uppercase bg-slate-900 text-slate-100 rounded-lg shrink-0">
-                    Live Settlement Channel
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 text-[9px] font-extrabold uppercase bg-slate-900 text-slate-100 rounded-lg shrink-0">
+                      Live Settlement Channel
+                    </span>
+                    <button
+                      type="button"
+                      onClick={fetchLipilaTransactions}
+                      disabled={lipilaTransactionsLoading}
+                      className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                      title="Fetch live transactions from database"
+                    >
+                      <RefreshCcw className={`w-3.5 h-3.5 ${lipilaTransactionsLoading ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Top overview statistics */}

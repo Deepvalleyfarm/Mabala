@@ -45,6 +45,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const url = new URL(event.request.url);
+  const isShellAsset = url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/manifest.json" || url.pathname.endsWith(".html");
+
+  if (isShellAsset) {
+    // Network-First strategy: always fetch fresh from server first, and update the cache.
+    // If the network request fails, fallback to the cached copy.
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {

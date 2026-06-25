@@ -1039,6 +1039,7 @@ export default function App() {
 
   // Modals / top-up triggers
   const [showTopUpModal, setShowTopUpModal] = useState<boolean>(false);
+  const [hideReadonlyBanner, setHideReadonlyBanner] = useState<boolean>(false);
   const [showFarmConfigModal, setShowFarmConfigModal] = useState<boolean>(false);
   const [showFarmSwitcherDropdown, setShowFarmSwitcherDropdown] = useState<boolean>(false);
   const [farmSearchQuery, setFarmSearchQuery] = useState<string>("");
@@ -1076,6 +1077,50 @@ export default function App() {
       localStorage.removeItem("mabala_active_access_pass");
     }
   }, [activeAccessPass]);
+
+  // Daily unmetered bundle configuration state & real-time countdown engine
+  const [dailyBundleExpiresAt, setDailyBundleExpiresAt] = useState<string | null>(() => {
+    const cached = localStorage.getItem("mabala_daily_bundle_expires_at");
+    if (cached) {
+      if (new Date(cached) > new Date()) {
+        return cached;
+      } else {
+        localStorage.removeItem("mabala_daily_bundle_expires_at");
+      }
+    }
+    return null;
+  });
+
+  const [dailyBundleTimeLeft, setDailyBundleTimeLeft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!dailyBundleExpiresAt) {
+      setDailyBundleTimeLeft(null);
+      return;
+    }
+
+    const checkAndTick = () => {
+      const expiry = new Date(dailyBundleExpiresAt).getTime();
+      const now = Date.now();
+      const diff = expiry - now;
+
+      if (diff <= 0) {
+        setDailyBundleExpiresAt(null);
+        localStorage.removeItem("mabala_daily_bundle_expires_at");
+        setSubscriptionTier("Free Plan");
+        setDailyBundleTimeLeft(null);
+      } else {
+        const hours = Math.floor(diff / (60 * 60 * 1000));
+        const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+        const seconds = Math.floor((diff % (60 * 1000)) / 1000);
+        setDailyBundleTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      }
+    };
+
+    checkAndTick();
+    const interval = setInterval(checkAndTick, 1000);
+    return () => clearInterval(interval);
+  }, [dailyBundleExpiresAt]);
 
   const [lipilaCheckout, setLipilaCheckout] = useState<{
     type: "subscription" | "credits";
@@ -2383,8 +2428,16 @@ export default function App() {
     localStorage.setItem("mabala_credit_transactions", JSON.stringify(creditTransactions));
   }, [creditTransactions]);
 
+  useEffect(() => {
+    if (credits > 0) {
+      setHideReadonlyBanner(false);
+    }
+  }, [credits]);
+
   const activeFarm = farms[activeFarmIndex] || farms[0];
-  const isPassActive = (activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date()) || (subscriptionTier === "Daily Bundle");
+  const isPassActive = (activeAccessPass && new Date(activeAccessPass.expiresAt) > new Date()) || 
+                       (dailyBundleExpiresAt && new Date(dailyBundleExpiresAt) > new Date()) || 
+                       (subscriptionTier === "Daily Bundle");
   const isReadonly = (credits === 0 && !isPassActive) || farmStatus === "FROZEN";
 
   const isAllFarmsSelected = isAllFarmsActive && (subscriptionTier === "Enterprise Plan" || subscriptionTier === "Enterprise Suite");
@@ -2943,118 +2996,105 @@ export default function App() {
       }
     }
 
-    // Look up package pricing dynamically from config
-    const matchedPkg = platformPackages.find(p => p.name === data.subscriptionTier) || platformPackages[0];
-    
-    if (matchedPkg.name === "Smallholder Pack" || matchedPkg.name === "Free Plan") {
-      // Smallholder Pack & Free Plan: Disable payment gateway and grant direct dashboard access immediately!
-      // In compliance with user requirement, we create accounts directly.
-      if (isConfigured && data.email && data.password) {
-        try {
-          const emailLower = data.email.trim().toLowerCase();
-          localStorage.setItem("registrations_in_progress_" + emailLower, "true");
-          localStorage.setItem("mabala_google_bypass_" + emailLower, "true");
-          const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
-          const uid = userCred.user.uid;
-          
-          setUserProfile({
-            name: data.fullName,
-            email: data.email,
-            phone: data.phone || "+26097100000"
-          });
-          
-          const initialFarms = [
-            {
-              id: "farm-1",
-              name: data.farmName,
-              tpin: "100431290",
-              address: "HQ Corporate Premises, " + data.country.name,
-              phone: data.phone || "+26097100000",
-              email: data.email,
-              financialYearStart: "2026-01-01",
-              financialYearEnd: "2026-12-31",
-              currency: data.country.currency,
-              currencySymbol: data.country.symbol,
-              taxSystem: data.country.defaultTaxSystem
-            }
-          ];
-          setFarms(initialFarms);
-          
-          const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
-          setAccounts(initialAccounts);
-          
-          setSubscriptionTier(matchedPkg.name);
-          setCredits(60);
-          setIsAuthenticated(true);
-          setIsUnverifiedUser(false);
-          setActiveTab("dashboard");
+    const tierToSet = data.subscriptionTier || "Free Plan";
 
-          // Set Firestore profile!
-          const docRef = doc(db, "users_data", uid);
-          await setDoc(docRef, {
-            uid,
-            email: emailLower,
-            credits: 60,
-            subscriptionTier: matchedPkg.name,
-            workspaceMode: "Farmer",
-            farms: initialFarms,
-            accounts: initialAccounts,
-            suppliers: [],
-            customers: [],
-            expenses: [],
-            invoices: [],
-            quotations: [],
-            crops: [],
-            employees: [],
-            payslips: [],
-            poultry: [],
-            fish: [],
-            inventory: [],
-            loans: [],
-            investments: [],
-            cashSales: [],
-            livestock: []
-          });
-          
-          localStorage.removeItem("registrations_in_progress_" + emailLower);
-          // Log referral signup if any
-          try {
-            await processReferralSignup(uid, emailLower, data.fullName, matchedPkg.name, 0);
-          } catch (refErr) {
-            console.error("[Referral Engine] Error logging signup in handleRegister:", refErr);
-          }
-          return;
-        } catch (err: any) {
-          const emailLower = data.email.trim().toLowerCase();
-          localStorage.removeItem("registrations_in_progress_" + emailLower);
-          if (err.code === "auth/email-already-in-use") {
-            throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
-          }
-          throw err;
-        }
-      } else {
-        // Fallback for simulation build
-        handlePaymentSuccessAllocation({
-          type: "subscription",
-          name: matchedPkg.name,
-          price: matchedPkg.price,
-          creditsToAward: matchedPkg.credits,
-          description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
-          registrationData: data
+    if (isConfigured && data.email && data.password) {
+      try {
+        const emailLower = data.email.trim().toLowerCase();
+        localStorage.setItem("registrations_in_progress_" + emailLower, "true");
+        localStorage.setItem("mabala_google_bypass_" + emailLower, "true");
+        const userCred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const uid = userCred.user.uid;
+        
+        setUserProfile({
+          name: data.fullName,
+          email: data.email,
+          phone: data.phone || "+26097100000"
         });
-        return;
-      }
-    }
+        
+        const initialFarms = [
+          {
+            id: "farm-1",
+            name: data.farmName,
+            tpin: "100431290",
+            address: "HQ Corporate Premises, " + data.country.name,
+            phone: data.phone || "+26097100000",
+            email: data.email,
+            financialYearStart: "2026-01-01",
+            financialYearEnd: "2026-12-31",
+            currency: data.country.currency,
+            currencySymbol: data.country.symbol,
+            taxSystem: data.country.defaultTaxSystem
+          }
+        ];
+        setFarms(initialFarms);
+        
+        const initialAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+        setAccounts(initialAccounts);
+        
+        setSubscriptionTier(tierToSet);
+        setCredits(100); // 100 Welcome Bonus Credits
+        setIsAuthenticated(true);
+        setIsUnverifiedUser(false);
+        setActiveTab("dashboard");
 
-    // Launch Lipila Mobile Money terminal for ALL other packages with registration data
-    setLipilaCheckout({
-      type: "subscription",
-      name: matchedPkg.name,
-      price: matchedPkg.price,
-      creditsToAward: matchedPkg.credits,
-      description: matchedPkg.features || matchedPkg.description || `Mabala Plan: ${matchedPkg.name}`,
-      registrationData: data // pass key data to provision once paid successfully
-    });
+        // Set Firestore profile!
+        const docRef = doc(db, "users_data", uid);
+        await setDoc(docRef, {
+          uid,
+          email: emailLower,
+          credits: 100, // 100 Welcome Bonus Credits
+          subscriptionTier: tierToSet,
+          workspaceMode: tierToSet.toLowerCase().includes("vet") ? "Veterinary" : "Farmer",
+          farms: initialFarms,
+          accounts: initialAccounts,
+          suppliers: [],
+          customers: [],
+          expenses: [],
+          invoices: [],
+          quotations: [],
+          crops: [],
+          employees: [],
+          payslips: [],
+          poultry: [],
+          fish: [],
+          inventory: [],
+          loans: [],
+          investments: [],
+          cashSales: [],
+          livestock: []
+        });
+        
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        // Log referral signup if any
+        try {
+          await processReferralSignup(uid, emailLower, data.fullName, tierToSet, 0);
+        } catch (refErr) {
+          console.error("[Referral Engine] Error logging signup in handleRegister:", refErr);
+        }
+        return;
+      } catch (err: any) {
+        const emailLower = data.email.trim().toLowerCase();
+        localStorage.removeItem("registrations_in_progress_" + emailLower);
+        if (err.code === "auth/email-already-in-use") {
+          throw new Error("This email is already linked to an active profile. Please use another email to register, or sign in with your credentials.");
+        }
+        throw err;
+      }
+    } else {
+      // Fallback for simulation build / offline flow
+      setUserProfile({
+        name: data.fullName,
+        email: data.email,
+        phone: data.phone || "+26097100000"
+      });
+      setSubscriptionTier(tierToSet);
+      setCredits(100); // 100 Welcome Bonus Credits
+      setIsAuthenticated(true);
+      setIsUnverifiedUser(false);
+      setActiveTab("dashboard");
+      return;
+    }
   };
 
   const handleRegisterOfftaker = async (data: {
@@ -3160,6 +3200,7 @@ export default function App() {
         phone: data.contactPhone
       });
       setSubscriptionTier("Free Offtaker");
+      setCredits(100);
       setIsAuthenticated(true);
       setActiveTab("offtaker-marketplace");
       addNotification("Free Offtaker Account Initialized Successfully in Offline Sandbox!", "success");
@@ -3204,7 +3245,7 @@ export default function App() {
         });
         
         setSubscriptionTier("Mabala Partner");
-        setCredits(0);
+        setCredits(100);
         setIsAuthenticated(true);
         setIsUnverifiedUser(false);
         setWorkspaceMode("Partner");
@@ -3225,7 +3266,7 @@ export default function App() {
         await setDoc(docRef, {
           uid,
           email: emailLower,
-          credits: 0,
+          credits: 100,
           subscriptionTier: "Mabala Partner",
           workspaceMode: "Partner",
           tenantType: "partner",
@@ -3289,6 +3330,7 @@ export default function App() {
         phone: data.phoneNumber
       });
       setSubscriptionTier("Mabala Partner");
+      setCredits(100);
       setIsAuthenticated(true);
       setWorkspaceMode("Partner");
       setActiveTab("partner-portal");
@@ -3352,7 +3394,7 @@ export default function App() {
       status: "Active", // Land straight on storefront
       joinedDate: new Date().toISOString().split("T")[0],
       expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      credits: 999999, // Infinite credits
+      credits: 100, // 100 Welcome Bonus Credits
       logoColor: randomColor,
       logoUrl: data.logoUrl
     };
@@ -3405,7 +3447,7 @@ export default function App() {
     setAccounts(initialAccounts);
 
     setIsAuthenticated(true);
-    setCredits(999999);
+    setCredits(100);
     setSubscriptionTier("Free Vendor Onboarding");
     setActiveTab("marketplace"); // Navigate merchant directly into the marketplace workspace
 
@@ -3415,7 +3457,7 @@ export default function App() {
         await setDoc(docRef, {
           uid,
           email: data.email.trim().toLowerCase(),
-          credits: 999999,
+          credits: 100,
           subscriptionTier: "Free Vendor Onboarding",
           workspaceMode: "Farmer",
           farms: initialFarms,
@@ -5808,11 +5850,14 @@ export default function App() {
         </div>
 
         {/* Warning banner when credit reserves are low */}
-        {isReadonly && (
-          <div className="bg-rose-500 text-white px-8 py-2 text-xs font-bold font-mono text-center flex items-center justify-center gap-2 tracking-wide flex-shrink-0 animate-bounce">
-            <AlertTriangle className="w-4 h-4" />
-            <span>READ-ONLY MODE ACTIVE. Write operations barred. Top Up 50+ credits to continue farming operations.</span>
-            <button onClick={() => setShowTopUpModal(true)} className="underline font-extrabold ml-1 uppercase hover:text-slate-100">Click to Top Up</button>
+        {isReadonly && !hideReadonlyBanner && (
+          <div className="bg-rose-500 text-white px-8 py-2.5 text-xs font-bold font-mono text-center flex items-center justify-between gap-2 tracking-wide flex-shrink-0 animate-bounce">
+            <div className="flex items-center gap-2 mx-auto">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>Your credits have run out. Top up to continue using Mabala.</span>
+              <button onClick={() => setShowTopUpModal(true)} className="underline font-extrabold ml-1.5 uppercase hover:text-slate-100 cursor-pointer">Click to Top Up</button>
+            </div>
+            <button onClick={() => setHideReadonlyBanner(true)} className="text-white hover:text-slate-200 text-sm font-black p-1">✕</button>
           </div>
         )}
         {!isReadonly && credits < 50 && (
@@ -6428,19 +6473,32 @@ export default function App() {
             !hasReadPermission("reports") ? (
               renderAccessDenied("Financial Reporting")
             ) : (
-              <ReportsPanel 
-                accounts={accounts} 
-                isZambia={selectedCountry.isZambia || false}
-                currencySymbol={selectedCountry.symbol}
-                expenses={expenses}
-                cashSales={cashSales}
-                invoices={invoices}
-                crops={crops}
-                poultry={poultry}
-                livestock={livestock}
-                activeFarm={activeFarm}
-                tasks={tasks}
-              />
+              (() => {
+                const authenticatedTenantId = auth.currentUser?.uid || "default-tenant";
+                const tenantExpenses = expenses.filter(e => !e.tenantId || e.tenantId === authenticatedTenantId);
+                const tenantCashSales = cashSales.filter(c => !c.tenantId || c.tenantId === authenticatedTenantId);
+                const tenantInvoices = invoices.filter(i => !i.tenantId || i.tenantId === authenticatedTenantId);
+                const tenantCrops = crops.filter(c => !c.tenantId || c.tenantId === authenticatedTenantId);
+                const tenantPoultry = poultry.filter(p => !p.tenantId || p.tenantId === authenticatedTenantId);
+                const tenantLivestock = livestock.filter(l => !l.tenantId || l.tenantId === authenticatedTenantId);
+                return (
+                  <ReportsPanel 
+                    accounts={accounts} 
+                    isZambia={selectedCountry.isZambia || false}
+                    currencySymbol={selectedCountry.symbol}
+                    expenses={tenantExpenses}
+                    cashSales={tenantCashSales}
+                    invoices={tenantInvoices}
+                    crops={tenantCrops}
+                    poultry={tenantPoultry}
+                    livestock={tenantLivestock}
+                    activeFarm={activeFarm}
+                    tasks={tasks}
+                    isSuperAdmin={isSuperAdmin}
+                    farms={farms}
+                  />
+                );
+              })()
             )
           )}
 
@@ -6748,6 +6806,7 @@ export default function App() {
               // Allowed for all customer types, including free plans, free models, and smallholders
               const isEligibleForTopUp = true;
               const creditTopUpPackages = [
+                { id: "TOPUP_DAILY_BUNDLE", name: "Daily Bundle", price: 25.00, creditsToAward: 0, is_unmetered_access: true, duration_hours: 24, description: "Unmetered access for 24 Hours. No credit deductions." },
                 { id: "TOPUP_STARTER", name: "Starter Pack", price: 100.00, creditsToAward: 500, description: "Adds 500 write operations credits" },
                 { id: "TOPUP_FIELD", name: "Field Pack", price: 250.00, creditsToAward: 1500, description: "Adds 1,500 write operations credits" },
                 { id: "TOPUP_SEASON", name: "Season Pack", price: 500.00, creditsToAward: 3500, description: "Adds 3,500 write operations credits" },
@@ -6790,7 +6849,8 @@ export default function App() {
                             name: pkg.name,
                             price: pkg.price,
                             creditsToAward: pkg.creditsToAward,
-                            is_unmetered_access: false,
+                            is_unmetered_access: !!pkg.is_unmetered_access,
+                            duration_hours: pkg.duration_hours,
                             description: pkg.description
                           });
                           setShowTopUpModal(false);
@@ -6800,12 +6860,12 @@ export default function App() {
                         <span className="flex justify-between items-center font-bold">
                           <span className="text-slate-900 font-extrabold">{pkg.name}</span>
                           <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            +{pkg.creditsToAward.toLocaleString()} CR
+                            {pkg.is_unmetered_access ? "UNMETERED" : `+${pkg.creditsToAward.toLocaleString()} CR`}
                           </span>
                         </span>
                         <p className="text-[10px] text-slate-400 font-medium font-sans mt-0.5">{pkg.description}</p>
                         <span className="text-[10px] text-[#2d6a1f] font-black block mt-2 uppercase font-mono tracking-wider">
-                          Price: ZMW {pkg.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          Price: {pkg.id === "TOPUP_DAILY_BUNDLE" ? "ZMW 25.00/Day" : `ZMW ${pkg.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
                         </span>
                       </button>
                     ))}

@@ -143,6 +143,7 @@ export default function WelcomeScreen({
   const [partnerPhoneNumber, setPartnerPhoneNumber] = useState("");
   const [partnerMobileMoneyProvider, setPartnerMobileMoneyProvider] = useState<"airtel" | "mtn" | "zamtel">("airtel");
   const [partnerEmail, setPartnerEmail] = useState("");
+  const [partnerConfirmEmail, setPartnerConfirmEmail] = useState("");
   const [partnerFacebookGroup, setPartnerFacebookGroup] = useState("");
   const [partnerWhatsappGroup, setPartnerWhatsappGroup] = useState("");
   const [partnerPassword, setPartnerPassword] = useState("");
@@ -450,8 +451,13 @@ export default function WelcomeScreen({
     e.preventDefault();
     setFormError(null);
 
-    if (!partnerFullName || !partnerPhoneNumber || !partnerEmail || !partnerPassword) {
+    if (!partnerFullName || !partnerPhoneNumber || !partnerEmail || !partnerConfirmEmail || !partnerPassword) {
       setFormError("All required fields must be completed.");
+      return;
+    }
+
+    if (partnerEmail.trim().toLowerCase() !== partnerConfirmEmail.trim().toLowerCase()) {
+      setFormError("⚠️ Primary email and Confirm email fields do not match. Please verify your email.");
       return;
     }
 
@@ -2074,74 +2080,73 @@ export default function WelcomeScreen({
           {!showOtpScreen && !showVerificationSent && (
             <div className="flex-1 flex flex-col justify-between pt-6">
               <div>
-                <div className="flex bg-slate-100 p-1 rounded-lg gap-2 mb-6 flex-wrap">
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-2 mb-6">
                   <button
+                    type="button"
                     onClick={() => {
                       setActiveTab("login");
                       setFormError("");
                     }}
-                    className={`flex-1 min-w-[70px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "login" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
+                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeTab === "login" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
                     Login
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       setActiveTab("register");
                       setFormError("");
                     }}
-                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
+                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      activeTab !== "login" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                   >
-                    Farmer Org
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab("register-vendor");
-                      setFormError("");
-                    }}
-                    className={`flex-1 min-w-[100px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register-vendor" ? "bg-white text-slate-800 shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    Agro-Vendor
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab("register-vet");
-                      setFormError("");
-                    }}
-                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register-vet" ? "bg-indigo-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    🏥 Veterinary
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab("register-offtaker");
-                      setFormError("");
-                    }}
-                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register-offtaker" ? "bg-emerald-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    🌾 Offtaker
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab("register-partner");
-                      setFormError("");
-                    }}
-                    className={`flex-1 min-w-[110px] py-1.5 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                      activeTab === "register-partner" ? "bg-amber-600 text-white shadow-sm animate-scale-up" : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    🤝 Partner
+                    Sign Up / Register
                   </button>
                 </div>
+
+                {activeTab !== "login" && (
+                  <div className="mb-6 font-sans">
+                    <label className="text-[10px] uppercase font-black text-slate-500 block mb-1.5 tracking-wider">
+                      Select Primary Workspace Role *
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={
+                          activeTab === "register" ? "farmer" :
+                          activeTab === "register-vendor" ? "vendor" :
+                          activeTab === "register-vet" ? "vet" :
+                          activeTab === "register-offtaker" ? "offtaker" :
+                          activeTab === "register-partner" ? "partner" : "farmer"
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormError("");
+                          if (val === "farmer") setActiveTab("register");
+                          else if (val === "vendor") setActiveTab("register-vendor");
+                          else if (val === "vet") setActiveTab("register-vet");
+                          else if (val === "offtaker") setActiveTab("register-offtaker");
+                          else if (val === "partner" || val === "advisory") setActiveTab("register-partner");
+                        }}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none appearance-none cursor-pointer transition-all pr-10 shadow-3xs"
+                      >
+                        <option value="farmer">🌾 Farmer (Crop, Poultry & Livestock Management)</option>
+                        <option value="vendor">🛒 Agro Vendor (Agro-Input Merchant & Seller)</option>
+                        <option value="vet">🏥 Veterinary Clinic (Clinical Suite & Consultants)</option>
+                        <option value="offtaker">🌾 Offtaker / Buyer (Warehouse & Corporate Bidding)</option>
+                        <option value="partner">🤝 Partner / Referral Agent (Deep Valley Referral Network)</option>
+                        <option value="advisory">📋 Advisory Service Provider (Agricultural Extensions)</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {activeTab === "login" ? (
                   showGoogleAccountScreen ? (
@@ -2595,40 +2600,6 @@ export default function WelcomeScreen({
                       Scale B2B Agro distribution and reach Zambian farmers. Enter credentials to govern secure directory access.
                     </p>
 
-                    {/* Choose subscription package */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold text-slate-500 block font-mono">Choose Subscription Package Plan</label>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        {[
-                          { id: "Basic", name: "Mabala Basic Merchant", cost: 150, desc: "Publish up to 5 items inside farm catalogs.", badge: "Organic Growth", credits: 300 },
-                          { id: "Elite", name: "Mabala Elite Vendor", cost: 500, desc: "Publish 25 items, prioritize results directories, analytics.", badge: "Professional Trade", credits: 5000 },
-                          { id: "Cooperative Pro", name: "Cooperative Pro", cost: 1000, desc: "Infinite product catalogue, multi-agent store logins.", badge: "Zambia National Co-ops", credits: 25000 }
-                        ].map(pkg => {
-                          const isSelected = onboardPkg === pkg.id;
-                          return (
-                            <button
-                              key={pkg.id}
-                              type="button"
-                              onClick={() => setOnboardPkg(pkg.id as any)}
-                              className={`p-2.5 rounded-xl text-left border transition-all flex flex-col justify-between ${
-                                isSelected 
-                                  ? "bg-slate-900 border-slate-900 text-white shadow" 
-                                  : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
-                              }`}
-                            >
-                              <div>
-                                <span className={`text-[8px] uppercase font-mono font-bold block pb-0.5 ${isSelected ? "text-emerald-400" : "text-emerald-600"}`}>
-                                  {pkg.badge}
-                                </span>
-                                <h4 className="font-bold text-[10px] leading-tight block">{pkg.name}</h4>
-                              </div>
-                              <span className="text-[10px] font-mono font-extrabold block mt-1.5">{pkg.cost} ZMW/mo</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Store / Merchant Public Name</label>
@@ -2858,7 +2829,7 @@ export default function WelcomeScreen({
                       className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <UserPlus className="w-4 h-4" />
-                      <span>{isSendingOtp ? "Provisioning..." : "PROCESS VENDOR SUBSCRIPTION & SELF-ONBOARD STORE"}</span>
+                      <span>{isSendingOtp ? "Provisioning..." : "REGISTER FREE AGRO VENDOR ACCOUNT"}</span>
                     </button>
                   </form>
                 ) : activeTab === "register-offtaker" ? (
@@ -3106,7 +3077,6 @@ export default function WelcomeScreen({
                           <option value="Copperbelt Province">Copperbelt</option>
                           <option value="Central Province">Central</option>
                           <option value="Eastern Province">Eastern</option>
-                          <option value="Northern Province">Northern</option>
                           <option value="Western Province">Western</option>
                           <option value="North-Western Province">North-Western</option>
                           <option value="Muchinga Province">Muchinga</option>
@@ -3115,130 +3085,9 @@ export default function WelcomeScreen({
                       </div>
                     </div>
 
-                    {/* Subscription Mode Selector Toggle Switch */}
-                    <div className="pt-2">
-                      <label className="text-[10px] uppercase font-extrabold text-[#475569] block pb-1">Choose Billing Ledger Model</label>
-                      <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setVetSubMode("PAYG")}
-                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
-                            vetSubMode === "PAYG" 
-                              ? "bg-indigo-600 text-white shadow-md scale-[1.01]" 
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          📦 Pay As You Go
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVetSubMode("Monthly")}
-                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
-                            vetSubMode === "Monthly" 
-                              ? "bg-indigo-700 text-white shadow-md scale-[1.01]" 
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          🏢 Monthly Suite
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVetSubMode("Yearly")}
-                          className={`flex-1 py-1.5 text-center text-[9px] sm:text-[10px] font-black rounded-xl transition-all cursor-pointer ${
-                            vetSubMode === "Yearly" 
-                              ? "bg-emerald-600 text-white shadow-md scale-[1.01]" 
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          🏆 Yearly Pro
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Conditional Packages Display */}
-                    {vetSubMode === "PAYG" ? (
-                      <div className="space-y-2 pt-1 animate-in fade-in duration-200">
-                        <span className="text-[9.5px] uppercase font-extrabold text-slate-400 block">Select PAYG Credit Pool Bundle:</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div 
-                            onClick={() => setSelectedVetPaygBundleId("vet-payg-starter")}
-                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all ${
-                              selectedVetPaygBundleId === "vet-payg-starter"
-                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
-                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
-                            }`}
-                          >
-                            <span className="text-[9px] font-black text-[#565f6c] block">Starter</span>
-                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">500 Credits</div>
-                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 150</span>
-                          </div>
-
-                          <div 
-                            onClick={() => setSelectedVetPaygBundleId("vet-payg-growth")}
-                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all ${
-                              selectedVetPaygBundleId === "vet-payg-growth"
-                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
-                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
-                            }`}
-                          >
-                            <span className="text-[9px] font-black text-[#565f6c] block">Growth</span>
-                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">1500 Credits</div>
-                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 400</span>
-                          </div>
-
-                          <div 
-                            onClick={() => setSelectedVetPaygBundleId("vet-payg-expert")}
-                            className={`p-2 rounded-xl border cursor-pointer flex flex-col justify-between text-center transition-all relative overflow-hidden ${
-                              selectedVetPaygBundleId === "vet-payg-expert"
-                                ? "border-indigo-600 bg-indigo-50/40 divide-indigo-200 shadow-sm"
-                                : "border-slate-200 hover:border-slate-350 bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="absolute top-0 right-0 bg-yellow-400 text-slate-900 font-extrabold uppercase text-[7px] px-1 rounded-bl-md scale-[0.85]">VIP</div>
-                            <span className="text-[9px] font-black text-[#565f6c] block">Expert</span>
-                            <div className="text-[11px] font-black text-indigo-900 mt-0.5">5000 Credits</div>
-                            <span className="text-[10.5px] font-mono text-indigo-600 block pt-1 font-extrabold">K 1200</span>
-                          </div>
-                        </div>
-                        <p className="text-[9.5px] text-slate-400 italic">Pay on demand with MTN/Airtel/Zamtel Mobile Money. No contract required.</p>
-                      </div>
-                    ) : vetSubMode === "Monthly" ? (
-                      <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-2xl flex justify-between items-start animate-in fade-in duration-200">
-                        <div className="space-y-1">
-                          <span className="text-[7.5px] bg-indigo-600 text-white font-black uppercase rounded px-1.5 py-0.5 inline-block">Professional Suite</span>
-                          <h4 className="text-xs font-black text-indigo-900">Agro-Vet Clinical Suite</h4>
-                          <ul className="text-[10px] text-slate-500 font-medium space-y-0.5 leading-tight pt-1">
-                            <li>✓ Full Veterinary clinic multi-practitioner tools</li>
-                            <li>✓ 10,000 Operations credits included monthly</li>
-                            <li>✓ Complete client directories & drug stock logs</li>
-                          </ul>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-black text-indigo-700 font-mono">ZK 600</div>
-                          <div className="text-[9px] text-slate-400 font-medium font-mono">bill monthly</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex justify-between items-start animate-in fade-in duration-200">
-                        <div className="space-y-1">
-                          <span className="text-[7.5px] bg-emerald-600 text-white font-black uppercase rounded px-1.5 py-0.5 inline-block">Best Value Plan</span>
-                          <h4 className="text-xs font-black text-emerald-900">Yearly Clinic Pro Suite</h4>
-                          <ul className="text-[10px] text-slate-500 font-medium space-y-0.5 leading-tight pt-1">
-                            <li>✓ Includes <strong>3,000 credits/month</strong> auto-replenish</li>
-                            <li>✓ Decoupled ledger reporting tools</li>
-                            <li>✓ Priority QR Movement passport signers</li>
-                          </ul>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-black text-emerald-700 font-mono">ZK 4,800</div>
-                          <div className="text-[9px] text-slate-400 font-medium font-mono">bill annually</div>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Password</label>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Password *</label>
                         <input
                           type="password"
                           required
@@ -3249,7 +3098,7 @@ export default function WelcomeScreen({
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Confirm Password</label>
+                        <label className="text-[10px] uppercase font-bold text-indigo-950 block">Confirm Password *</label>
                         <input
                           type="password"
                           required
@@ -3275,16 +3124,8 @@ export default function WelcomeScreen({
                       <ShieldCheck className="w-4 h-4" />
                       <span>
                         {isSendingOtp 
-                          ? "Connecting to Lipila secure carrier gateway..." 
-                          : `AUTHORIZE & PAY ${
-                              vetSubMode === "PAYG" 
-                                ? selectedVetPaygBundleId === "vet-payg-starter"
-                                  ? "ZK 150"
-                                  : selectedVetPaygBundleId === "vet-payg-growth"
-                                    ? "ZK 400"
-                                    : "ZK 1,200"
-                                : "ZK 4,800"
-                            } VIA LIPILA`}
+                          ? "Provisioning Clinic Database..." 
+                          : "REGISTER FREE VETERINARY CLINIC ACCOUNT"}
                       </span>
                     </button>
                   </form>
@@ -3336,16 +3177,29 @@ export default function WelcomeScreen({
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 block">Account Email *</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="e.g. partner@example.com"
-                        value={partnerEmail}
-                        onChange={(e) => setPartnerEmail(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Account Email *</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="e.g. partner@example.com"
+                          value={partnerEmail}
+                          onChange={(e) => setPartnerEmail(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block">Confirm Account Email *</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="e.g. partner@example.com to confirm"
+                          value={partnerConfirmEmail}
+                          onChange={(e) => setPartnerConfirmEmail(e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10 transition-all mt-1 font-semibold text-slate-800"
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

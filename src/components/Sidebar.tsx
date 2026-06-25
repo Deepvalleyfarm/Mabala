@@ -59,6 +59,57 @@ export default function Sidebar({
   onOpenAnimalWizard
 }: SidebarProps) {
 
+  const [activePass, setActivePass] = useState<any>(() => {
+    const cached = localStorage.getItem("mabala_active_access_pass");
+    if (cached) {
+      try {
+        const pass = JSON.parse(cached);
+        if (new Date(pass.expiresAt) > new Date()) {
+          return pass;
+        }
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cached = localStorage.getItem("mabala_active_access_pass");
+      if (cached) {
+        try {
+          const pass = JSON.parse(cached);
+          if (new Date(pass.expiresAt) > new Date()) {
+            setActivePass(pass);
+            return;
+          }
+        } catch (e) {}
+      }
+      setActivePass(null);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const renderCountdown = () => {
+    if (!activePass) return null;
+    const diffMs = new Date(activePass.expiresAt).getTime() - Date.now();
+    if (diffMs <= 0) return null;
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    return (
+      <div className="mt-2 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] text-emerald-400 font-semibold space-y-0.5">
+        <div className="flex justify-between items-center">
+          <span>Active Pass:</span>
+          <span className="font-extrabold text-white animate-pulse">UNMETERED</span>
+        </div>
+        <div className="flex justify-between items-center font-mono text-[9px] text-slate-400">
+          <span>Expires in:</span>
+          <span>{hours}h {mins}m</span>
+        </div>
+      </div>
+    );
+  };
+
   // Define Partner-focused logical categories
   const partnerCategories = [
     {
@@ -113,7 +164,7 @@ export default function Sidebar({
       label: "Finance Hub",
       icon: Coins,
       subItems: [
-        { id: "finance-hub", label: "Mabala Finance & Wallet" },
+        { id: "finance-hub", label: "Mabala Finance & Credits" },
         { id: "expenses", label: "Expenses Ledger" },
         { id: "invoices", label: "Invoices & Quotations" },
         { id: "assets", label: "Biological Asset Register" },
@@ -380,11 +431,12 @@ export default function Sidebar({
             {credits}
           </span>
         </div>
+        {renderCountdown()}
         <button 
           onClick={onTopUp}
           className="w-full py-1 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-[10px] font-bold text-white transition-all cursor-pointer"
         >
-          Top Up Wallet
+          Top up Credits
         </button>
       </div>
 

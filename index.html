@@ -103,6 +103,15 @@
         isIframe = true;
       }
       if (!isIframe && 'serviceWorker' in navigator) {
+        // Automatic reload when a new Service Worker takes over control
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
+
         window.addEventListener('load', () => {
           try {
             navigator.serviceWorker.register('/sw.js')
