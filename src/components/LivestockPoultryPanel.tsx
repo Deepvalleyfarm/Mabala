@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useOperationalSafetyCheck } from "./BoundaryGuard";
 import { safeLocalStorage as localStorage } from "../utils/safeStorage";
 import { jsPDF } from "jspdf";
 import EnterpriseLivestockManager from "./livestock/EnterpriseLivestockManager";
@@ -585,6 +586,7 @@ export default function LivestockPoultryPanel({
   defaultVaccinationSchedule,
   activeFarm
 }: LivestockPoultryPanelProps) {
+  useOperationalSafetyCheck("LivestockPoultryPanel");
   // General segment toggle
   const [segment, setSegment] = useState<"layers" | "formulation" | "livestock">("layers");
 

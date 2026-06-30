@@ -131,6 +131,54 @@ export default function EnterpriseLivestockManager({
     localStorage.setItem("mabala_extended_livestock_records", JSON.stringify(updatedRecords));
   };
 
+  // Keep localRecords in sync with parent records changes
+  useEffect(() => {
+    setLocalRecords(prev => {
+      const existingIds = new Set(prev.map(r => r.id));
+      const newItemsMapped = records
+        .filter(r => !existingIds.has(r.id))
+        .map(r => {
+          const defaultWeight = r.species === "Cattle" ? 320 : r.species === "Goats" || r.species === "Caprine" ? 45 : 65;
+          let defaultSire = "Sire Stud Boran #12";
+          let defaultDam = "Dam Cow Friesian #94";
+          return {
+            ...r,
+            dob: r.dateAcquired || "2024-03-20",
+            age: "24 months",
+            weight: (r as any).weight || defaultWeight,
+            weightTrend: (r as any).weightTrend || [
+              { date: "2026-03-01", weight: defaultWeight - 20 },
+              { date: "2026-04-01", weight: defaultWeight - 10 },
+              { date: "2026-05-01", weight: defaultWeight }
+            ],
+            estimatedMarketValue: (r as any).estimatedMarketValue || r.currentValue * 1.1,
+            insuranceValue: (r as any).insuranceValue || r.currentValue * 1.2,
+            sire: (r as any).sire || defaultSire,
+            dam: (r as any).dam || defaultDam,
+            breedingSuccessRate: (r as any).breedingSuccessRate || 85,
+            breedingEvents: (r as any).breedingEvents || [
+              { id: "be-1", date: "2026-03-15", type: "Natural Mating", details: "Mated with Boran Stud Bull #12", sireId: "ZM-KLR-0012", cost: 150, expectedDate: "2026-12-20", outcome: "Pending" }
+            ],
+            milkYields: (r as any).milkYields || [
+              { date: "2026-06-14", morning: 12, afternoon: 8, evening: 5, fatPercentage: 4.1, proteinPercentage: 3.4, soldTo: "Zammilk", salePrice: 15.5, saleStatus: "Paid" },
+              { date: "2026-06-15", morning: 13, afternoon: 9, evening: 6, fatPercentage: 4.2, proteinPercentage: 3.5, soldTo: "Zammilk", salePrice: 15.5, saleStatus: "Paid" }
+            ],
+            vaccinations: (r as any).vaccinations || [
+              { name: "Foot-and-Mouth (FMD) Dose 2", dateAdministered: "2026-02-15", nextDueDate: "2026-08-15", batchNumber: "FMD-O12B", status: "Completed", withdrawalDays: 0, vetInitials: "Dr. NM" },
+              { name: "Anthrax Spore Vaccine", dateAdministered: "2025-12-10", nextDueDate: "2026-06-10", batchNumber: "ANT-8821", status: "Overdue Warning", withdrawalDays: 14, vetInitials: "Dr. NM" }
+            ],
+            medicationRecords: (r as any).medicationRecords || [
+              { drugName: "Enrofloxacin Antibiotic", dateAdministered: "2026-06-12", dosage: "15ml Inj", withdrawalExpiresDate: "2026-06-21", activeWithdrawal: true, reason: "Incurred slight hoof infection" }
+            ]
+          };
+        });
+      
+      const parentIds = new Set(records.map(r => r.id));
+      const filteredPrev = prev.filter(r => parentIds.has(r.id));
+      return [...newItemsMapped, ...filteredPrev];
+    });
+  }, [records]);
+
   // State for dynamic passport animal ID selection
   const [selectedPassportTag, setSelectedPassportTag] = useState(() => {
     return records.length > 0 ? records[0].tagId : "";
@@ -960,7 +1008,7 @@ export default function EnterpriseLivestockManager({
       healthEvents: [],
       feedingLogs: [],
       status: regStatus,
-      farmId: "farm-1",
+      farmId: activeFarm?.id || "farm-1",
       dob: regDob,
       age: `${valuationOutputs.ageInMonths} months`,
       color: regColor.trim() || undefined,
@@ -1390,8 +1438,10 @@ export default function EnterpriseLivestockManager({
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Target Heifer Cow Tag ID</label>
                 <select value={mTagId} onChange={e => setMTagId(e.target.value)} required className="w-full text-xs p-2.5 border rounded-lg bg-white font-bold text-slate-800">
                   <option value="">-- Choose Milking Cow --</option>
-                  {localRecords.filter(r => r.species === "Cattle" || r.species === "Goats").map(r => (
-                    <option key={r.id} value={r.tagId}>{r.tagId} - {r.breed}</option>
+                  {localRecords.filter(r => r.isDairy || (!localRecords.some(x => x.isDairy) && (r.species === "Cattle" || r.species === "Goats"))).map(r => (
+                    <option key={r.id} value={r.tagId}>
+                      {r.tagId} - {r.breed} {r.isDairy ? "🐄 [Dairy]" : ""}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1399,15 +1449,15 @@ export default function EnterpriseLivestockManager({
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase block pb-1">Morning (L)</label>
-                  <input type="number" step="0.1" value={mMorning} onChange={e => setMMorning(Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
+                  <input type="number" step="0.1" value={mMorning === 0 ? "" : mMorning} onChange={e => setMMorning(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase block pb-1">Afternoon (L)</label>
-                  <input type="number" step="0.1" value={mAfternoon} onChange={e => setMAfternoon(Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
+                  <input type="number" step="0.1" value={mAfternoon === 0 ? "" : mAfternoon} onChange={e => setMAfternoon(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase block pb-1">Evening (L)</label>
-                  <input type="number" step="0.1" value={mEvening} onChange={e => setMEvenhing(Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
+                  <input type="number" step="0.1" value={mEvening === 0 ? "" : mEvening} onChange={e => setMEvenhing(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2 border bg-white rounded-lg font-mono font-bold" />
                 </div>
               </div>
 
@@ -1423,7 +1473,7 @@ export default function EnterpriseLivestockManager({
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Milking Buyer Unit Price ({currencySymbol} / Liter)</label>
-                <input type="number" step="0.5" value={mPrice} onChange={e => setMPrice(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                <input type="number" step="0.5" value={mPrice === 0 ? "" : mPrice} onChange={e => setMPrice(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
               </div>
 
               <button type="submit" className="w-full py-2.5 bg-blue-900 border border-blue-950 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs">
@@ -1733,8 +1783,8 @@ export default function EnterpriseLivestockManager({
                         <label className="text-[10px] font-black uppercase text-slate-500">Liveweight (Kg)</label>
                         <input 
                           type="number"
-                          value={regWeight}
-                          onChange={(e) => setRegWeight(Math.max(1, Number(e.target.value)))}
+                          value={regWeight === 0 ? "" : regWeight}
+                          onChange={(e) => setRegWeight(e.target.value === "" ? 0 : Number(e.target.value))}
                           className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
                         />
                       </div>
@@ -1743,8 +1793,8 @@ export default function EnterpriseLivestockManager({
                         <label className="text-[10px] font-black uppercase text-slate-500">Base Market Price ({currencySymbol}/Kg)</label>
                         <input 
                           type="number"
-                          value={valMarketPricePerKg}
-                          onChange={(e) => setValMarketPricePerKg(Math.max(1, Number(e.target.value)))}
+                          value={valMarketPricePerKg === 0 ? "" : valMarketPricePerKg}
+                          onChange={(e) => setValMarketPricePerKg(e.target.value === "" ? 0 : Number(e.target.value))}
                           className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
                         />
                       </div>
@@ -1753,8 +1803,8 @@ export default function EnterpriseLivestockManager({
                         <label className="text-[10px] font-black uppercase text-slate-500">Purchase Cost ({currencySymbol})</label>
                         <input 
                           type="number"
-                          value={regPurchaseValue}
-                          onChange={(e) => setRegPurchaseValue(Math.max(0, Number(e.target.value)))}
+                          value={regPurchaseValue === 0 ? "" : regPurchaseValue}
+                          onChange={(e) => setRegPurchaseValue(e.target.value === "" ? 0 : Number(e.target.value))}
                           className="mt-1 w-full text-xs p-2 border border-slate-300 bg-white font-mono font-bold text-slate-800 rounded-xl outline-none focus:border-slate-800"
                         />
                       </div>
@@ -2207,7 +2257,7 @@ export default function EnterpriseLivestockManager({
 
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Inseminator / Bull Cost ({currencySymbol})</label>
-                  <input type="number" value={brCost} onChange={e => setBrCost(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono" />
+                  <input type="number" value={brCost === 0 ? "" : brCost} onChange={e => setBrCost(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono" />
                 </div>
 
                 {/* Live Advisor Warnings */}
@@ -2422,12 +2472,12 @@ export default function EnterpriseLivestockManager({
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Current Weight (Kg)</label>
-                <input type="number" value={newValWeight} onChange={e => setNewValWeight(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                <input type="number" value={newValWeight === 0 ? "" : newValWeight} onChange={e => setNewValWeight(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
               </div>
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Fair Market Appraisal Price ({currencySymbol})</label>
-                <input type="number" value={newValPrice} onChange={e => setNewValPrice(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                <input type="number" value={newValPrice === 0 ? "" : newValPrice} onChange={e => setNewValPrice(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
               </div>
 
               <button type="submit" className="w-full py-2.5 bg-rose-900 border border-rose-950 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm">
@@ -2583,11 +2633,11 @@ export default function EnterpriseLivestockManager({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Scale Weight (Kg)</label>
-                  <input type="number" value={sellWeight} onChange={e => setSellWeight(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                  <input type="number" value={sellWeight === 0 ? "" : sellWeight} onChange={e => setSellWeight(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Price / Kg ({currencySymbol})</label>
-                  <input type="number" value={sellPriceKg} onChange={e => setSellPriceKg(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                  <input type="number" value={sellPriceKg === 0 ? "" : sellPriceKg} onChange={e => setSellPriceKg(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
                 </div>
               </div>
 
@@ -2666,7 +2716,7 @@ export default function EnterpriseLivestockManager({
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Appraised Loss Asset Value ({currencySymbol})</label>
-                <input type="number" value={morLoss} onChange={e => setMorLoss(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold text-red-700" />
+                <input type="number" value={morLoss === 0 ? "" : morLoss} onChange={e => setMorLoss(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold text-red-700" />
               </div>
 
               <div>
@@ -2752,12 +2802,12 @@ export default function EnterpriseLivestockManager({
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Policy Cover Valuation ({currencySymbol})</label>
-                <input type="number" value={insCover} onChange={e => setInsCover(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
+                <input type="number" value={insCover === 0 ? "" : insCover} onChange={e => setInsCover(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono font-bold" />
               </div>
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block pb-1">Paid Premium Cost ({currencySymbol})</label>
-                <input type="number" value={insPremium} onChange={e => setInsPremium(Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono" />
+                <input type="number" value={insPremium === 0 ? "" : insPremium} onChange={e => setInsPremium(e.target.value === "" ? 0 : Number(e.target.value))} className="w-full text-xs p-2.5 border bg-white rounded-lg font-mono" />
               </div>
 
               <button type="submit" className="w-full py-2.5 bg-sky-900 border border-sky-950 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm">

@@ -19,6 +19,7 @@ import {
   Calendar,
   X
 } from "lucide-react";
+import MabalaLogo from "./MabalaLogo";
 
 export interface AdCampaign {
   id: string;
@@ -100,15 +101,7 @@ export default function LandingPage({
       {/* Primary Header/Navbar */}
       <header className="sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-200/80 z-40 px-6 py-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-lg shadow-md shadow-emerald-600/30">
-              M
-            </div>
-            <div>
-              <span className="font-black text-lg tracking-tight text-slate-900 block leading-none">Mabala SaaS</span>
-              <span className="text-[9px] font-bold text-emerald-700 tracking-widest uppercase font-mono mt-0.5 block">ERP & Biotech Suite</span>
-            </div>
-          </div>
+          <MabalaLogo variant="full" theme="light" size={36} />
 
           <nav className="hidden md:flex items-center gap-8 text-xs font-black uppercase text-slate-600 tracking-wider">
             <a href="#features" className="hover:text-emerald-600 transition-colors">Features</a>

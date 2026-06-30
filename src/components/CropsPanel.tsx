@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CropCycle, Milestone } from "../types";
+import { useOperationalSafetyCheck } from "./BoundaryGuard";
 import { 
   Plus, Check, Play, Calendar, DollarSign, Award, BookOpen, Trash, 
   FileSpreadsheet, Sliders, Calculator, LineChart, Cpu, TrendingUp, 
@@ -262,6 +263,7 @@ export default function CropsPanel({
   currencySymbol,
   onGotoCsvImport
 }: CropsPanelProps) {
+  useOperationalSafetyCheck("CropsPanel");
   const [activeTab, setActiveTab] = useState<"batches" | "forecaster">("batches");
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedCropIds, setSelectedCropIds] = useState<string[]>([]);

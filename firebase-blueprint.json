@@ -19,6 +19,8 @@
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "credits": { "type": "number" },
+        "smsCredits": { "type": "number" },
+        "tenantId": { "type": "string" },
         "subscriptionTier": { "type": "string" },
         "workspaceMode": { "type": "string" },
         "farms": { "type": "array" },
@@ -68,6 +70,22 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["uid", "amount", "status"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "Generated PDF transaction receipt document stored securely in Firestore and linked to paying tenant UID",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "packageName": { "type": "string" },
+        "amount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "pdfBase64": { "type": "string" },
+        "pdfUrl": { "type": "string" }
+      },
+      "required": ["id", "uid", "packageName", "amount", "pdfBase64"]
     },
     "LinkedFarmer": {
       "title": "LinkedFarmer",
@@ -166,6 +184,36 @@
         "createdBy": { "type": "string" }
       },
       "required": ["farmerUid", "farmerCode", "farmerName", "productId", "productName", "gradeId", "gradeName", "quantity", "unit", "unitPrice", "totalValue", "verifiedBy", "status"]
+    },
+    "SubUser": {
+      "title": "SubUser",
+      "description": "Pre-provisioned Field Officer or secondary operator associated with a tenant institution",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "name", "role", "tenantId"]
+    },
+    "SMSLog": {
+      "title": "SMSLog",
+      "description": "Log entry recording a single SMS dispatch via Beem gateway",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "recipient": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string" },
+        "cost": { "type": "number" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "recipient", "message", "status", "cost", "timestamp"]
     }
   },
   "firestore": {
@@ -176,6 +224,10 @@
     "/payments/{paymentId}": {
       "schema": "Payment",
       "description": "Collection logging all payments initiated or completed through Hostinger or Local Proxies"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "Receipt",
+      "description": "System-generated PDF transaction receipts linked to tenant accounts"
     },
     "/offtakers/{offtakerId}/linkedFarmers/{farmerId}": {
       "schema": "LinkedFarmer",
@@ -200,6 +252,14 @@
     "/farmers/{farmerId}/deliveries/{deliveryId}": {
       "schema": "Delivery",
       "description": "Mirrored copy of recorded deliveries displayed in farmer-facing histories"
+    },
+    "/offtakers/{offtakerId}/subUsers/{subUserId}": {
+      "schema": "SubUser",
+      "description": "List of sub-users / Field Officers associated with an institutional tenant"
+    },
+    "/offtakers/{offtakerId}/smsLogs/{logId}": {
+      "schema": "SMSLog",
+      "description": "Chronological history of text notifications and receipt dispatches sent to farmers"
     }
   }
 }

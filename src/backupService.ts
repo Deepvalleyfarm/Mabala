@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 
-const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "mabala-f2d65";
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || "mabala-f2d65";
 const DATABASE_ID = process.env.FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-020042e7-7cf8-4e86-bdea-ea1ae9737651";
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyD3ixrRx5Y3vEobSH7sCGQZBZVWeYFzoHY";
@@ -107,6 +107,28 @@ async function createAuditLog(action: string, performedBy: string, targetUid: st
 
 // List all documents in a Firestore collection or subcollection
 async function listCollection(path: string, token?: string): Promise<any[]> {
+  // If token is missing, let's use the Firebase Admin SDK to fetch the collections securely
+  if (!token) {
+    try {
+      const { getApps } = await import("firebase-admin/app");
+      const apps = getApps();
+      if (apps.length > 0) {
+        const { getFirestore } = await import("firebase-admin/firestore");
+        const db = getFirestore(apps[0], DATABASE_ID);
+        const snapshot = await db.collection(path).get();
+        return snapshot.docs.map(doc => {
+          const data = doc.data() || {};
+          return {
+            name: `${FIRESTORE_BASE_URL}/${path}/${doc.id}`,
+            fields: toFirestoreFields(data)
+          };
+        });
+      }
+    } catch (adminErr: any) {
+      console.warn(`[Mabala Backup Admin Fallback] Admin SDK collection query failed for path "${path}":`, adminErr.message);
+    }
+  }
+
   try {
     const url = `${FIRESTORE_BASE_URL}/${path}?key=${FIREBASE_API_KEY}`;
     const headers: any = {};
@@ -679,17 +701,36 @@ export async function runPlatformBackup(operatorId: string, token?: string, type
     );
 
     // 1. Central Platform Configuration
-    const platformConfigUrl = `${FIRESTORE_BASE_URL}/platform/config?key=${FIREBASE_API_KEY}`;
-    const headers: any = {};
-    if (token) headers["Authorization"] = token;
-    
     let platformConfig: any = null;
-    try {
-      const configDoc = await safeFetchJson(platformConfigUrl, { method: "GET", headers });
-      platformConfig = fromFirestoreDocument(configDoc);
-      recordsCount++;
-    } catch {
-      // Config may not be initialized yet
+    if (!token) {
+      try {
+        const { getApps } = await import("firebase-admin/app");
+        const apps = getApps();
+        if (apps.length > 0) {
+          const { getFirestore } = await import("firebase-admin/firestore");
+          const db = getFirestore(apps[0], DATABASE_ID);
+          const docSnap = await db.doc("platform/config").get();
+          if (docSnap.exists) {
+            platformConfig = docSnap.data();
+            recordsCount++;
+          }
+        }
+      } catch (adminErr: any) {
+        console.warn(`[Mabala Backup Platform Config Admin Fallback] Admin SDK doc query failed:`, adminErr.message);
+      }
+    }
+
+    if (!platformConfig) {
+      try {
+        const platformConfigUrl = `${FIRESTORE_BASE_URL}/platform/config?key=${FIREBASE_API_KEY}`;
+        const headers: any = {};
+        if (token) headers["Authorization"] = token;
+        const configDoc = await safeFetchJson(platformConfigUrl, { method: "GET", headers });
+        platformConfig = fromFirestoreDocument(configDoc);
+        recordsCount++;
+      } catch {
+        // Config may not be initialized yet
+      }
     }
 
     // 2. Platform admin accounts
@@ -910,6 +951,179 @@ export async function runPlatformBackup(operatorId: string, token?: string, type
     driveFileId,
     errorMessage
   };
+}
+
+// Compiles and returns the entire platform-wide backup payload for local download
+export async function downloadPlatformBackup(operatorId: string, token?: string): Promise<any> {
+  console.log(`[Mabala Backup] Compiling live platform-wide backup for direct local download...`);
+  let recordsCount = 0;
+  let storageObjectsList: any[] = [];
+
+  // 1. Central Platform Configuration
+  let platformConfig: any = null;
+  if (!token) {
+    try {
+      const { getApps } = await import("firebase-admin/app");
+      const apps = getApps();
+      if (apps.length > 0) {
+        const { getFirestore } = await import("firebase-admin/firestore");
+        const db = getFirestore(apps[0], DATABASE_ID);
+        const docSnap = await db.doc("platform/config").get();
+        if (docSnap.exists) {
+          platformConfig = docSnap.data();
+          recordsCount++;
+        }
+      }
+    } catch (adminErr: any) {
+      console.warn(`[Mabala Backup Platform Config Admin Fallback] Admin SDK doc query failed:`, adminErr.message);
+    }
+  }
+
+  if (!platformConfig) {
+    try {
+      const platformConfigUrl = `${FIRESTORE_BASE_URL}/platform/config?key=${FIREBASE_API_KEY}`;
+      const headers: any = {};
+      if (token) headers["Authorization"] = token;
+      const configDoc = await safeFetchJson(platformConfigUrl, { method: "GET", headers });
+      platformConfig = fromFirestoreDocument(configDoc);
+      recordsCount++;
+    } catch {
+      // Empty or unconfigured
+    }
+  }
+
+  // 2. Platform admin accounts
+  const adminDocs = await listCollection("platform/admins", token);
+  const platformAdmins = adminDocs.map(doc => ({
+    uid: doc.name.split("/").pop(),
+    ...fromFirestoreDocument(doc)
+  }));
+  recordsCount += platformAdmins.length;
+
+  // 3. Platform audit logs feed
+  const auditDocs = await listCollection("platform/audit_logs", token);
+  const platformAuditLogs = auditDocs.map(doc => ({
+    id: doc.name.split("/").pop(),
+    ...fromFirestoreDocument(doc)
+  }));
+  recordsCount += platformAuditLogs.length;
+
+  // 4. Multi-tenant user workspaces
+  const userDocs = await listCollection("users_data", token);
+  const usersData = userDocs.map(doc => ({
+    uid: doc.name.split("/").pop(),
+    ...fromFirestoreDocument(doc)
+  }));
+  recordsCount += usersData.length;
+
+  // 5. Payments history ledger
+  const payDocs = await listCollection("payments", token);
+  const payments = payDocs.map(doc => ({
+    id: doc.name.split("/").pop(),
+    ...fromFirestoreDocument(doc)
+  }));
+  recordsCount += payments.length;
+
+  // 6. Offtakers with nested records
+  const offtakerDocs = await listCollection("offtakers", token);
+  const offtakers: any[] = [];
+  for (const doc of offtakerDocs) {
+    const offtakerId = doc.name.split("/").pop();
+    const docData = fromFirestoreDocument(doc);
+    
+    const linkedFarmersDocs = await listCollection(`offtakers/${offtakerId}/linkedFarmers`, token);
+    const linkedFarmers = linkedFarmersDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+    
+    const qualitySettingsDocs = await listCollection(`offtakers/${offtakerId}/qualitySettings`, token);
+    const qualitySettings = qualitySettingsDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+    
+    const deliveriesDocs = await listCollection(`offtakers/${offtakerId}/deliveries`, token);
+    const deliveries = deliveriesDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+
+    offtakers.push({
+      offtakerId,
+      docData,
+      linkedFarmers,
+      qualitySettings,
+      deliveries
+    });
+    recordsCount += 1 + linkedFarmers.length + qualitySettings.length + deliveries.length;
+  }
+
+  // 7. Farmers with nested records
+  const farmerDocs = await listCollection("farmers", token);
+  const farmers: any[] = [];
+  for (const doc of farmerDocs) {
+    const farmerId = doc.name.split("/").pop();
+    const docData = fromFirestoreDocument(doc);
+
+    const offtakerLinksDocs = await listCollection(`farmers/${farmerId}/offtakerLinks`, token);
+    const offtakerLinks = offtakerLinksDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+
+    const notificationsDocs = await listCollection(`farmers/${farmerId}/notifications`, token);
+    const notifications = notificationsDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+
+    const deliveriesDocs = await listCollection(`farmers/${farmerId}/deliveries`, token);
+    const deliveries = deliveriesDocs.map(d => ({ id: d.name.split("/").pop(), ...fromFirestoreDocument(d) }));
+
+    farmers.push({
+      farmerId,
+      docData,
+      offtakerLinks,
+      notifications,
+      deliveries
+    });
+    recordsCount += 1 + offtakerLinks.length + notifications.length + deliveries.length;
+  }
+
+  // GCS media file scanning
+  try {
+    const admin = await import("firebase-admin");
+    const bucket = (admin as any).storage().bucket();
+    const [files] = await bucket.getFiles();
+    storageObjectsList = files.map(file => ({
+      name: file.name,
+      size: file.metadata.size,
+      contentType: file.metadata.contentType,
+      updated: file.metadata.updated
+    }));
+  } catch (gcsErr: any) {
+    console.warn("[downloadPlatformBackup] Storage bucket info skipped: ", gcsErr.message);
+  }
+
+  const backupPayload = {
+    manifest: {
+      version: "1.0",
+      timestamp: new Date().toISOString(),
+      databaseId: DATABASE_ID,
+      projectId: PROJECT_ID,
+      collections: [
+        "platform/config",
+        "platform/admins",
+        "platform/audit_logs",
+        "users_data",
+        "payments",
+        "offtakers",
+        "farmers"
+      ],
+      recordsCount,
+      storageObjectsCount: storageObjectsList.length,
+      operatorId,
+      type: "manual"
+    },
+    data: {
+      platformConfig,
+      platformAdmins,
+      platformAuditLogs,
+      usersData,
+      payments,
+      offtakers,
+      farmers
+    },
+    storageObjects: storageObjectsList
+  };
+
+  return backupPayload;
 }
 
 // Cloud Function 2: runPlatformRestore
@@ -1298,27 +1512,60 @@ export async function cleanupExpiredBackups(token?: string): Promise<any> {
 
 // Background scheduler loop supporting daily (00:00 CAT / 22:00 UTC) and weekly purges
 let schedulerInterval: NodeJS.Timeout | null = null;
+let lastScheduledBackupDate: string = ""; // "YYYY-MM-DD"
+let lastWeeklyCleanupDate: string = ""; // "YYYY-MM-DD"
+
 export function initAutomatedBackups() {
   if (schedulerInterval) return;
-  console.log("[Mabala Backup] Initializing productionbackground scheduler loop (checks CAT times every hour)...");
+  console.log("[Mabala Backup] Initializing production background scheduler loop (checks CAT & local times every minute)...");
   
   schedulerInterval = setInterval(async () => {
     try {
       const now = new Date();
+      const todayUtc = now.toISOString().split("T")[0];
       
-      // Daily backup trigger: 00:00 CAT corresponds to 22:00 UTC
-      if (now.getUTCHours() === 22) {
-        console.log("[Mabala Backup Scheduler] 22:00 UTC (00:00 CAT) Daily backup scheduled job runPlatformBackup triggering...");
-        await runPlatformBackup("SYSTEM_SCHEDULER", undefined, "scheduled");
+      // We trigger the daily backup when we enter the "midnight" window:
+      // - 22:00 UTC (which corresponds to 00:00 CAT)
+      // - 00:00 UTC
+      // - 00:00 local server time (now.getHours() === 0)
+      const isMidnightHour = now.getUTCHours() === 22 || now.getUTCHours() === 0 || now.getHours() === 0;
+      
+      if (isMidnightHour && lastScheduledBackupDate !== todayUtc) {
+        // Double check against Firestore backup runs to avoid duplicate trigger if server restarted
+        let alreadyRunToday = false;
+        try {
+          const runs = await fetchBackupRunsFromFirestore();
+          const scheduledRunsToday = runs.filter(
+            r => r.type === "scheduled" && 
+            r.status === "success" &&
+            r.timestamp && 
+            r.timestamp.split("T")[0] === todayUtc
+          );
+          if (scheduledRunsToday.length > 0) {
+            alreadyRunToday = true;
+            lastScheduledBackupDate = todayUtc;
+            console.log(`[Mabala Backup Scheduler] Daily backup already executed today (${todayUtc}) in Firestore. Skipping.`);
+          }
+        } catch (dbErr) {
+          console.warn("[Mabala Backup Scheduler] Failed to verify historical backup runs in Firestore:", dbErr);
+        }
+
+        if (!alreadyRunToday) {
+          lastScheduledBackupDate = todayUtc;
+          console.log(`[Mabala Backup Scheduler] Daily backup scheduled job runPlatformBackup triggering for ${todayUtc}...`);
+          await runPlatformBackup("SYSTEM_SCHEDULER", undefined, "scheduled");
+        }
       }
 
-      // Weekly backup cleanup trigger: Sunday at 22:00 UTC (00:00 CAT Monday)
-      if (now.getUTCDay() === 0 && now.getUTCHours() === 22) {
-        console.log("[Mabala Backup Scheduler] Sunday 22:00 UTC weekly cleaning job cleanupExpiredBackups triggering...");
+      // Weekly backup cleanup trigger: Sunday at 22:00 UTC (00:00 CAT Monday) or Sunday 00:00 UTC
+      const isSundayMidnight = now.getUTCDay() === 0 && (now.getUTCHours() === 22 || now.getUTCHours() === 0);
+      if (isSundayMidnight && lastWeeklyCleanupDate !== todayUtc) {
+        lastWeeklyCleanupDate = todayUtc;
+        console.log(`[Mabala Backup Scheduler] Sunday weekly cleaning job cleanupExpiredBackups triggering for ${todayUtc}...`);
         await cleanupExpiredBackups(undefined);
       }
     } catch (e: any) {
       console.error("[Mabala Backup Scheduler Loop Error]:", e.message);
     }
-  }, 1000 * 60 * 60); // Hourly
+  }, 1000 * 60); // Checks every minute for complete precision and reliability
 }

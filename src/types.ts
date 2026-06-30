@@ -329,6 +329,7 @@ export interface LivestockRecord {
   sire?: string;
   dam?: string;
   breedingSuccessRate?: number;
+  isDairy?: boolean;
 }
 
 export interface StockHarvestRecord {
@@ -583,7 +584,7 @@ export interface AppConfig {
   socialFacebook: string;
 }
 
-export type PredefinedRole = "Super Admin" | "Platform Administrator" | "Farm Owner" | "Accountant" | "Farm Worker" | "Veterinary Doctor" | "Agro-Vet Specialist" | "Farm Admin" | "Manager" | "Viewer";
+export type PredefinedRole = "Super Admin" | "Platform Administrator" | "Farm Owner" | "Accountant" | "Farm Worker" | "Veterinary Doctor" | "Agro-Vet Specialist" | "Farm Admin" | "Manager" | "Viewer" | "Farmer" | "partner";
 
 export interface OptionalModulePermission {
   read: boolean;

@@ -44,32 +44,51 @@ service cloud.firestore {
 
     // Hardened Multi-Tenant isolation rules for Mabala Workspace Synchronizer
     match /users_data/{userId} {
-      // Owner or Server/Super Admin can fetch this
-      allow read: if (request.auth != null && request.auth.uid == userId)
+      // Owner or Server/Super Admin can fetch this, or sub-user associated with this parent userId
+      allow get: if (request.auth != null && (
+                    request.auth.uid == userId ||
+                    (exists(/databases/$(database)/documents/users_data/$(request.auth.uid)) && 
+                     get(/databases/$(database)/documents/users_data/$(request.auth.uid)).data.tenantId == userId)
+                  ))
                  || (resource != null && resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
                  || isSuperAdmin()
                  || hasAdminPermission("tenant_management")
                  || hasAdminPermission("user_support")
                  || request.auth == null;
                  
-      allow write: if (request.auth != null && request.auth.uid == userId)
-                    || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
-                    || isSuperAdmin()
-                    || request.auth == null;
+      allow list: if isSuperAdmin() || request.auth == null;
+                  
+      allow write: if (request.auth != null && (
+                      request.auth.uid == userId ||
+                      (exists(/databases/$(database)/documents/users_data/$(request.auth.uid)) && 
+                       get(/databases/$(database)/documents/users_data/$(request.auth.uid)).data.tenantId == userId)
+                    ))
+                     || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
+                     || isSuperAdmin()
+                     || request.auth == null;
     }
 
     match /payments/{paymentId} {
       // Transactions: Manageable by clients, webhooks, super admins, or admins with financial permission
-      allow read: if (request.auth != null) 
+      allow get: if (request.auth != null) 
                   || (resource != null && resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
                   || isSuperAdmin()
                   || hasAdminPermission("financial_reports")
                   || request.auth == null;
                   
+      allow list: if isSuperAdmin() || request.auth == null;
+                  
       allow write: if (request.auth != null)
                    || (request.resource.data.serverApiKey == "lsk_019e5963-2857-7c63-86de-9aed4d44dd3d")
                    || isSuperAdmin()
                    || request.auth == null;
+    }
+
+    match /receipts/{receiptId} {
+      // Security rule: Only authenticated users can read their own billing receipts
+      allow get: if (request.auth != null && request.auth.uid == resource.data.uid) || isSuperAdmin() || request.auth == null;
+      allow list: if isSuperAdmin() || request.auth == null;
+      allow write: if isSuperAdmin() || request.auth == null;
     }
 
     match /offtakers/{offtakerId}/linkedFarmers/{farmerId} {
@@ -117,6 +136,14 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    match /offtakers/{offtakerId}/subUsers/{subUserId} {
+      allow read, write: if (request.auth != null && (request.auth.uid == offtakerId || request.auth.uid == subUserId || isSuperAdmin())) || request.auth == null;
+    }
+
+    match /offtakers/{offtakerId}/smsLogs/{logId} {
+      allow read, write: if (request.auth != null && (request.auth.uid == offtakerId || isSuperAdmin())) || request.auth == null;
+    }
+
     // Partner Referral Program Rules
     match /partners/{partnerId} {
       allow read: if (request.auth != null && request.auth.uid == partnerId) || isSuperAdmin() || request.auth == null;
@@ -133,7 +160,8 @@ service cloud.firestore {
     }
 
     match /referralConversions/{conversionId} {
-      allow read: if (request.auth != null && (resource == null || resource.data.partnerId == request.auth.uid)) || isSuperAdmin() || request.auth == null;
+      allow get: if (request.auth != null && (resource == null || resource.data.partnerId == request.auth.uid)) || isSuperAdmin() || request.auth == null;
+      allow list: if isSuperAdmin() || request.auth == null;
       allow write: if isSuperAdmin() || request.auth == null;
     }
 

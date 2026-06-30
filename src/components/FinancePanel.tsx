@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useOperationalSafetyCheck } from "./BoundaryGuard";
 import { Investment, Loan, OtherRevenue, Account } from "../types";
 import AccountsPanel from "./AccountsPanel";
 import { 
@@ -57,6 +58,7 @@ export default function FinancePanel({
   isReadonly,
   currencySymbol
 }: FinancePanelProps) {
+  useOperationalSafetyCheck("FinancePanel");
   const [activeSubTab, setActiveSubTab] = useState<"investments" | "loans" | "other-revenue" | "accounts">("investments");
 
   // Models states

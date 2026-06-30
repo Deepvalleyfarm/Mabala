@@ -32,6 +32,7 @@ import {
   Check,
   Info
 } from "lucide-react";
+import MabalaLogo from "./MabalaLogo";
 
 interface WelcomeScreenProps {
   key?: any;
@@ -126,6 +127,7 @@ export default function WelcomeScreen({
   const [isLaunchingDemo, setIsLaunchingDemo] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"login" | "register" | "register-vendor" | "register-vet" | "register-offtaker" | "register-partner">("login");
   const [activeWelcomeRoleTab, setActiveWelcomeRoleTab] = useState<"farmer" | "vet" | "supplier">("farmer");
+  const [loginPortalMode, setLoginPortalMode] = useState<"operational" | "institution">("operational");
   
   // Offtaker onboarding states
   const [offtakerLegalName, setOfftakerLegalName] = useState("");
@@ -925,15 +927,7 @@ export default function WelcomeScreen({
 
         {/* HEADER BAR AND NAVIGATION */}
         <header className="w-full bg-white border-b border-slate-150 px-6 py-4 flex items-center justify-between sticky top-0 bg-white/90 backdrop-blur-md z-40 max-w-7xl mx-auto">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-lg shadow-md shadow-emerald-600/20">
-              M
-            </div>
-            <div>
-              <span className="text-sm font-black text-slate-900 uppercase tracking-wider block leading-none">Mabala SaaS</span>
-              <span className="text-[9px] text-slate-400 font-mono tracking-widest uppercase block mt-0.5">Agricultural Engineering Cloud</span>
-            </div>
-          </div>
+          <MabalaLogo variant="full" theme="light" size={36} />
 
           <nav className="hidden md:flex items-center gap-7 text-xs font-bold text-slate-500">
             <a href="#features" className="hover:text-emerald-600 transition">Solutions Suite</a>
@@ -1977,14 +1971,6 @@ export default function WelcomeScreen({
                   <p className="text-[11px] text-slate-400 leading-snug font-medium">Continuous posting maps expenses to 1010 Bank and specific 5xxx categories natively.</p>
                 </div>
               </div>
-
-              <div className="flex gap-3 items-start">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide">Hercules AI Support</h4>
-                  <p className="text-[11px] text-slate-400 leading-snug font-medium">Embedded biological & financial co-pilot ready to answer FCR metrics & tax limits.</p>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -2286,15 +2272,48 @@ export default function WelcomeScreen({
                   ) : (
                     <form onSubmit={handleLoginSubmit} className="space-y-4 font-semibold text-xs text-slate-800">
                     <h2 className="text-xl font-bold text-slate-900 font-sans tracking-tight">Sign In to Your Tenant</h2>
-                    <p className="text-xs text-slate-400 font-medium leading-normal">
-                      Access your multi-farm data structure, payroll localized books, and inventories.
-                    </p>
+                    
+                    {/* Portal Switcher Tabs */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setLoginPortalMode("operational")}
+                        className={`flex-1 py-1.5 rounded-lg text-center font-bold text-[10.5px] uppercase transition-all duration-200 cursor-pointer ${
+                          loginPortalMode === "operational"
+                            ? "bg-white text-slate-900 shadow-sm border border-slate-200/40"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        Operational / Farmer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLoginPortalMode("institution")}
+                        className={`flex-1 py-1.5 rounded-lg text-center font-bold text-[10.5px] uppercase transition-all duration-200 cursor-pointer ${
+                          loginPortalMode === "institution"
+                            ? "bg-indigo-650 text-white shadow-sm border border-indigo-700/20"
+                            : "text-slate-500 hover:text-indigo-800"
+                        }`}
+                      >
+                        Sponsoring Organisation
+                      </button>
+                    </div>
+
+                    {loginPortalMode === "operational" ? (
+                      <p className="text-xs text-slate-400 font-medium leading-normal">
+                        Access your multi-farm data structure, payroll localized books, and inventories.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400 font-medium leading-normal">
+                        Access your regional impact reporting dashboard, bulk SMS tools, and partner statistics.
+                      </p>
+                    )}
 
                     <div>
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Email Address</label>
                       <input
                         type="email"
-                        placeholder="e.g. farmer@mabala.com"
+                        placeholder={loginPortalMode === "operational" ? "e.g. farmer@mabala.com" : "e.g. administrator@ngo.org"}
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         required
@@ -2502,17 +2521,20 @@ export default function WelcomeScreen({
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Subscriber Country</label>
-                        <select
-                          value={selectedCountryCode}
-                          onChange={(e) => setSelectedCountryCode(e.target.value)}
-                          className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all mt-1 font-semibold text-slate-850"
-                        >
-                          {COUNTRIES.map((c) => (
-                             <option key={c.code} value={c.code}>
-                               {c.flag} {c.name} ({c.currency})
-                             </option>
-                          ))}
-                        </select>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-lg px-2 py-1 bg-slate-100 rounded-lg border select-none">{COUNTRIES.find(c => c.code === selectedCountryCode)?.flag || "🇿🇲"}</span>
+                          <select
+                            value={selectedCountryCode}
+                            onChange={(e) => setSelectedCountryCode(e.target.value)}
+                            className="w-full border rounded-lg px-3 py-1.5 text-xs bg-slate-50/50 outline-none focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 transition-all font-semibold text-slate-850 cursor-pointer"
+                          >
+                            {COUNTRIES.map((c) => (
+                               <option key={c.code} value={c.code}>
+                                 {c.flag} {c.name} ({c.currency})
+                               </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </div>
 
@@ -2590,7 +2612,7 @@ export default function WelcomeScreen({
                       className="w-full py-2 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <UserPlus className="w-4 h-4" />
-                      <span>{isSendingOtp ? "Provisioning..." : "Provision Tenant Database"}</span>
+                      <span>{isSendingOtp ? "Signing up..." : "SIGN UP"}</span>
                     </button>
                   </form>
                 ) : activeTab === "register-vendor" ? (

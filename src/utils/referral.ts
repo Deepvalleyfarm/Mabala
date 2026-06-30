@@ -91,7 +91,17 @@ export const processReferralSignup = async (
 
     // 4. Create the conversion record
     const conversionId = "conv_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
-    const commissionRate = partnerData.commissionRate || 0.15;
+    
+    const currentPaidConversions = partnerData.totalPaidConversions || 0;
+    
+    // Dynamic tiered rate based on cumulative conversions
+    let commissionRate = 0.15;
+    if (currentPaidConversions >= 15) {
+      commissionRate = 0.25;
+    } else if (currentPaidConversions >= 5) {
+      commissionRate = 0.20;
+    }
+
     const isPaidConversion = firstPaymentAmount > 0;
     const commissionAmount = isPaidConversion ? firstPaymentAmount * commissionRate : 0;
 
@@ -117,9 +127,18 @@ export const processReferralSignup = async (
 
     // 5. Update partner cumulative metrics if paid conversion
     if (isPaidConversion) {
+      const newPaidConversions = currentPaidConversions + 1;
+      let newCommissionRate = 0.15;
+      if (newPaidConversions >= 15) {
+        newCommissionRate = 0.25;
+      } else if (newPaidConversions >= 5) {
+        newCommissionRate = 0.20;
+      }
+
       await updateDoc(doc(db, "partners", partnerId), {
-        totalPaidConversions: (partnerData.totalPaidConversions || 0) + 1,
-        totalCommissionEarned: (partnerData.totalCommissionEarned || 0) + commissionAmount
+        totalPaidConversions: newPaidConversions,
+        totalCommissionEarned: (partnerData.totalCommissionEarned || 0) + commissionAmount,
+        commissionRate: newCommissionRate
       });
     }
 

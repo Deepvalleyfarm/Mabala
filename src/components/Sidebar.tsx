@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { PredefinedRole, OptionalModulePermission } from "../types";
 import { useSuperAdmin } from "../hooks/useSuperAdmin";
+import MabalaLogo from "./MabalaLogo";
 
 interface SidebarProps {
   activeTab: string;
@@ -382,20 +383,8 @@ export default function Sidebar({
   return (
     <aside className="w-64 bg-slate-900 flex flex-col h-screen border-r border-slate-800 text-white select-none shrink-0" id="mabala-sidebar">
       {/* Platform Branding */}
-      <div className="p-6 flex items-center gap-3 border-b border-slate-800/60 font-sans">
-        <div className="w-9 h-9 flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 100 100" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Soft medium-green colored circular background */}
-            <circle cx="50" cy="50" r="48" fill="#5A9E6F" />
-            <path d="M50 78C50 78 48 55 48 48C48 38 34 28 34 28C34 28 30 42 41 51C47 55 50 78 50 78Z" fill="white" />
-            <path d="M50 78C50 78 52 55 52 48C52 38 66 28 66 28C66 28 70 42 59 51C53 55 50 78 50 78Z" fill="white" />
-            <path d="M50 82V35" stroke="white" strokeWidth="4" strokeLinecap="round" />
-          </svg>
-        </div>
-        <div>
-          <span className="text-white font-bold text-xl tracking-tight block font-sans">Mabala</span>
-          <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest block font-mono">Agro OS</span>
-        </div>
+      <div className="p-6 border-b border-slate-800/60 flex items-center font-sans">
+        <MabalaLogo variant="full" theme="dark" size={36} />
       </div>
 
       {/* Dynamic Profile Badge inside Sidebar */}

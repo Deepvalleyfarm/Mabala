@@ -11,6 +11,7 @@ interface AnimalRegistrationWizardProps {
   onSave: (record: LivestockRecord) => void;
   currencySymbol: string;
   existingCount: number;
+  activeFarmId: string;
 }
 
 const SPECIES_PRESETS = [
@@ -40,7 +41,8 @@ export default function AnimalRegistrationWizard({
   onClose,
   onSave,
   currencySymbol,
-  existingCount
+  existingCount,
+  activeFarmId
 }: AnimalRegistrationWizardProps) {
   const [step, setStep] = useState(1);
 
@@ -52,17 +54,35 @@ export default function AnimalRegistrationWizard({
   const [tagId, setTagId] = useState("");
   const [animalName, setAnimalName] = useState("");
   const [gender, setGender] = useState<"Male" | "Female">("Female");
+  const [isDairy, setIsDairy] = useState(false);
   const [dob, setDob] = useState(() => {
     const today = new Date();
     return today.toISOString().split("T")[0];
   });
+  const [weight, setWeight] = useState(380);
   const [photoUrl, setPhotoUrl] = useState("");
   const [section, setSection] = useState("A-Block");
   const [paddock, setPaddock] = useState("Paddock 4");
-  const [vaccinationStatus, setVaccinationStatus] = useState("Up to Date");
-  const [healthNotes, setHealthNotes] = useState("Healthy specimen, verified by supervisor.");
 
-  // Generate Unique ID and assets on fly
+  // Automatically update default weight when species changes
+  const handleSpeciesChange = (newSpecies: string) => {
+    setSpecies(newSpecies);
+    const defaultBreeds = BREED_PRESETS[newSpecies] || [];
+    setBreed(defaultBreeds[0] || "Other");
+    
+    // Set a realistic starting weight
+    if (newSpecies === "Cattle") {
+      setWeight(380);
+    } else if (newSpecies === "Goats" || newSpecies === "Sheep") {
+      setWeight(45);
+    } else if (newSpecies === "Pigs") {
+      setWeight(90);
+    } else {
+      setWeight(25);
+    }
+  };
+
+  // Generate Unique ID
   const finalSpecies = useMemo(() => {
     return species === "Other" ? (customSpecies.trim() || "Other") : species;
   }, [species, customSpecies]);
@@ -81,10 +101,10 @@ export default function AnimalRegistrationWizard({
     return tagId.trim() || generatedId;
   }, [tagId, generatedId]);
 
-  const progressPercent = (step / 6) * 100;
+  const progressPercent = (step / 3) * 100;
 
   const handleNext = () => {
-    if (step < 6) setStep(prev => prev + 1);
+    if (step < 3) setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
@@ -103,9 +123,9 @@ export default function AnimalRegistrationWizard({
       source: "Mabala Self-Registry Wizard",
       dateAcquired: dob,
       purchasePrice: 0,
-      currentValue: species === "Cattle" ? 12000 : species === "Goats" ? 3500 : 2500,
+      currentValue: finalSpecies === "Cattle" ? 12000 : finalSpecies === "Goats" ? 3500 : 2500,
       status: "Active",
-      farmId: "farm-1",
+      farmId: activeFarmId, // Assign to current dynamic active farm
       dob: dob,
       age: "0 months",
       photos: {
@@ -114,11 +134,14 @@ export default function AnimalRegistrationWizard({
       healthEvents: [],
       feedingLogs: [],
       color: "Standard markings",
-      weight: species === "Cattle" ? 45 : species === "Goats" ? 8 : 6,
+      weight: Number(weight),
       sire: "Herd Sire Code",
       dam: "Dam Breeder Code",
+      isDairy: isDairy // Set whether this animal is registered as dairy or not
     };
+
     onSave(record);
+
     // Reset Form
     setStep(1);
     setTagId("");
@@ -126,13 +149,15 @@ export default function AnimalRegistrationWizard({
     setPhotoUrl("");
     setCustomSpecies("");
     setCustomBreed("");
+    setIsDairy(false);
+    setWeight(380);
     onClose();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4 overflow-y-auto animate-fade-in" id="animal-wizard-overlay">
+    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-[200] flex items-center justify-center p-4 overflow-y-auto animate-fade-in" id="animal-wizard-overlay">
       <div className="bg-white rounded-3xl max-w-3xl w-full flex flex-col shadow-2xl border border-slate-100 overflow-hidden transform scale-100 transition-all">
         
         {/* Wizard Header */}
@@ -159,47 +184,43 @@ export default function AnimalRegistrationWizard({
 
         {/* Step Badge Row */}
         <div className="px-6 py-3 border-b bg-slate-50 flex justify-between items-center text-xs text-slate-500 font-bold font-sans">
-          <span>Step {step} of 6 : <span className="text-slate-800">{
-            step === 1 ? "Animal Species Category" :
-            step === 2 ? "Biological Profile Information" :
-            step === 3 ? "Onboarding Snapshot Image" :
-            step === 4 ? "Ownership, Farm & Pasture Coordinates" :
-            step === 5 ? "Sub-Herd Immunity & Vaccinations" :
+          <span>Step {step} of 3 : <span className="text-slate-800">{
+            step === 1 ? "Category, Breed & Purpose" :
+            step === 2 ? "Biometrics & Location Details" :
             "Review Certificate Summary"
           }</span></span>
           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider font-mono">
-            Onboarding Mode
+            Streamlined Mode
           </span>
         </div>
 
         {/* Content Area */}
         <div className="flex-1 p-6 overflow-y-auto max-h-[60vh] min-h-[350px]">
           
-          {/* STEP 1: Animal Type Selection */}
+          {/* STEP 1: Animal Classification & Purpose */}
           {step === 1 && (
-            <div className="space-y-4 animate-fade-in">
-              <div className="text-center max-w-md mx-auto pb-2">
-                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest">Select animal species category</h3>
-                <p className="text-slate-500 text-xs mt-1">Which species cluster represents the new dynamic asset profile?</p>
+            <div className="space-y-6 animate-fade-in">
+              <div className="text-center max-w-md mx-auto">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Select animal species</h3>
+                <p className="text-slate-600 text-xs mt-1 font-bold">Which species cluster represents the new dynamic asset profile?</p>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 pt-2">
+
+              {/* Grid of Species */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {SPECIES_PRESETS.map((p) => {
                   const isSelected = species === p.id;
                   return (
                     <button
+                      type="button"
                       key={p.id}
-                      onClick={() => {
-                        setSpecies(p.id);
-                        const defaultBreeds = BREED_PRESETS[p.id] || [];
-                        setBreed(defaultBreeds[0] || "Other");
-                      }}
-                      className={`p-4 text-center rounded-2xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center space-y-2 min-h-[110px] focus:outline-none ${
+                      onClick={() => handleSpeciesChange(p.id)}
+                      className={`p-3 text-center rounded-2xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center space-y-1.5 min-h-[100px] focus:outline-none ${
                         isSelected 
                           ? "bg-slate-900 border-slate-900 text-white shadow-lg" 
-                          : "bg-white border-slate-200 text-slate-700 hover:border-slate-350 hover:bg-slate-50/50"
+                          : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/50"
                       }`}
                     >
-                      <span className="text-3xl filter hover:scale-115 transition-transform">{p.icon}</span>
+                      <span className="text-2xl filter hover:scale-110 transition-transform">{p.icon}</span>
                       <div>
                         <span className="font-extrabold text-xs block leading-tight">{p.label}</span>
                         <span className={`text-[8.5px] mt-0.5 block leading-tight opacity-75 truncate max-w-[120px] ${isSelected ? "text-slate-200" : "text-slate-400"}`}>
@@ -212,7 +233,7 @@ export default function AnimalRegistrationWizard({
               </div>
 
               {species === "Other" && (
-                <div className="bg-amber-50/50 border border-amber-200/70 p-4 rounded-xl mt-4 max-w-md mx-auto">
+                <div className="bg-amber-50/50 border border-amber-200 p-4 rounded-xl mt-2 max-w-md mx-auto">
                   <label className="text-[10px] font-black uppercase text-amber-800 block pb-1.5">Enter Custom Animal Species Name</label>
                   <input
                     type="text"
@@ -224,36 +245,9 @@ export default function AnimalRegistrationWizard({
                   />
                 </div>
               )}
-            </div>
-          )}
 
-          {/* STEP 2: Animal Profiles Detail Form */}
-          {step === 2 && (
-            <div className="space-y-4 animate-fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Animal Name / Cohort ID</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Bessie / Big Bull"
-                    value={animalName}
-                    onChange={(e) => setAnimalName(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 bg-white text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Ear Tag ID (Manual Override)</label>
-                  <input
-                    type="text"
-                    placeholder="Leave blank to generate automatically"
-                    value={tagId}
-                    onChange={(e) => setTagId(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 bg-white font-mono text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
-                  />
-                </div>
-
+              {/* Breed & Gender row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Registered Breed</label>
                   <select
@@ -300,6 +294,77 @@ export default function AnimalRegistrationWizard({
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Purpose Selection (Dairy vs Non-dairy) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-500 block pb-2">Asset Purpose & Dairy Classification</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsDairy(true)}
+                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                      isDairy 
+                        ? "bg-blue-50 border-blue-400 ring-2 ring-blue-400/20 text-blue-950" 
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🐄</span>
+                      <strong className="text-xs block">Dairy / Milking Production Cow</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
+                      Enable commercial milk yield logs, daily volume ledger, and cooperative selling features.
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsDairy(false)}
+                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                      !isDairy 
+                        ? "bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/20 text-emerald-950" 
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🥩</span>
+                      <strong className="text-xs block">Standard / Beef / Breeding Asset</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-1 block leading-relaxed">
+                      Register as a standard biological asset for meat, fine wool breeding, draft support, or valuation metrics.
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: Biometrics, Location & Snapshot */}
+          {step === 2 && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Animal Name / Cohort ID</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bessie / Big Bull"
+                    value={animalName}
+                    onChange={(e) => setAnimalName(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 bg-white text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Ear Tag ID (Manual Override)</label>
+                  <input
+                    type="text"
+                    placeholder="Leave blank to generate automatically"
+                    value={tagId}
+                    onChange={(e) => setTagId(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 bg-white font-mono text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
+                  />
+                </div>
 
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Date of Birth</label>
@@ -311,79 +376,13 @@ export default function AnimalRegistrationWizard({
                   />
                 </div>
 
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: Snapshot Image Upload mock */}
-          {step === 3 && (
-            <div className="space-y-4 animate-fade-in pb-2">
-              <div className="text-center max-w-sm mx-auto">
-                <div className="w-16 h-16 rounded-full bg-slate-100 border text-slate-400 flex items-center justify-center mx-auto mb-3">
-                  <Camera className="w-8 h-8" />
-                </div>
-                <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-widest">Attach Snapshot Photos</h3>
-                <p className="text-slate-500 text-xs mt-1">Provide a passport portrait URL to enrich the visual certificate profile</p>
-              </div>
-
-              <div className="max-w-md mx-auto space-y-3.5">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Live Image Link URL</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Liveweight (Kg)</label>
                   <input
-                    type="url"
-                    placeholder="Paste un-rounded image URL (optional)"
-                    value={photoUrl}
-                    onChange={(e) => setPhotoUrl(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 bg-white text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
-                  />
-                </div>
-
-                <div className="text-center pt-2">
-                  <span className="text-[10px] text-slate-400 block">Or select a standard model placeholder:</span>
-                  <div className="mt-2.5 flex justify-center gap-2">
-                    {[
-                      { l: "🐂 Hereford Calf", u: "https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=150" },
-                      { l: "🐐 Boer Kid", u: "https://images.unsplash.com/photo-1516467508483-a7212febe31a?w=150" },
-                      { l: "🐑 Dorper Ewe", u: "https://images.unsplash.com/photo-1484557985045-ebd25e08ae73?w=150" }
-                    ].map((btn, idx) => (
-                      <button 
-                        key={idx}
-                        type="button"
-                        onClick={() => setPhotoUrl(btn.u)}
-                        className={`px-3 py-1.5 border hover:border-slate-400 rounded-lg text-[10px] font-bold bg-white text-slate-700 shadow-3xs cursor-pointer ${photoUrl === btn.u && "border-slate-900 bg-slate-50 text-slate-900"}`}
-                      >
-                        {btn.l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {photoUrl && (
-                  <div className="flex justify-center pt-3">
-                    <img 
-                      src={photoUrl} 
-                      alt="Profile preview" 
-                      className="w-24 h-24 object-cover rounded-xl border border-slate-200 shadow-md ring-2 ring-emerald-500/25"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: Ownership Details */}
-          {step === 4 && (
-            <div className="space-y-4 animate-fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-300 block pb-1">Affiliated Farm Site</label>
-                  <input
-                    type="text"
-                    disabled
-                    value="Primary Mabala Operating Hub"
-                    className="w-full p-2.5 border border-slate-200 bg-slate-50 cursor-not-allowed text-slate-500 font-bold text-xs rounded-xl outline-none"
+                    type="number"
+                    value={weight === 0 ? "" : weight}
+                    onChange={(e) => setWeight(e.target.value === "" ? 0 : Number(e.target.value))}
+                    className="w-full p-2.5 border border-slate-200 bg-white font-mono text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
                   />
                 </div>
 
@@ -398,7 +397,7 @@ export default function AnimalRegistrationWizard({
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Paddock Range Coordinate</label>
                   <input
                     type="text"
@@ -408,61 +407,70 @@ export default function AnimalRegistrationWizard({
                     className="w-full p-2.5 border border-slate-200 bg-white text-slate-800 font-bold text-xs rounded-xl outline-none"
                   />
                 </div>
-
               </div>
-            </div>
-          )}
 
-          {/* STEP 5: Health & Vaccinations */}
-          {step === 5 && (
-            <div className="space-y-4 animate-fade-in">
-              <div className="grid grid-cols-1 gap-4">
+              {/* Snapshot Image URL */}
+              <div className="bg-slate-50 p-4 rounded-xl border space-y-3 mt-2">
+                <div className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-slate-500" />
+                  <span className="text-[10px] font-black uppercase text-slate-500">Attach Snapshot Profile Portrait</span>
+                </div>
                 
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1</div>">Herd Immunity Status</label>
-                  <select
-                    value={vaccinationStatus}
-                    onChange={(e) => setVaccinationStatus(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 bg-white font-bold text-xs text-slate-800 rounded-xl outline-none focus:border-slate-800"
-                  >
-                    <option value="Up to Date">✓ Completed Base Vaccinations (Up to Date)</option>
-                    <option value="Partially Vaccinated">⚠ Partially Protected (Awaiting Schedules)</option>
-                    <option value="Not Vaccinated">⚠ Unprotected (Unvaccinated State)</option>
-                    <option value="Overdue">🔴 Critical Schedules Overdue</option>
-                  </select>
+                <input
+                  type="url"
+                  placeholder="Paste portrait image URL (optional)"
+                  value={photoUrl}
+                  onChange={(e) => setPhotoUrl(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 bg-white text-slate-800 font-bold text-xs rounded-xl outline-none focus:border-slate-800"
+                />
+
+                <div className="flex flex-wrap gap-2 justify-center pt-1">
+                  {[
+                    { l: "🐂 Hereford Calf", u: "https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=150" },
+                    { l: "🐐 Boer Kid", u: "https://images.unsplash.com/photo-1516467508483-a7212febe31a?w=150" },
+                    { l: "🐑 Dorper Ewe", u: "https://images.unsplash.com/photo-1484557985045-ebd25e08ae73?w=150" }
+                  ].map((btn, idx) => (
+                    <button 
+                      key={idx}
+                      type="button"
+                      onClick={() => setPhotoUrl(btn.u)}
+                      className={`px-3 py-1 border hover:border-slate-400 rounded-lg text-[10px] font-bold bg-white text-slate-700 shadow-3xs cursor-pointer ${photoUrl === btn.u && "border-slate-900 bg-slate-50 text-slate-900"}`}
+                    >
+                      {btn.l}
+                    </button>
+                  ))}
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block pb-1">Biological Health Vitals & Notes</label>
-                  <textarea
-                    rows={4}
-                    placeholder="Describe diagnostic checks, physical scores, or marking details..."
-                    value={healthNotes}
-                    onChange={(e) => setHealthNotes(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 bg-white font-semibold text-xs text-slate-800 rounded-xl outline-none focus:border-slate-800 resize-none"
-                  />
-                </div>
-
+                {photoUrl && (
+                  <div className="flex justify-center pt-2">
+                    <img 
+                      src={photoUrl} 
+                      alt="Profile preview" 
+                      className="w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-md ring-2 ring-emerald-500/25"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* STEP 6: Review & Certificate generation */}
-          {step === 6 && (
-            <div className="space-y-5 animate-fade-in font-sans">
+          {/* STEP 3: Review & Certificate generation */}
+          {step === 3 && (
+            <div className="space-y-4 animate-fade-in font-sans">
               
-              {/* Registration Certificate with Double Borders mock */}
+              {/* Registration Certificate with Double Borders */}
               <div className="border-4 border-slate-900 p-6 rounded-2xl bg-slate-50 relative overflow-hidden" id="printable-certificate">
                 
                 {/* Decorative Seal Background */}
-                <div className="absolute right-[-20px] top-[-20px] w-48 h-48 rounded-full bg-emerald-500/10 flex items-center justify-center -rotate-12 border border-dashed border-emerald-500/20">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">OFFICIAL SEAL • APPROVED</span>
+                <div className="absolute right-[-20px] top-[-20px] w-40 h-40 rounded-full bg-emerald-500/10 flex items-center justify-center -rotate-12 border border-dashed border-emerald-500/20">
+                  <span className="text-[8px] font-bold text-emerald-800 uppercase tracking-widest">OFFICIAL SEAL • APPROVED</span>
                 </div>
 
                 {/* Passport Stamp and ID Header */}
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b border-dashed border-slate-200 pb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-3 border-b border-dashed border-slate-200 pb-4">
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
                       <Shield className="w-5 h-5 text-emerald-600 inline shrink-0" />
                       <span>MABALA REGISTRATION CERTIFICATE</span>
                     </h3>
@@ -479,7 +487,7 @@ export default function AnimalRegistrationWizard({
                   
                   {/* Portrait photo */}
                   <div className="sm:col-span-3 flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-xl border border-slate-300 overflow-hidden bg-slate-200 shadow-sm relative">
+                    <div className="w-20 h-20 rounded-xl border border-slate-300 overflow-hidden bg-slate-200 shadow-sm relative">
                       <img 
                         src={photoUrl.trim() || "https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=150"} 
                         alt="Onboarded profile" 
@@ -491,7 +499,7 @@ export default function AnimalRegistrationWizard({
                   </div>
 
                   {/* Text properties */}
-                  <div className="sm:col-span-6 grid grid-cols-2 gap-y-3.5 text-xs font-semibold">
+                  <div className="sm:col-span-6 grid grid-cols-2 gap-y-3 text-xs font-semibold">
                     <div>
                       <span className="text-[9px] text-slate-400 block font-bold uppercase font-sans">Animal Name</span>
                       <span className="text-slate-800 font-extrabold text-sm block">{animalName || "Bessie"}</span>
@@ -509,31 +517,39 @@ export default function AnimalRegistrationWizard({
                       <span className="text-slate-700 block">{finalBreed}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-400 block font-bold uppercase font-sans">Gender</span>
-                      <span className="text-slate-700 block">{gender}</span>
+                      <span className="text-[9px] text-slate-400 block font-bold uppercase font-sans">Gender & Weight</span>
+                      <span className="text-slate-700 block">{gender} • {weight} Kg</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-400 block font-bold uppercase font-sans">Date of Birth</span>
-                      <span className="text-slate-700 font-mono block">{dob}</span>
+                      <span className="text-[9px] text-slate-400 block font-bold uppercase font-sans">Purpose Role</span>
+                      {isDairy ? (
+                        <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-black font-sans uppercase tracking-wider inline-block">
+                          🐄 Dairy Milking Cow
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-black font-sans uppercase tracking-wider inline-block">
+                          🥩 Meat & Breeding
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* QR Code section */}
                   <div className="sm:col-span-3 flex flex-col items-center border border-dashed border-slate-300 p-2 bg-white rounded-xl">
-                    <QrCode className="w-16 h-16 text-slate-900" />
+                    <QrCode className="w-12 h-12 text-slate-900" />
                     <span className="text-[8px] text-slate-400 font-mono font-bold uppercase tracking-widest mt-1">Scan Verified</span>
                   </div>
                 </div>
 
                 {/* Lower meta */}
-                <div className="border-t border-dashed border-slate-200 mt-4 pt-4.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-bold text-slate-500">
+                <div className="border-t border-dashed border-slate-200 mt-4 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-bold text-slate-500">
                   <div>
                     <span className="text-[8px] text-slate-400 block uppercase">Coordinates Range</span>
                     <span className="text-slate-800 truncate block">{section} • {paddock}</span>
                   </div>
                   <div>
                     <span className="text-[8px] text-slate-400 block uppercase">Immunity Protection</span>
-                    <span className="text-emerald-600 font-black block">{vaccinationStatus}</span>
+                    <span className="text-emerald-600 font-black block">Up to Date</span>
                   </div>
                   <div>
                     <span className="text-[8px] text-slate-400 block uppercase">Operational Status</span>
@@ -570,7 +586,7 @@ export default function AnimalRegistrationWizard({
               Cancel
             </button>
 
-            {step < 6 ? (
+            {step < 3 ? (
               <button 
                 type="button"
                 onClick={handleNext}
@@ -586,7 +602,7 @@ export default function AnimalRegistrationWizard({
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all active:scale-98 hover:shadow"
               >
                 <FileCheck className="w-4 h-4" />
-                Onboard Asset Profile
+                Register New Animal
               </button>
             )}
           </div>

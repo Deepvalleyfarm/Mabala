@@ -31,7 +31,9 @@ import {
   Clock,
   ShieldCheck,
   RotateCcw,
-  CloudLightning
+  CloudLightning,
+  Download,
+  CheckCircle2
 } from "lucide-react";
 import backupPreset from "../data/backup.json";
 import { auth } from "../firebase";
@@ -380,6 +382,66 @@ export default function BackupRestorePanel({
     }
   };
 
+  const [downloadingLocalBackup, setDownloadingLocalBackup] = useState(false);
+
+  const handleDownloadLocalBackup = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (isSuperAdmin) {
+      if (!confirm("Are you sure you wish to compile and download a platform-wide backup copy containing all multi-tenant datasets locally onto your computer?")) return;
+      setDownloadingLocalBackup(true);
+      try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const headers: any = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        headers["x-mabala-super-uid"] = auth.currentUser?.uid || "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
+
+        const res = await fetch("/api/admin/backup-download", { method: "POST", headers });
+        const body = await res.json();
+        if (res.ok && body.success && body.payload) {
+          const blob = new Blob([JSON.stringify(body.payload, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `mabala-platform-wide-backup-${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          setSuccessMsg(`Platform-wide backup successfully compiled! Downloaded locally as "mabala-platform-wide-backup-${new Date().toISOString().split('T')[0]}.json".`);
+          fetchBackupRuns();
+        } else {
+          setErrorMsg(`Platform-wide backup compilation failed: ${body.error || "Unknown server response."}`);
+        }
+      } catch (err: any) {
+        setErrorMsg(`Communication failed: ${err.message}`);
+      } finally {
+        setDownloadingLocalBackup(false);
+      }
+    } else {
+      // Normal tenant: triggers client-side blob download of their own workspace data, ensuring no data leakage!
+      try {
+        const data = generateBackupData();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `mabala-tenant-backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        setSuccessMsg(`Workspace backup successfully compiled! Downloaded locally as "mabala-tenant-backup-${new Date().toISOString().split('T')[0]}.json".`);
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } catch (e: any) {
+        setErrorMsg(`Failed to generate backup: ${e.message}`);
+      }
+    }
+  };
+
   const handleTriggerCloudBackup = async () => {
     if (!confirm("Are you sure you wish to trigger an immediate, platform-wide cloud backup to Google Drive? This scans all tenant collections and outputs a unified archival document.")) return;
     setTriggeringBackup(true);
@@ -592,25 +654,7 @@ export default function BackupRestorePanel({
     };
   };
 
-  const handleDownloadBackup = () => {
-    try {
-      const data = generateBackupData();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `mabala-backup-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      setSuccessMsg("System successfully compiled and downloaded backup payload.");
-      setTimeout(() => setSuccessMsg(null), 4000);
-    } catch (e: any) {
-      setErrorMsg(`Failed to generate backup: ${e.message}`);
-    }
-  };
+
 
   const handleCopyBackup = () => {
     try {
@@ -1067,11 +1111,16 @@ export default function BackupRestorePanel({
 
           <div className="flex flex-col sm:flex-row gap-3">
             <button
-              onClick={handleDownloadBackup}
-              className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              onClick={handleDownloadLocalBackup}
+              disabled={downloadingLocalBackup}
+              className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
             >
-              <DownloadCloud className="w-4 h-4" />
-              <span>Download Backup File</span>
+              {downloadingLocalBackup ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <DownloadCloud className="w-4 h-4" />
+              )}
+              <span>Download Local Backup</span>
             </button>
             <button
               onClick={handleCopyBackup}
@@ -1093,7 +1142,7 @@ export default function BackupRestorePanel({
               </p>
               <button
                 onClick={() => {
-                  if (confirm("Attention: Are you sure you wish to wipe the entire database clean? This leaves the dashboard and tables completely empty.")) {
+                  if (confirm("Attention: Are you absolutely sure you wish to clear all data for this specific farm tenant? This will irreversibly delete all records associated with this tenant, leaving other tenants completely safe and unaffected.")) {
                     onClear();
                     setSuccessMsg("Success! The workspace database is now completely empty.");
                     setTimeout(() => setSuccessMsg(null), 4000);
@@ -1260,18 +1309,33 @@ export default function BackupRestorePanel({
                 Monitor scheduled and automated daily backups, run manual on-demand triggers, and execute surgical or system-wide restorations with Google Drive service auth mapping.
               </p>
             </div>
-            <button
-              onClick={handleTriggerCloudBackup}
-              disabled={triggeringBackup}
-              className="py-2.5 px-4 bg-purple-705 bg-purple-700 hover:bg-purple-650 text-white rounded-lg font-black text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-purple-500/10 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {triggeringBackup ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <CloudLightning className="w-4 h-4" />
-              )}
-              <span>Trigger Manual Cloud Backup (Google Drive)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleTriggerCloudBackup}
+                disabled={triggeringBackup}
+                className="py-2.5 px-4 bg-purple-700 hover:bg-purple-650 text-white rounded-lg font-black text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-purple-500/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {triggeringBackup ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CloudLightning className="w-4 h-4" />
+                )}
+                <span>Trigger Manual Cloud Backup (Google Drive)</span>
+              </button>
+
+              <button
+                onClick={handleDownloadLocalBackup}
+                disabled={downloadingLocalBackup}
+                className="py-2.5 px-4 bg-emerald-700 hover:bg-emerald-650 text-white rounded-lg font-black text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {downloadingLocalBackup ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span>Download Platform-Wide Backup (Local JSON)</span>
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
@@ -1876,7 +1940,61 @@ export default function BackupRestorePanel({
           </div>
 
           {/* LOWER SECTION: Centralized Backup History status summary table */}
-          <div className="space-y-3 pt-3" id="cloud-backups-summary-table-sector">
+          <div className="space-y-4 pt-3" id="cloud-backups-summary-table-sector">
+            
+            {/* Quick Status and Diagnostics Dashboard Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-start gap-3">
+                <div className="p-2 bg-emerald-100/60 text-emerald-800 rounded-lg">
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
+                </div>
+                <div>
+                  <h5 className="font-bold text-emerald-950 text-xs">Last Successful Platform Backup</h5>
+                  {(() => {
+                    const lastSuccessRun = backupRuns.find(r => r.status === "success" || r.status === "completed");
+                    return lastSuccessRun ? (
+                      <div className="space-y-1 mt-1">
+                        <p className="font-mono text-xs font-bold text-emerald-800">
+                          {new Date(lastSuccessRun.timestamp).toLocaleString()}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          Run ID: <span className="font-mono font-bold select-all">{lastSuccessRun.runId || lastSuccessRun.id}</span> • {lastSuccessRun.recordsCount || 0} docs ({lastSuccessRun.payloadSizeKb || 0} KB)
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 italic mt-1">No successful backups located in this session cycle.</p>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="p-4 bg-rose-50/30 border border-rose-100 rounded-xl flex items-start gap-3">
+                <div className="p-2 bg-rose-100/60 text-rose-800 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h5 className="font-bold text-rose-950 text-xs">Recent Cloud Process Diagnostics</h5>
+                  {(() => {
+                    const recentFailures = backupRuns.filter(r => r.status === "failed" || r.status === "error");
+                    return recentFailures.length > 0 ? (
+                      <div className="mt-1.5 space-y-2 max-h-[80px] overflow-y-auto pr-1">
+                        {recentFailures.slice(0, 3).map((f, i) => (
+                          <div key={f.id || i} className="text-[10px] text-rose-900 border-b border-rose-100/50 pb-1.5 last:border-0 last:pb-0">
+                            <span className="font-semibold block">{new Date(f.timestamp).toLocaleString()}</span>
+                            <span className="font-mono text-rose-700 block truncate" title={f.errorMessage || f.message}>{f.errorMessage || f.message || "Unknown error encountered"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-emerald-800 font-semibold mt-1 flex items-center gap-1">
+                        🟢 All recent pipeline processes executed successfully. No recent failures detected.
+                      </p>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
             <div className="flex justify-between items-center border-b pb-2">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-purple-650 shrink-0" />

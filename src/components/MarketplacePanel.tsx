@@ -88,7 +88,8 @@ export default function MarketplacePanel({
     currentRole === "Manager" || 
     currentRole === "Farm Worker" || 
     currentRole === "Farm Admin" || 
-    currentRole === "Viewer"
+    currentRole === "Viewer" ||
+    (currentRole as string) === "Farmer"
   );
   const isVendorUser = !isSuperAdminUser && !isFarmerUser;
 
@@ -1616,7 +1617,7 @@ export default function MarketplacePanel({
       )}
 
       {/* RENDER SELLER SELF REGISTRY & CATALOG MANAGEMENT */}
-      {activeSubTab === "vendor-portal" && (
+      {activeSubTab === "vendor-portal" && (currentRole as string) !== "Farmer" && (
         <div className="space-y-6">
           
           {/* Main vendor onboarding block if not enrolled */}
@@ -2567,7 +2568,7 @@ export default function MarketplacePanel({
       )}
 
       {/* RENDER MARKETPLACE & SUBSCRIPTION ANALYTICS DASHBOARD */}
-      {activeSubTab === "analytics" && (
+      {activeSubTab === "analytics" && (currentRole as string) !== "Farmer" && (
         <div className="space-y-6 animate-fade-in text-slate-800">
           
           {/* Main Stat KPI Cards */}
@@ -2850,7 +2851,7 @@ export default function MarketplacePanel({
       )}
 
       {/* RENDER ADVERTISING/CONFIG ADMIN SETTINGS PAGE */}
-      {activeSubTab === "admin-config" && (
+      {activeSubTab === "admin-config" && (currentRole as string) !== "Farmer" && (
         <div className="space-y-6 animate-fade-in">
           
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -18,7 +18,20 @@ import {
   Wifi, 
   Check,
   UserCheck,
-  Info
+  Info,
+  RefreshCw,
+  TrendingUp,
+  UserPlus,
+  UploadCloud,
+  Clock,
+  ArrowDownRight,
+  DollarSign,
+  FileSpreadsheet,
+  Send,
+  Users,
+  Key,
+  Mail,
+  Phone
 } from "lucide-react";
 
 import { 
@@ -65,6 +78,12 @@ interface OfftakerPanelProps {
   addNotification: (msg: string, type: "success" | "warning" | "info" | "error") => void;
   isOnline: boolean;
   workspaceMode?: "Farmer" | "Veterinary" | "Offtaker";
+  smsCredits?: number;
+  setSmsCredits?: React.Dispatch<React.SetStateAction<number>>;
+  credits?: number;
+  setCredits?: React.Dispatch<React.SetStateAction<number>>;
+  setLipilaCheckout?: (checkout: any) => void;
+  userProfile?: any;
 }
 
 export default function OfftakerPanel({
@@ -76,7 +95,13 @@ export default function OfftakerPanel({
   setCropCycles,
   addNotification,
   isOnline,
-  workspaceMode = "Offtaker"
+  workspaceMode = "Offtaker",
+  smsCredits = 100,
+  setSmsCredits,
+  credits = 300,
+  setCredits,
+  setLipilaCheckout,
+  userProfile
 }: OfftakerPanelProps) {
   
   // Tab states: 'offtaker-dashboard', 'deliveries', 'farmers', 'wallet-ledger', 'fee-config', 'farmer-sell-hub'
@@ -119,6 +144,213 @@ export default function OfftakerPanel({
   const [onboardContact, setOnboardContact] = useState("");
   const [onboardDepots, setOnboardDepots] = useState("");
 
+  // Institutional and SMS Portal states
+  const [subUsers, setSubUsers] = useState<any[]>([]);
+  const [smsLogs, setSmsLogs] = useState<any[]>([]);
+  const [loadingSubUsers, setLoadingSubUsers] = useState<boolean>(false);
+  const [loadingSmsLogs, setLoadingSmsLogs] = useState<boolean>(false);
+
+  // Form states for Sub-users
+  const [officerName, setOfficerName] = useState<string>("");
+  const [officerEmail, setOfficerEmail] = useState<string>("");
+  const [officerPhone, setOfficerPhone] = useState<string>("");
+  const [officerRole, setOfficerRole] = useState<string>("Field Officer");
+
+  // Form states for Dispatch SMS
+  const [dispatchPhone, setDispatchPhone] = useState<string>("");
+  const [dispatchMessage, setDispatchMessage] = useState<string>("");
+  const [sendingSms, setSendingSms] = useState<boolean>(false);
+
+  // Gateway credentials from profile
+  const [institutionType, setInstitutionType] = useState<string>(userProfile?.institutionType || "None");
+  const [gatewayApiKey, setGatewayApiKey] = useState<string>(userProfile?.customBeemApiKey || "");
+  const [gatewaySecretKey, setGatewaySecretKey] = useState<string>(userProfile?.customBeemSecretKey || "");
+  const [gatewaySenderId, setGatewaySenderId] = useState<string>(userProfile?.customBeemSenderId || "");
+
+  const effectiveTenantId = userProfile?.tenantId || userProfile?.uid || "mabala-default-offtaker";
+
+  useEffect(() => {
+    if (!effectiveTenantId) return;
+    
+    const fetchSubUsers = async () => {
+      setLoadingSubUsers(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, "offtakers", effectiveTenantId, "subUsers"));
+        const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setSubUsers(list);
+      } catch (err) {
+        console.error("Failed to load sub-users from Firestore:", err);
+      } finally {
+        setLoadingSubUsers(false);
+      }
+    };
+
+    const fetchSmsLogs = async () => {
+      setLoadingSmsLogs(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, "offtakers", effectiveTenantId, "smsLogs"));
+        const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+        
+        // Sort logs by timestamp descending
+        list.sort((a: any, b: any) => {
+          return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
+        });
+        
+        setSmsLogs(list);
+      } catch (err) {
+        console.error("Failed to load SMS logs from Firestore:", err);
+      } finally {
+        setLoadingSmsLogs(false);
+      }
+    };
+
+    fetchSubUsers();
+    fetchSmsLogs();
+  }, [effectiveTenantId]);
+
+  const handleAddFieldOfficer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!officerEmail || !officerName) {
+      addNotification("Name and email are required to pre-provision a field officer", "warning");
+      return;
+    }
+    try {
+      const subUserId = "fo-" + officerEmail.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      
+      const newOfficer = {
+        id: subUserId,
+        name: officerName,
+        email: officerEmail.trim().toLowerCase(),
+        phone: officerPhone || "",
+        role: officerRole || "Field Officer",
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, "offtakers", effectiveTenantId, "subUsers", subUserId), newOfficer);
+
+      const centralUserDoc = {
+        uid: subUserId,
+        email: officerEmail.trim().toLowerCase(),
+        role: officerRole || "Field Officer",
+        tenantId: effectiveTenantId,
+        userProfile: {
+          name: officerName,
+          email: officerEmail.trim().toLowerCase(),
+          phone: officerPhone || "",
+          tenantId: effectiveTenantId,
+          role: officerRole || "Field Officer"
+        },
+        credits: 0,
+        smsCredits: 0,
+        subscriptionTier: "Field Pro",
+        workspaceMode: "Offtaker",
+        updatedAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, "users_data", subUserId), centralUserDoc);
+
+      setSubUsers(prev => [newOfficer, ...prev]);
+      addNotification(`Field Officer ${officerName} successfully pre-provisioned & linked.`, "success");
+      
+      setOfficerName("");
+      setOfficerEmail("");
+      setOfficerPhone("");
+    } catch (err: any) {
+      console.error("Error pre-provisioning sub-user:", err);
+      addNotification("Failed to add field officer: " + err.message, "error");
+    }
+  };
+
+  const handleSaveGatewaySettings = async () => {
+    try {
+      if (userProfile) {
+        userProfile.institutionType = institutionType;
+        userProfile.customBeemApiKey = gatewayApiKey;
+        userProfile.customBeemSecretKey = gatewaySecretKey;
+        userProfile.customBeemSenderId = gatewaySenderId;
+      }
+
+      const docRef = doc(db, "users_data", effectiveTenantId);
+      await setDoc(docRef, {
+        userProfile: userProfile || {},
+        institutionType: institutionType,
+        customBeemApiKey: gatewayApiKey,
+        customBeemSecretKey: gatewaySecretKey,
+        customBeemSenderId: gatewaySenderId
+      }, { merge: true });
+
+      addNotification("Institutional gateway configurations committed successfully.", "success");
+    } catch (err: any) {
+      console.error("Failed to commit gateway settings:", err);
+      addNotification("Failed to save configuration: " + err.message, "error");
+    }
+  };
+
+  const handleSendSmsProxy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dispatchPhone || !dispatchMessage) {
+      addNotification("Phone number and message are required", "warning");
+      return;
+    }
+    setSendingSms(true);
+    try {
+      const payload = {
+        uid: userProfile?.uid || "mabala-test",
+        phone: dispatchPhone,
+        message: dispatchMessage,
+        customBeemApiKey: gatewayApiKey || undefined,
+        customBeemSecretKey: gatewaySecretKey || undefined,
+        customBeemSenderId: gatewaySenderId || undefined
+      };
+
+      const response = await fetch("/api/sms/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        addNotification(`SMS dispatched successfully! Remaining: ${result.remainingSmsCredits} credits.`, "success");
+        if (setSmsCredits) {
+          setSmsCredits(result.remainingSmsCredits);
+        }
+        
+        const newLog = result.smsLogRecord || {
+          id: "smslog-" + Date.now(),
+          senderId: userProfile?.uid,
+          recipient: dispatchPhone,
+          message: dispatchMessage,
+          status: result.beemStatus || "BEEM_DELIVERED",
+          cost: 1,
+          timestamp: new Date().toISOString()
+        };
+        setSmsLogs(prev => [newLog, ...prev]);
+        setDispatchPhone("");
+        setDispatchMessage("");
+      } else {
+        addNotification(result.error || "Failed to dispatch SMS through gateway.", "error");
+      }
+    } catch (err: any) {
+      console.error("SMS dispatch error:", err);
+      addNotification("Communication exception: " + err.message, "error");
+    } finally {
+      setSendingSms(false);
+    }
+  };
+
+  const handleRemoveFieldOfficer = async (officerId: string, officerName: string) => {
+    if (!window.confirm(`Are you sure you want to unlink and delete field officer ${officerName}?`)) return;
+    try {
+      await deleteDoc(doc(db, "offtakers", effectiveTenantId, "subUsers", officerId));
+      await deleteDoc(doc(db, "users_data", officerId));
+      setSubUsers(prev => prev.filter(fo => fo.id !== officerId));
+      addNotification(`Unlinked field officer ${officerName} successfully.`, "success");
+    } catch (err: any) {
+      console.error("Failed to remove field officer:", err);
+      addNotification("Error: " + err.message, "error");
+    }
+  };
+
   const [onboardNewProdName, setOnboardNewProdName] = useState("");
   const [onboardNewProdUnit, setOnboardNewProdUnit] = useState("Kgs");
   const [onboardNewProdPrice, setOnboardNewProdPrice] = useState("");
@@ -160,6 +392,23 @@ export default function OfftakerPanel({
 
   // Subscription information
   const [subValidation, setSubValidation] = useState<{ status: string; graceUntil?: string }>({ status: "active" });
+
+  // Farmer sell portal states
+  const [farmerActiveTab, setFarmerActiveTab] = useState<"dashboard" | "linkages" | "supply-offers" | "grns" | "payments" | "price-alerts">("dashboard");
+  const [supplyOffers, setSupplyOffers] = useState<any[]>([]);
+  const [priceNotifications, setPriceNotifications] = useState<any[]>([]);
+
+  // Farmer Add Supply Offer Form states
+  const [offerOfftakerId, setOfferOfftakerId] = useState("");
+  const [offerProductCategory, setOfferProductCategory] = useState("White Maize Grain");
+  const [offerQuantity, setOfferQuantity] = useState("");
+  const [offerUnit, setOfferUnit] = useState("Bags");
+  const [offerGrade, setOfferGrade] = useState("Grade A");
+  const [offerProposedDate, setOfferProposedDate] = useState("");
+  const [offerNotes, setOfferNotes] = useState("");
+  const [offerFileName, setOfferFileName] = useState("");
+  const [offerFileUrl, setOfferFileUrl] = useState("");
+  const [isDraggingOfferFile, setIsDraggingOfferFile] = useState(false);
 
   // Dialog & Insert Form States
   const [showAddFarmer, setShowAddFarmer] = useState(false);
@@ -380,6 +629,90 @@ export default function OfftakerPanel({
         setFarmerPrefAccNum("1002931023");
         setFarmerPrefAccName("Mwansa Chilufya");
       }
+
+      // Seeding and Loading Supply Offers
+      let offlineOffersStr = localStorage.getItem("mabala_supply_offers");
+      let offlineOffers: any[] = [];
+      if (offlineOffersStr) {
+        try {
+          offlineOffers = JSON.parse(offlineOffersStr);
+        } catch (e) {}
+      }
+      if (offlineOffers.length === 0) {
+        offlineOffers = [
+          {
+            id: "SOF-001",
+            farmerId: "farmer-z1",
+            farmerName: "Mwansa Chilufya",
+            offtakerId: "offtaker-tenant-1",
+            offtakerName: "Mabala Agrichain Ltd",
+            productCategory: "White Maize Grain",
+            quantity: 5000,
+            unit: "Bags",
+            grade: "Grade A",
+            proposedDate: "2026-07-02",
+            status: "pending_verification",
+            fileUrl: "",
+            notes: "Ready for logistics collection at Mwansa Depot 2.",
+            createdAt: new Date().toISOString()
+          },
+          {
+            id: "SOF-002",
+            farmerId: "farmer-z1",
+            farmerName: "Mwansa Chilufya",
+            offtakerId: "offtaker-tenant-2",
+            offtakerName: "Zambia Dairy Co-op",
+            productCategory: "Raw Fresh Milk",
+            quantity: 800,
+            unit: "Litres",
+            grade: "Grade B",
+            proposedDate: "2026-06-29",
+            status: "approved",
+            fileUrl: "",
+            notes: "Dairy Grade B confirmed by quality inspector at depot.",
+            createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ];
+        localStorage.setItem("mabala_supply_offers", JSON.stringify(offlineOffers));
+      }
+      setSupplyOffers(offlineOffers);
+
+      // Seeding and Loading Price Notifications
+      let offlinePriceNotifStr = localStorage.getItem("mabala_price_notifications");
+      let offlinePriceNotifs: any[] = [];
+      if (offlinePriceNotifStr) {
+        try {
+          offlinePriceNotifs = JSON.parse(offlinePriceNotifStr);
+        } catch (e) {}
+      }
+      if (offlinePriceNotifs.length === 0) {
+        offlinePriceNotifs = [
+          {
+            id: "NOTIF-001",
+            offtakerId: "offtaker-tenant-1",
+            offtakerName: "Mabala Agrichain Ltd",
+            commodity: "White Maize Grain",
+            grade: "Grade A",
+            oldPrice: 4.20,
+            newPrice: 4.50,
+            effectiveDate: "2026-06-25",
+            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            id: "NOTIF-002",
+            offtakerId: "offtaker-tenant-2",
+            offtakerName: "Zambia Dairy Co-op",
+            commodity: "Raw Fresh Milk",
+            grade: "Grade B",
+            oldPrice: 8.00,
+            newPrice: 8.50,
+            effectiveDate: "2026-06-24",
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ];
+        localStorage.setItem("mabala_price_notifications", JSON.stringify(offlinePriceNotifs));
+      }
+      setPriceNotifications(offlinePriceNotifs);
 
     } catch (e) {
       console.error("Failed to seed and initialize offline layer structures:", e);
@@ -1715,6 +2048,77 @@ STATUS:       ${dn.status} (Verified)
   // View specific subsets
   const unpaidDNNotes = deliveryNotes.filter(d => d.paymentStatus === "Unpaid");
 
+  const handleFarmerAddSupplyOffer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!offerOfftakerId) {
+      alert("Please select a linked offtaker first.");
+      return;
+    }
+    if (!offerProductCategory || !offerQuantity || !offerUnit || !offerProposedDate) {
+      alert("Please fill all required supply offer fields.");
+      return;
+    }
+    const offObj = allOfftakersList.find(o => o.id === offerOfftakerId || o.tenantId === offerOfftakerId);
+    const newOffer = {
+      id: "SOF-" + Math.floor(Math.random() * 900000 + 100000),
+      farmerId: "farmer-z1",
+      farmerName: "Mwansa Chilufya",
+      offtakerId: offerOfftakerId,
+      offtakerName: offObj?.legalName || "Unknown Offtaker",
+      productCategory: offerProductCategory,
+      quantity: Number(offerQuantity),
+      unit: offerUnit,
+      grade: offerGrade,
+      proposedDate: offerProposedDate,
+      notes: offerNotes,
+      status: "pending_verification",
+      fileName: offerFileName,
+      fileUrl: offerFileUrl,
+      createdAt: new Date().toISOString()
+    };
+    
+    const updated = [newOffer, ...supplyOffers];
+    setSupplyOffers(updated);
+    localStorage.setItem("mabala_supply_offers", JSON.stringify(updated));
+    addNotification("✓ Supply offer submitted successfully for Offtaker approval!", "success");
+    
+    // reset form fields
+    setOfferProductCategory("White Maize Grain");
+    setOfferQuantity("");
+    setOfferUnit("Bags");
+    setOfferGrade("Grade A");
+    setOfferProposedDate("");
+    setOfferNotes("");
+    setOfferFileName("");
+    setOfferFileUrl("");
+  };
+
+  const handleOfferFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOfferFile(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      setOfferFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setOfferFileUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleOfferFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setOfferFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setOfferFileUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div className="space-y-6" id="offtaker-marketplace-parent-container">
 
@@ -2084,6 +2488,17 @@ STATUS:       ${dn.status} (Verified)
                 }`}
               >
                 ⚙️ Quality & Pricing
+              </button>
+
+              <button
+                onClick={() => setActiveSubTab("institutional-sms")}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  activeSubTab === "institutional-sms"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                🏢 Institutional & SMS Portal
               </button>
 
               {isFarmerPlayer && (
@@ -2757,52 +3172,7 @@ STATUS:       ${dn.status} (Verified)
       )}
 
       {/* TAB CONTENT: FARMER SELL PORTAL */}
-      {effectiveActiveSubTab === "farmer-sell-hub" && (
-        <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
-          
-          <div className="p-6 bg-[#FEFDF9] border border-amber-250 rounded-2xl space-y-4">
-            <h4 className="text-sm font-black text-amber-950 uppercase tracking-widest font-mono">My Farmer Multi-Sales and Accruals</h4>
-            <p className="text-xs text-amber-900 leading-normal">
-              Confirm or dispute delivery notes recorded by commercial offtakers. Keep absolute margin trace link to crop cycle cost metrics.
-            </p>
-          </div>
 
-          {/* Delivery Review list specifically for testability representing Farmer side */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden p-6 space-y-4">
-            <h5 className="font-extrabold text-slate-800">Pending Delivery Confirmations</h5>
-            
-            <div className="space-y-3">
-              {deliveryNotes.filter(d => d.status === "Pending").length === 0 ? (
-                <div className="p-6 text-center italic text-slate-400 text-xs">No pending delivery review requests sent to you.</div>
-              ) : (
-                deliveryNotes.filter(d => d.status === "Pending").map(dn => (
-                  <div key={dn.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap justify-between items-center gap-4">
-                    <div>
-                      <h6 className="font-extrabold text-slate-800">Delivery of {dn.qty} {dn.unit} — {dn.product}</h6>
-                      <p className="text-[11px] text-slate-500">Recorded on {new Date(dn.createdAt).toLocaleDateString()} at price limit rate K {dn.unitPrice}</p>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleUpdateDNStatus(dn.id, "Confirmed")}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-black cursor-pointer shadow-sm hover:bg-emerald-550"
-                      >
-                        Confirm Delivery Value ZK {dn.totalValue}
-                      </button>
-                      <button
-                        onClick={() => handleUpdateDNStatus(dn.id, "Disputed")}
-                        className="px-3 py-1.5 bg-rose-600 text-white rounded text-xs font-black cursor-pointer shadow-sm hover:bg-rose-550"
-                      >
-                        Dispute Value Match
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* TAB CONTENT: ADMIN CONFIG COA FEES */}
       {effectiveActiveSubTab === "fee-config" && workspaceMode !== "Farmer" && (
@@ -2894,369 +3264,1322 @@ STATUS:       ${dn.status} (Verified)
         </div>
       )}
 
-      {/* TAB CONTENT: FARMER PORTAL ("SELL TO OFFTAKERS") */}
-      {effectiveActiveSubTab === "farmer-sell-hub" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in text-slate-900 font-sans" id="farmer-portal-sell-hub">
-          {/* Left Column: Settlement & Preferences preferences view / modifier Form */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-amber-50 rounded-xl text-amber-700">
-                  <Smartphone className="w-5 h-5 bg-transparent" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Payout Preferences</h3>
-                  <p className="text-[11px] text-slate-500">Configure Airtel/MTN/Bank payout defaults.</p>
-                </div>
+      {/* TAB CONTENT: INSTITUTIONAL & SMS PORTAL */}
+      {effectiveActiveSubTab === "institutional-sms" && workspaceMode !== "Farmer" && (
+        <div className="space-y-6 animate-fade-in text-slate-900 font-sans">
+          
+          {/* Header Description */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-[#1E293B] to-slate-900 text-white rounded-3xl p-6 shadow-md">
+            <div>
+              <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-black uppercase tracking-wider rounded-md border border-emerald-500/30">
+                Institutional Administration Panel
+              </span>
+              <h2 className="text-xl font-extrabold tracking-tight mt-2">Mabala Corporate & SMS Portal</h2>
+              <p className="text-xs text-slate-300 font-medium max-w-2xl mt-1 leading-normal">
+                Pre-provision dedicated logins for Field Officers, configure institutional custom Beem SMS gateways, purchase top-ups, and dispatch secure real-time alerts or transaction receipts to farmers.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-3 rounded-2xl shrink-0">
+              <Smartphone className="w-5 h-5 text-emerald-400" />
+              <div>
+                <span className="text-[10px] uppercase text-slate-400 block font-bold font-mono">SMS Credits Balance</span>
+                <span className="text-base font-black text-white font-mono">{smsCredits} remaining</span>
               </div>
+            </div>
+          </div>
 
-              <form onSubmit={handleFarmerUpdatePreferenceSubmit} className="space-y-3 pt-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400">Default Payout Class</label>
-                  <select
-                    value={farmerPrefMethod}
-                    onChange={(e) => setFarmerPrefMethod(e.target.value as any)}
-                    className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white"
-                  >
-                    <option value="mobile_money">Mobile Money Account</option>
-                    <option value="bank_transfer">Direct Bank Transfer account</option>
-                  </select>
-                </div>
-
-                {farmerPrefMethod === "mobile_money" ? (
-                  <>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-400">Mobile Money Provider</label>
-                      <select
-                        value={farmerPrefMoMoProvider}
-                        onChange={(e) => setFarmerPrefMoMoProvider(e.target.value)}
-                        className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white"
-                      >
-                        <option value="MTN MoMo">Zambia MTN MoMo</option>
-                        <option value="Airtel Money">Zambia Airtel Money</option>
-                        <option value="Zamtel Kwacha">Zambia Zamtel Kwacha</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-400">Active Mobile Number</label>
-                      <input
-                        type="tel"
-                        value={farmerPrefPhone}
-                        onChange={(e) => setFarmerPrefPhone(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-emerald-600 font-mono"
-                        placeholder="e.g. 0977283921"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-400">Zambian Clearing Bank</label>
-                      <select
-                        value={farmerPrefBankName}
-                        onChange={(e) => setFarmerPrefBankName(e.target.value)}
-                        className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white"
-                      >
-                        <option value="ZANACO">Zambian National Commercial Bank (ZANACO)</option>
-                        <option value="Standard Chartered">Standard Chartered Bank Zambia Ltd</option>
-                        <option value="Absa Bank">ABSA Bank Zambia PLC</option>
-                        <option value="First National Bank">FNB Zambia Ltd</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-400">Account Number</label>
-                      <input
-                        type="text"
-                        value={farmerPrefAccNum}
-                        onChange={(e) => setFarmerPrefAccNum(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-emerald-600 font-mono"
-                        placeholder="e.g. 1002931023"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-400">Account Holder Name</label>
-                      <input
-                        type="text"
-                        value={farmerPrefAccName}
-                        onChange={(e) => setFarmerPrefAccName(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none"
-                        placeholder="e.g. Mwansa Chilufya"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl cursor-pointer shadow-sm transition-all"
-                >
-                  Save Settlement Preferences
-                </button>
-              </form>
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center gap-4">
+              <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-400 uppercase font-mono font-bold">Field Officers</span>
+                <h4 className="text-xl font-black text-slate-800">{loadingSubUsers ? "..." : subUsers.length} active</h4>
+              </div>
             </div>
 
-            {/* Simulated 48h deadline tool trigger */}
-            <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 shadow-xs space-y-3">
-              <span className="text-[10px] font-black uppercase text-amber-800 font-mono tracking-wider block">Simulated 48-Hour auto confirmation</span>
-              <p className="text-xs text-amber-900 leading-normal">
-                If the 48h deadline passes without manual action, pending delivery notes auto-confirm to protect farmer liquidations and keep ledger accruals accurate.
-              </p>
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center gap-4">
+              <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                <Send className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-400 uppercase font-mono font-bold">SMS Broadcasts Sent</span>
+                <h4 className="text-xl font-black text-slate-800">{loadingSmsLogs ? "..." : smsLogs.length} logged</h4>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-amber-50 rounded-xl text-amber-600">
+                  <Wallet className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-400 uppercase font-mono font-bold">SMS Rate</span>
+                  <h4 className="text-sm font-black text-slate-800">1 Credit / SMS</h4>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={handleSimulate48hDeadline}
-                className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-xs"
+                onClick={() => {
+                  if (setLipilaCheckout) {
+                    setLipilaCheckout({
+                      id: "sms-pkg-" + Date.now(),
+                      name: "500 SMS Credits Bundle",
+                      price: 150,
+                      credits: 0,
+                      smsCreditsToAward: 500,
+                      features: "Dedicated Beem Africa dispatch routing, live priority queues, rollover of unused SMS credits, institutional branding"
+                    });
+                  }
+                }}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-black rounded-lg transition-all cursor-pointer"
               >
-                Simulate 48h Deadline Elapsed
+                🛒 Buy SMS Credits
               </button>
             </div>
           </div>
 
-          {/* Right Column: Connection with Aggregators (Awaiting lists & confirmations) */}
-          <div className="lg:col-span-2 space-y-6">
-
-            {/* FARMER PRICE BOARD */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    📢 Live Price Board Directory
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Left/Main Column: Field Officers and SMS Broadcaster */}
+            <div className="lg:col-span-2 space-y-6">
+              
+              {/* Section 1: Pre-provision Field Officers */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                    👥 Pre-Provision & Link Field Officers
                   </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Real-time certified quality scale catalog grades offered by registered Mabala offtakers.</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    Register field coordinators. Once added, they can sign in to the Mabala platform with their email instantly.
+                  </p>
                 </div>
-                
-                <button 
-                  onClick={loadPriceboardForFarmer}
-                  disabled={loadingPriceboard}
-                  className="px-2.5 py-1 bg-slate-100 text-slate-600 hover:text-slate-800 rounded font-bold text-[10px] flex items-center gap-1 transition"
-                >
-                  {loadingPriceboard ? "Syncing..." : "🔄 Refresh Prices"}
-                </button>
-              </div>
 
-              {loadingPriceboard ? (
-                <div className="py-8 text-center text-slate-400 italic text-xs animate-pulse">
-                  Querying live quality grading price books from authority directories...
-                </div>
-              ) : publishedPricesList.length === 0 ? (
-                <div className="py-6 text-center text-slate-400 italic text-xs">
-                  No published price schedules recorded by aggregators yet. Ask offtakers to publish.
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  {publishedPricesList.map((offItem) => {
-                    const isRecentlyUpdated = offItem.lastPublished && 
-                      (Date.now() - new Date(offItem.lastPublished).getTime() < 7 * 24 * 60 * 60 * 1000);
+                <div className="p-5 space-y-5">
+                  <form onSubmit={handleAddFieldOfficer} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end bg-slate-50 p-4 border border-slate-200/60 rounded-xl">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Officer Name</label>
+                      <input
+                        type="text"
+                        placeholder="John Banda"
+                        value={officerName}
+                        onChange={(e) => setOfficerName(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 bg-white text-xs outline-none focus:border-emerald-600"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Email Address</label>
+                      <input
+                        type="email"
+                        placeholder="john@banda.com"
+                        value={officerEmail}
+                        onChange={(e) => setOfficerEmail(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 bg-white text-xs outline-none focus:border-emerald-600"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Zambian Mobile</label>
+                      <input
+                        type="text"
+                        placeholder="097XXXXXXX"
+                        value={officerPhone}
+                        onChange={(e) => setOfficerPhone(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 bg-white text-xs outline-none focus:border-emerald-600"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="submit"
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <UserPlus className="w-4 h-4" /> Link Officer
+                      </button>
+                    </div>
+                  </form>
 
-                    return (
-                      <div key={offItem.offtakerId} className="p-4 bg-slate-50/50 border border-slate-200/80 rounded-2xl space-y-3 shadow-xs">
-                        <div className="flex justify-between items-start">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-900 text-slate-100 text-[11px] font-black flex items-center justify-center font-mono uppercase">
-                              {offItem.offtakerName.slice(0, 2)}
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-extrabold text-slate-800">{offItem.offtakerName}</h4>
-                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider font-mono">{offItem.sector || "General"} Offtaker Procurement</p>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-end gap-1.5">
-                            {isRecentlyUpdated && (
-                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[9px] font-black uppercase tracking-wider rounded-full border border-emerald-500/15 flex items-center gap-1">
-                                🔥 Updated recently
-                              </span>
-                            )}
-                            
-                            {offItem.lastPublished ? (
-                              <span className="text-[9px] text-slate-400 font-medium">
-                                Effective From: <strong>{new Date(offItem.lastPublished).toLocaleDateString()}</strong>
-                              </span>
-                            ) : (
-                              <span className="text-[9px] text-amber-500 font-bold bg-amber-50 px-1 py-0.5 rounded">
-                                No published price list yet
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {(!offItem.products || offItem.products.length === 0) ? (
-                          <div className="text-[10px] text-slate-400 italic py-2 text-center">
-                            No active crops grades cataloged under this partner partner.
-                          </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] uppercase font-bold text-slate-400 font-mono">
+                          <th className="py-2 px-3">Officer Name</th>
+                          <th className="py-2 px-3">Linked Email</th>
+                          <th className="py-2 px-3">Zambian Mobile</th>
+                          <th className="py-2 px-3">Role Designation</th>
+                          <th className="py-2 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loadingSubUsers ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400 text-xs font-mono font-medium">
+                              Loading institutional officers...
+                            </td>
+                          </tr>
+                        ) : subUsers.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400 text-xs font-mono font-medium">
+                              No active Field Officers provisioned yet.
+                            </td>
+                          </tr>
                         ) : (
-                          <div className="space-y-4">
-                            {offItem.products.map((prod: any) => {
-                              const activeGrades = (prod.grades || []).filter((g: any) => g.active);
-
-                              if (activeGrades.length === 0) return null;
-
-                              return (
-                                <div key={prod.productId} className="bg-white border border-slate-150 rounded-xl overflow-hidden shadow-xs">
-                                  <div className="bg-slate-50 px-3.5 py-2 font-black text-[10px] text-slate-700 uppercase tracking-wider font-mono flex justify-between">
-                                    <span>🌾 {prod.productName}</span>
-                                    <span className="text-slate-400 font-bold">ZMW per {prod.unit}</span>
-                                  </div>
-
-                                  <div className="divide-y divide-slate-100 font-sans text-xs">
-                                    {activeGrades.map((g: any) => (
-                                      <div key={g.gradeId} className="p-3 flex justify-between items-center hover:bg-slate-50/20 transition">
-                                        <div className="space-y-0.5 max-w-[70%]">
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="font-extrabold text-slate-800 text-xs">{g.gradeName}</span>
-                                          </div>
-                                          <p className="text-[10px] text-slate-400 font-semibold leading-normal">{g.description}</p>
-                                        </div>
-
-                                        <span className="text-xs font-black font-mono text-indigo-700 bg-indigo-50/70 border border-indigo-100/50 px-2.5 py-1 rounded">
-                                          ZMW {g.pricePerUnit.toFixed(2)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Connection with Aggregators */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center justify-between gap-2">
-                <span>🤝 Connected Offtakers & Aggregators</span>
-                <span className="text-xs font-mono font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                  {farmerOfftakerLinks.filter(l => l.farmerId === "farmer-z1" && l.status === "Active").length} connected
-                </span>
-              </h3>
-
-              {/* Linking Request Directory search list */}
-              <div className="space-y-3">
-                <span className="text-[10px] font-black uppercase text-slate-400 font-mono tracking-wider block">Authorized Mabala Offtakers Directory</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {allOfftakersList.map(off => {
-                    const linked = farmerOfftakerLinks.find(l => (l.offtakerId === off.tenantId || l.offtakerId === off.id) && l.farmerId === "farmer-z1");
-                    return (
-                      <div key={off.id} className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col justify-between gap-3">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-emerald-700 font-mono">{off.sector} Sector Buyer</span>
-                          <h4 className="text-xs font-black text-slate-900 mt-1">{off.legalName || off.legal_name}</h4>
-                          <span className="text-[10px] text-slate-500 font-mono block">PACRA: {off.registrationNumber || off.registration_number}</span>
-                          <span className="text-[10px] text-slate-500 font-mono block mt-1">📍 Depots: {(off.depotLocations || []).slice(0, 2).join(", ")}</span>
-                        </div>
-
-                        {linked ? (
-                          <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
-                            <span className={`text-[10px] font-bold uppercase ${linked.status === "Active" ? "text-emerald-600" : "text-amber-600"}`}>
-                              Status: {linked.status}
-                            </span>
-                            {linked.status === "Pending" && linked.initiatedBy === "offtaker" && (
-                              <div className="flex gap-1.5">
+                          subUsers.map((fo) => (
+                            <tr key={fo.id} className="border-b border-slate-100 hover:bg-slate-50/30 text-xs font-medium text-slate-600">
+                              <td className="py-2 px-3 text-slate-800 font-bold">{fo.name}</td>
+                              <td className="py-2 px-3 font-mono">{fo.email}</td>
+                              <td className="py-2 px-3 font-mono">{fo.phone || "None Listed"}</td>
+                              <td className="py-2 px-3">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-blue-50 text-blue-600 border border-blue-100 uppercase">
+                                  {fo.role || "Field Officer"}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right">
                                 <button
                                   type="button"
-                                  onClick={() => handleFarmerApproveLinkRequest(linked.id)}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all"
+                                  onClick={() => handleRemoveFieldOfficer(fo.id, fo.name)}
+                                  className="p-1 hover:bg-red-50 text-red-600 rounded-md transition-all cursor-pointer"
+                                  title="Unlink Field Officer"
                                 >
-                                  Approve
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: SMS Gateway Dispatch Form */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                    ✉️ Gateway SMS Dispatch Panel
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    Instantly broadcast delivery reminders, weighing metrics, or payments verification alerts to farmers.
+                  </p>
+                </div>
+
+                <div className="p-5">
+                  <form onSubmit={handleSendSmsProxy} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Farmer Mobile Number</label>
+                        <input
+                          type="text"
+                          placeholder="0977123456 or 260977123456"
+                          value={dispatchPhone}
+                          onChange={(e) => setDispatchPhone(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white text-xs outline-none focus:border-emerald-600 font-mono"
+                          required
+                        />
+                        <span className="text-[9.5px] text-slate-400 block mt-1 leading-normal">
+                          Helper: Numbers are automatically corrected to Zambian formatting (+260) before dispatch.
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Quick Message Templates</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDispatchMessage("Mabala Weighing Receipt Alert: Your delivery of 1,200 Kgs of High Grade Soya Beans has been logged by Field Officer John Banda. Status: Verified.");
+                            }}
+                            className="text-left text-[10.5px] p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 font-medium transition-all"
+                          >
+                            📝 Weighing Alert Template
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDispatchMessage("Mabala Live Pay Disbursement Alert: Your mobile money payout of ZK 4,500.00 has been approved and processed through Lipila Live. Reference: LP-82831");
+                            }}
+                            className="text-left text-[10.5px] p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 font-medium transition-all"
+                          >
+                            💰 Payout processed Alert
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Message Body</label>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {dispatchMessage.length} Chars • {Math.ceil(dispatchMessage.length / 160)} SMS Parts
+                        </span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        placeholder="Type message text here..."
+                        value={dispatchMessage}
+                        onChange={(e) => setDispatchMessage(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white text-xs outline-none focus:border-emerald-600"
+                        maxLength={480}
+                        required
+                      />
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="submit"
+                        disabled={sendingSms}
+                        className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        {sendingSms ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Dispatching SMS Gateway...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" /> Send SMS Alert
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Column: Custom Gateways & SMS Log History */}
+            <div className="space-y-6">
+              
+              {/* Gateway Configuration Card */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden p-5 space-y-4">
+                <div className="border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-slate-500" /> Gateway Configurations
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium leading-normal mt-0.5">
+                    Connect your custom corporate Beem Africa gateway.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Institution Type</label>
+                    <select
+                      value={institutionType}
+                      onChange={(e) => setInstitutionType(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 text-xs focus:bg-white focus:border-emerald-600 outline-none"
+                    >
+                      <option value="None">Independent Coop / None</option>
+                      <option value="Agricultural Cooperative">Agricultural Cooperative</option>
+                      <option value="Commercial Commodity Broker">Commercial Commodity Broker</option>
+                      <option value="NGO / Grain Depot Operator">NGO / Grain Depot Operator</option>
+                      <option value="State Agency / FRA Terminal">State Agency / FRA Terminal</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Beem API Key</label>
+                    <input
+                      type="password"
+                      placeholder="e3f57d1329f..."
+                      value={gatewayApiKey}
+                      onChange={(e) => setGatewayApiKey(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 text-xs focus:bg-white focus:border-emerald-600 outline-none font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Beem Secret Key</label>
+                    <input
+                      type="password"
+                      placeholder="MDkwODMxYz..."
+                      value={gatewaySecretKey}
+                      onChange={(e) => setGatewaySecretKey(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 text-xs focus:bg-white focus:border-emerald-600 outline-none font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Beem Sender ID</label>
+                    <input
+                      type="text"
+                      placeholder="Selo"
+                      value={gatewaySenderId}
+                      onChange={(e) => setGatewaySenderId(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg p-2 bg-slate-50 text-xs focus:bg-white focus:border-emerald-600 outline-none font-mono font-bold"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2.5">
+                    <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-amber-800 leading-relaxed">
+                      If Beem fields are left empty, the portal runs in <strong>Sandbox Demo Mode</strong>, simulating successful text delivery while logging transactions safely inside Firestore.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveGatewaySettings}
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl cursor-pointer mt-2"
+                  >
+                    Commit Configuration Settings
+                  </button>
+                </div>
+              </div>
+
+              {/* Live SMS Gateway Dispatch History Logs */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden p-5 space-y-3">
+                <div className="border-b border-slate-100 pb-3">
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-slate-500" /> Dispatch Logs History
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Chronological history of text dispatches.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                  {loadingSmsLogs ? (
+                    <div className="text-center py-6 text-slate-400 text-xs font-mono font-medium">
+                      Loading sms logs...
+                    </div>
+                  ) : smsLogs.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-xs font-mono font-medium">
+                      No dispatched text messages logged yet.
+                    </div>
+                  ) : (
+                    smsLogs.map((log) => (
+                      <div key={log.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5 text-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-slate-800">{log.recipient}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase font-mono border ${
+                            log.status === "BEEM_DELIVERED" || log.status === "MOCKED_SUCCESS"
+                              ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                              : "bg-red-50 text-red-600 border-red-100"
+                          }`}>
+                            {log.status === "BEEM_DELIVERED" ? "Delivered" : log.status === "MOCKED_SUCCESS" ? "Sent (Sandbox)" : "Failed"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-normal">{log.message}</p>
+                        <div className="flex justify-between items-center text-[9px] font-mono text-slate-400 font-bold pt-1 border-t border-slate-100">
+                          <span>Cost: {log.cost || 1} SMS Cr</span>
+                          <span>{new Date(log.timestamp).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB CONTENT: FARMER PORTAL ("SELL TO OFFTAKERS") */}
+      {effectiveActiveSubTab === "farmer-sell-hub" && (
+        <div className="space-y-6 animate-fade-in text-slate-900 font-sans" id="farmer-portal-sell-hub">
+          {/* Header Description */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-900 text-white rounded-3xl p-6 shadow-md">
+            <div>
+              <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-black uppercase tracking-wider rounded-md border border-emerald-500/30">
+                Authorized Farmer Portal
+              </span>
+              <h2 className="text-xl font-extrabold tracking-tight mt-2">Mabala Farmer Commercialization Hub</h2>
+              <p className="text-xs text-slate-300 font-medium max-w-xl mt-1 leading-normal">
+                Manage linkages with registered commercial aggregators, submit quality delivery notifications, track your Goods Received Notes (GRNs), and view payment ledger settlements.
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <span className="text-[10px] font-mono text-slate-400">LOGGED IN AS COOP SUPPLIER</span>
+              <span className="text-xs font-black bg-emerald-500 text-emerald-950 px-2.5 py-1 rounded-full font-sans">
+                {userEmail === "shikasuli@gmail.com" ? "Mwansa Chilufya" : "Registered Coop Farmer"}
+              </span>
+            </div>
+          </div>
+
+          {/* Core Navigation Tabs matching the 6 capabilities */}
+          <div className="flex gap-1.5 border-b border-slate-150 pb-1.5 overflow-x-auto scrollbar-none">
+            {[
+              { id: "dashboard", label: "📊 Overview & Tracks" },
+              { id: "linkages", label: "🤝 Request Linkage" },
+              { id: "supply-offers", label: "🌾 Add Product Delivery" },
+              { id: "grns", label: "📄 Goods Received Notes" },
+              { id: "payments", label: "💸 Payments Processed" },
+              { id: "price-alerts", label: "📢 Price Adjustments" }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setFarmerActiveTab(tab.id as any)}
+                className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                  farmerActiveTab === tab.id 
+                    ? "bg-slate-900 text-white shadow-sm font-black" 
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Pending Delivery Approvals Alert Banner */}
+          {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Pending").length > 0 && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-pulse">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <h5 className="text-xs font-black text-amber-900 uppercase font-mono tracking-wide">Pending Offtaker Delivery Note Confirms</h5>
+                  <p className="text-xs text-amber-800 font-sans">
+                    You have {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Pending").length} pending deliveries recorded by Offtakers that require your match signature.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFarmerActiveTab("dashboard")}
+                className="px-3.5 py-1.5 bg-amber-800 hover:bg-amber-900 text-white text-[11px] font-bold rounded-lg cursor-pointer transition whitespace-nowrap self-start sm:self-center font-sans"
+              >
+                Resolve Now
+              </button>
+            </div>
+          )}
+
+          {/* TAB CONTENTS */}
+
+          {/* 1. DASHBOARD OVERVIEW */}
+          {farmerActiveTab === "dashboard" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Main Column */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* KPIs Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Connected Offtakers</span>
+                    <span className="text-xl font-extrabold text-slate-800 block">
+                      {farmerOfftakerLinks.filter(l => l.farmerId === "farmer-z1" && l.status === "Active").length} Active
+                    </span>
+                    <span className="text-[9px] text-slate-500 block font-medium font-sans">Linked commercial buyers</span>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Delivered Quality Volume</span>
+                    <span className="text-xl font-extrabold text-slate-800 block">
+                      {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").length} Notes
+                    </span>
+                    <span className="text-[9px] text-slate-500 block font-medium font-sans">Signed depot shipments</span>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs col-span-2 md:col-span-1 space-y-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Accrued Settlements</span>
+                    <span className="text-xl font-extrabold text-emerald-700 block">
+                      ZK {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").reduce((sum, d) => sum + d.totalValue, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[9px] text-slate-500 block font-medium font-sans">ZK {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed" && d.paymentStatus === "Paid").reduce((sum, d) => sum + d.totalValue, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} settled</span>
+                  </div>
+                </div>
+
+                {/* Pending Delivery Sign-off Area */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
+                      ✍️ Direct Delivery Sign-offs & Verification (No Middlemen)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed font-sans">
+                      Review and double-sign incoming deliveries recorded by aggregators at depots. Once confirmed, payments are escrow-accrued instantly and receipts can be generated.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {deliveryNotes.filter(d => d.farmerId === "farmer-z1").length === 0 ? (
+                      <div className="text-center py-6 text-slate-400 text-xs italic font-medium font-sans">
+                        No registered deliveries found under your account profile.
+                      </div>
+                    ) : (
+                      deliveryNotes.filter(d => d.farmerId === "farmer-z1").map(dn => {
+                        const isPending = dn.status === "Pending";
+                        return (
+                          <div key={dn.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-4 hover:bg-slate-100/50 transition">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-mono font-bold text-slate-400 block">{dn.dnNumber} • Recorded {new Date(dn.createdAt).toLocaleDateString()}</span>
+                              <span className="text-xs font-bold text-slate-900 block">{dn.product}</span>
+                              <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-600 font-semibold font-sans">
+                                <span>Quantity: <strong className="text-slate-800">{dn.qty} {dn.unit}</strong></span>
+                                <span>Grade: <span className="bg-slate-200/60 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{dn.grade || dn.gradeTag || "Grade Class A"}</span></span>
+                                <span>Payout: <strong className="text-emerald-700">ZK {(dn.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+                              </div>
+                              {dn.autoConfirmed && (
+                                <span className="text-[10px] text-amber-600 font-bold block mt-1">🕒 Auto-confirmed via 48h elapsed deadline</span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {isPending ? (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFarmerConfirmDN(dn.id)}
+                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl cursor-pointer transition-all shadow-md font-sans"
+                                  >
+                                    Confirm Match
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFarmerDisputeDN(dn.id)}
+                                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-black rounded-xl cursor-pointer transition-all font-sans"
+                                  >
+                                    Dispute
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-end gap-1.5">
+                                  <span className={`px-2.5 py-1 text-[10px] uppercase font-black rounded-full border ${
+                                    dn.status === "Confirmed" 
+                                      ? "bg-emerald-50 text-emerald-600 border-emerald-500/20" 
+                                      : "bg-rose-50 text-rose-600 border-rose-500/20"
+                                  }`}>
+                                    {dn.status}
+                                  </span>
+                                  {dn.status === "Confirmed" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerReceiptPrintout(dn)}
+                                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer flex items-center gap-1 font-sans"
+                                    >
+                                      📄 Print itemized Receipt
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Track Connected Offtakers Summary */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">🤝 Linked Offtakers Summary & Analytics</h3>
+                  <div className="divide-y divide-slate-100">
+                    {farmerOfftakerLinks.filter(l => l.farmerId === "farmer-z1").map(l => {
+                      const linkDNs = deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed");
+                      const offtakerVol = linkDNs.reduce((sum, d) => sum + d.qty, 0);
+                      const offtakerVal = linkDNs.reduce((sum, d) => sum + d.totalValue, 0);
+                      return (
+                        <div key={l.id} className="py-4 flex flex-wrap justify-between items-center gap-4">
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-black text-slate-800 font-sans">{l.offtakerName}</h4>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-black uppercase border border-emerald-200">
+                                {l.status}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium font-sans">Link Reference: {l.id}</span>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <span className="text-xs font-bold text-slate-700 block font-sans">Total Delivers: {offtakerVol} Units</span>
+                            <span className="text-xs font-extrabold text-emerald-700 block">ZK {offtakerVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Side Column: Preferences preference configurations & Simulations */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Payout preference Form */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-amber-50 rounded-xl text-amber-700">
+                      <Smartphone className="w-5 h-5 bg-transparent" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Payout Preferences</h3>
+                      <p className="text-[11px] text-slate-500">Configure Airtel/MTN/Bank payout defaults.</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleFarmerUpdatePreferenceSubmit} className="space-y-3 pt-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Default Payout Class</label>
+                      <select
+                        value={farmerPrefMethod}
+                        onChange={(e) => setFarmerPrefMethod(e.target.value as any)}
+                        className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white font-semibold font-sans"
+                      >
+                        <option value="mobile_money">Mobile Money Account</option>
+                        <option value="bank_transfer">Direct Bank Transfer account</option>
+                      </select>
+                    </div>
+
+                    {farmerPrefMethod === "mobile_money" ? (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400">Mobile Money Provider</label>
+                          <select
+                            value={farmerPrefMoMoProvider}
+                            onChange={(e) => setFarmerPrefMoMoProvider(e.target.value)}
+                            className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white font-semibold font-sans"
+                          >
+                            <option value="MTN MoMo">Zambia MTN MoMo Pay</option>
+                            <option value="Airtel Money">Zambia Airtel Money</option>
+                            <option value="Zamtel Kwacha">Zambia Zamtel Kwacha</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400">Active Mobile Number</label>
+                          <input
+                            type="tel"
+                            value={farmerPrefPhone}
+                            onChange={(e) => setFarmerPrefPhone(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+                            placeholder="e.g. 0977283921"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400">Zambian Clearing Bank</label>
+                          <select
+                            value={farmerPrefBankName}
+                            onChange={(e) => setFarmerPrefBankName(e.target.value)}
+                            className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none focus:bg-white font-semibold font-sans"
+                          >
+                            <option value="ZANACO">Zambian National Commercial Bank (ZANACO)</option>
+                            <option value="Standard Chartered">Standard Chartered Bank Zambia Ltd</option>
+                            <option value="Absa Bank">ABSA Bank Zambia PLC</option>
+                            <option value="First National Bank">FNB Zambia Ltd</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400">Account Number</label>
+                          <input
+                            type="text"
+                            value={farmerPrefAccNum}
+                            onChange={(e) => setFarmerPrefAccNum(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-emerald-600 font-mono font-bold"
+                            placeholder="e.g. 1002931023"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400">Account Holder Name</label>
+                          <input
+                            type="text"
+                            value={farmerPrefAccName}
+                            onChange={(e) => setFarmerPrefAccName(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                            placeholder="e.g. Mwansa Chilufya"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl cursor-pointer shadow-sm transition-all font-sans"
+                    >
+                      Save Settlement Preferences
+                    </button>
+                  </form>
+                </div>
+
+                {/* Simulated 48h deadline tool trigger */}
+                <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 shadow-xs space-y-3">
+                  <span className="text-[10px] font-black uppercase text-amber-800 font-mono tracking-wider block">Simulated 48-Hour auto confirmation</span>
+                  <p className="text-xs text-amber-900 leading-normal font-sans">
+                    If the 48h deadline passes without manual action, pending delivery notes auto-confirm to protect farmer liquidations and keep ledger accruals accurate.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSimulate48hDeadline}
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-xs font-mono uppercase tracking-wider"
+                  >
+                    Simulate 48h Deadline Elapsed
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 2. REQUEST LINKAGE */}
+          {farmerActiveTab === "linkages" && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight">🤝 Request Linkage to Registered Offtakers</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-normal font-sans">
+                  Initiate, authorize, and sync secure linkage dispatches with certified commercial aggregators on the Mabala network.
+                </p>
+              </div>
+
+              {/* Linkage Request Form */}
+              <div className="p-5 bg-slate-50 rounded-2xl border space-y-4">
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider font-mono">Send New Linkage Request</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Select Offtaker Corporation</label>
+                    <select
+                      id="linkage-offtaker-select"
+                      className="w-full border border-slate-200 bg-white rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                    >
+                      <option value="">-- Choose Partner Offtaker --</option>
+                      {allOfftakersList.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.legalName} ({o.sector ? o.sector.toUpperCase() : "GENERAL"})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const selectEl = document.getElementById("linkage-offtaker-select") as HTMLSelectElement;
+                        const offVal = selectEl?.value;
+                        if (!offVal) {
+                          alert("Please choose an offtaker partner first.");
+                          return;
+                        }
+                        const exists = farmerOfftakerLinks.find(l => l.farmerId === "farmer-z1" && (l.offtakerId === offVal || l.offtakerId === offVal));
+                        if (exists) {
+                          alert("A linkage record already exists with this offtaker. Current status: " + exists.status);
+                          return;
+                        }
+                        const selectedOffObj = allOfftakersList.find(o => o.id === offVal);
+                        const newLink = {
+                          id: "link-" + Math.floor(Math.random() * 9000 + 1000),
+                          farmerId: "farmer-z1",
+                          farmerName: "Mwansa Chilufya",
+                          nrc: "112233/44/1",
+                          phone: "0977283921",
+                          offtakerId: offVal,
+                          offtakerName: selectedOffObj?.legalName || "Commercial Offtaker Partner",
+                          status: "Pending"
+                        };
+                        const updated = [...farmerOfftakerLinks, newLink];
+                        await saveToOfflineStore("farmer_offtaker_links", newLink);
+                        setFarmerOfftakerLinks(updated);
+                        addNotification("✓ Linkage request successfully queued and sent to offtaker commercial desk!", "success");
+                      }}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-all uppercase tracking-wider font-mono"
+                    >
+                      Dispatch Request Linkage
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Linkages Table */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider font-mono">Active & Pending Linkage Registrations</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs font-sans">
+                    <thead>
+                      <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                        <th className="p-3">Link ID</th>
+                        <th className="p-3">Offtaker Corporate Name</th>
+                        <th className="p-3">Sector</th>
+                        <th className="p-3 text-center">Connection Status</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                      {farmerOfftakerLinks.filter(l => l.farmerId === "farmer-z1").map((l) => (
+                        <tr key={l.id} className="hover:bg-slate-50/50 transition">
+                          <td className="p-3 font-mono text-[10px] text-slate-500">{l.id}</td>
+                          <td className="p-3">
+                            <span className="font-extrabold text-slate-950 block">{l.offtakerName}</span>
+                            <span className="text-[10px] text-slate-400 font-medium font-sans">Offtaker ID: {l.offtakerId}</span>
+                          </td>
+                          <td className="p-3 font-semibold uppercase text-slate-500 font-sans">
+                            {allOfftakersList.find(o => o.id === l.offtakerId || o.tenantId === l.offtakerId)?.sector || "General crop / grain"}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                              l.status === "Active" 
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                            }`}>
+                              {l.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            {l.status === "Pending" ? (
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updated = farmerOfftakerLinks.map(item => {
+                                      if (item.id === l.id) return { ...item, status: "Active" };
+                                      return item;
+                                    });
+                                    await saveToOfflineStore("farmer_offtaker_links", { ...l, status: "Active" });
+                                    setFarmerOfftakerLinks(updated);
+                                    addNotification("✓ Linkage active! You can now submit supply dispatches.", "success");
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-extrabold text-[10px] rounded transition"
+                                >
+                                  Authorize
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleFarmerDeclineLinkRequest(linked.id)}
-                                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer transition-all"
+                                  onClick={async () => {
+                                    const updated = farmerOfftakerLinks.filter(item => item.id !== l.id);
+                                    await deleteFromOfflineStore("farmer_offtaker_links", l.id);
+                                    setFarmerOfftakerLinks(updated);
+                                    addNotification("Linkage declined.", "info");
+                                  }}
+                                  className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-extrabold text-[10px] rounded transition"
                                 >
                                   Decline
                                 </button>
                               </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-bold italic font-sans">Authorized</span>
                             )}
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleFarmerRequestConnection(off.tenantId || off.id)}
-                            className="w-full mt-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black rounded-lg cursor-pointer transition-all shadow-xs"
-                          >
-                            Request Connection Link
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Pending Confirmations list and match validation */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900">🔔 Farmer Delivery Note confirmation Centre</h3>
-              <p className="text-xs text-slate-500 leading-normal">
-                Review and double-sign incoming deliveries recorded by aggregators at depots. Once confirmed, payments are escrow-accrued instantly and receipts can be generated.
-              </p>
+          {/* 3. ADD SUPPLY OFFER */}
+          {farmerActiveTab === "supply-offers" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Column */}
+              <div className="lg:col-span-1 space-y-6">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-tight">🌾 Add Products to Deliver (Supply Offers)</h3>
+                    <p className="text-xs text-slate-500 mt-1 font-sans">Submit crop categories and quantities for verified offtaker appraisal.</p>
+                  </div>
 
-              <div className="space-y-3">
-                {deliveryNotes.filter(d => d.farmerId === "farmer-z1").length === 0 ? (
-                  <div className="text-center py-6 text-slate-400 text-xs">
-                    No registered deliveries found under your NRC 112233/44/1.
+                  <form onSubmit={handleFarmerAddSupplyOffer} className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Target Linked Offtaker</label>
+                      <select
+                        value={offerOfftakerId}
+                        onChange={(e) => setOfferOfftakerId(e.target.value)}
+                        className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                        required
+                      >
+                        <option value="">-- Select connected offtaker --</option>
+                        {farmerOfftakerLinks.filter(l => l.farmerId === "farmer-z1" && l.status === "Active").map(l => (
+                          <option key={l.offtakerId} value={l.offtakerId}>{l.offtakerName}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Product / Commodity Category</label>
+                      <select
+                        value={offerProductCategory}
+                        onChange={(e) => setOfferProductCategory(e.target.value)}
+                        className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                        required
+                      >
+                        <option value="White Maize Grain">White Maize Grain</option>
+                        <option value="Raw Fresh Milk">Raw Fresh Milk</option>
+                        <option value="Zambia Seed Cotton">Zambia Seed Cotton</option>
+                        <option value="Soybeans">Soybeans</option>
+                        <option value="Sunflowers">Sunflowers</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400">Quantity</label>
+                        <input
+                          type="number"
+                          value={offerQuantity}
+                          onChange={(e) => setOfferQuantity(e.target.value)}
+                          placeholder="e.g. 5000"
+                          className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none font-bold"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400">Unit</label>
+                        <select
+                          value={offerUnit}
+                          onChange={(e) => setOfferUnit(e.target.value)}
+                          className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                        >
+                          <option value="Bags">Bags (50Kg)</option>
+                          <option value="Litres">Litres</option>
+                          <option value="Kgs">Kgs</option>
+                          <option value="Tonnes">Tonnes</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400">Quality Grade</label>
+                        <select
+                          value={offerGrade}
+                          onChange={(e) => setOfferGrade(e.target.value)}
+                          className="w-full border border-slate-200 bg-slate-50 rounded-xl p-2.5 text-xs outline-none font-bold font-sans"
+                        >
+                          <option value="Grade A">Grade A (Premium)</option>
+                          <option value="Grade B">Grade B (Standard)</option>
+                          <option value="Grade C">Grade C (Industrial)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400">Proposed Delivery Date</label>
+                        <input
+                          type="date"
+                          value={offerProposedDate}
+                          onChange={(e) => setOfferProposedDate(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none font-bold"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Additional Depot Notes</label>
+                      <textarea
+                        value={offerNotes}
+                        onChange={(e) => setOfferNotes(e.target.value)}
+                        placeholder="Provide details about delivery lot..."
+                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none font-semibold h-16 resize-none font-sans"
+                      />
+                    </div>
+
+                    {/* Drag-and-drop support file attachment */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 block">Quality Certificate / Delivery Sheet</label>
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDraggingOfferFile(true); }}
+                        onDragLeave={() => setIsDraggingOfferFile(false)}
+                        onDrop={handleOfferFileDrop}
+                        className={`border-2 border-dashed rounded-xl p-3 text-center transition cursor-pointer flex flex-col items-center justify-center min-h-[90px] ${
+                          isDraggingOfferFile ? "border-emerald-500 bg-emerald-50/50" : "border-slate-200 hover:border-slate-300"
+                        }`}
+                        onClick={() => document.getElementById("offer-file-input")?.click()}
+                      >
+                        <input
+                          id="offer-file-input"
+                          type="file"
+                          className="hidden"
+                          onChange={handleOfferFileSelect}
+                        />
+                        <UploadCloud className="w-5 h-5 text-slate-400 mb-1 bg-transparent" />
+                        {offerFileName ? (
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-700 font-bold block max-w-[160px] truncate">{offerFileName}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOfferFileName("");
+                                setOfferFileUrl("");
+                              }}
+                              className="text-[9px] text-rose-600 hover:underline font-bold font-sans"
+                            >
+                              Remove Attachment
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-[10px] font-bold text-slate-600 block font-sans">Drag file here or click to browse</span>
+                            <span className="text-[8px] text-slate-400 block font-sans">PDF, PNG or JPG max 4MB</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow cursor-pointer transition uppercase tracking-wider font-mono font-sans"
+                    >
+                      Submit Supply Offer
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* History Tracker Column */}
+              <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">📋 My Submitted Supply Offers History & Status Tracker</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs font-sans">
+                      <thead>
+                        <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                          <th className="p-3">Offer ID</th>
+                          <th className="p-3">Target Offtaker</th>
+                          <th className="p-3">Commodity & Grade</th>
+                          <th className="p-3 text-center">Proposed Date</th>
+                          <th className="p-3 text-center">Attachment</th>
+                          <th className="p-3 text-right">Verification Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                        {supplyOffers.map((o) => (
+                          <tr key={o.id} className="hover:bg-slate-50/50 transition">
+                            <td className="p-3 font-mono text-[10px] text-slate-500">{o.id}</td>
+                            <td className="p-3">
+                              <span className="font-extrabold text-slate-950 block">{o.offtakerName}</span>
+                              <span className="text-[9px] text-slate-400 font-medium font-sans">Offtaker ID: {o.offtakerId}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-slate-800 font-bold block">{o.productCategory}</span>
+                              <span className="text-[10px] text-slate-500 font-medium font-sans">Qty: {o.quantity} {o.unit} • {o.grade}</span>
+                            </td>
+                            <td className="p-3 text-center text-slate-600 font-medium">{o.proposedDate}</td>
+                            <td className="p-3 text-center">
+                              {o.fileUrl || o.fileName ? (
+                                <a
+                                  href={o.fileUrl || "#"}
+                                  download={o.fileName}
+                                  onClick={(e) => !o.fileUrl && e.preventDefault()}
+                                  className="text-[10px] text-indigo-600 hover:underline font-bold flex items-center justify-center gap-0.5"
+                                >
+                                  📄 Download
+                                </a>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic font-medium font-sans">None</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                                o.status === "approved" 
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : o.status === "rejected"
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : "bg-indigo-50 text-indigo-700 border border-indigo-200/50 animate-pulse"
+                              }`}>
+                                {o.status === "pending_verification" ? "Pending Inspection" : o.status}
+                              </span>
+                              {o.notes && (
+                                <span className="text-[9px] text-slate-400 font-medium block mt-1 leading-tight max-w-[150px] truncate ml-auto font-sans" title={o.notes}>
+                                  "{o.notes}"
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. GOODS RECEIVED NOTES (GRNs) */}
+          {farmerActiveTab === "grns" && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight font-sans">📄 Secure Goods Received Notes (GRNs) Directory</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-normal font-sans">
+                  Permanently stored GRNs. Once a delivery note is confirmed, a secure cryptographically traceable GRN ledger record is generated for legal and financial auditing.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs font-sans">
+                  <thead>
+                    <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                      <th className="p-3">GRN Reference</th>
+                      <th className="p-3">Confirmed Date</th>
+                      <th className="p-3">Buyer Corp</th>
+                      <th className="p-3">Quality Details</th>
+                      <th className="p-3 text-center">Quantity Delivered</th>
+                      <th className="p-3 text-right">Total Accrued (ZK)</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center italic text-slate-400 text-xs font-sans font-medium">
+                          No approved delivery ledger notes found. Verify pending items on your dashboard tab first.
+                        </td>
+                      </tr>
+                    ) : (
+                      deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").map((dn) => (
+                        <tr key={dn.id} className="hover:bg-slate-50/50 transition">
+                          <td className="p-3">
+                            <span className="font-mono text-[10px] text-indigo-600 block">{dn.dnNumber}-GRN</span>
+                            <span className="text-[9px] text-slate-400 font-bold block uppercase tracking-wider">Secured</span>
+                          </td>
+                          <td className="p-3 text-slate-600 font-medium font-sans">
+                            {new Date(dn.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="p-3 font-extrabold text-slate-950 font-sans">
+                            {allOfftakersList.find(o => o.id === dn.offtakerId || o.tenantId === dn.offtakerId)?.legalName || "Commercial Offtaker Partner"}
+                          </td>
+                          <td className="p-3 text-slate-500 font-sans">
+                            <span className="font-bold block text-slate-800">{dn.product}</span>
+                            <span className="text-[10px] font-mono">{dn.grade || "Grade A"} • Unit rate: ZK {dn.unitPrice}</span>
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold text-slate-900">{dn.qty} {dn.unit}</td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700">
+                            ZK {(dn.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => triggerReceiptPrintout(dn)}
+                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-[10px] rounded-lg cursor-pointer transition uppercase tracking-wider font-mono font-sans"
+                            >
+                              📄 Download PDF GRN
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 5. PAYMENTS PROCESSED */}
+          {farmerActiveTab === "payments" && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight font-sans">💸 Processed Payments & Escrow Ledger</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-normal font-sans">
+                    Audit dispatches, clearing hashes, mobile money transactions, and payment status receipts processed to you by commercial offtakers.
+                  </p>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border text-right font-sans">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase block">Settled To Date</span>
+                  <span className="text-lg font-black text-emerald-700">
+                    ZK {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed" && d.paymentStatus === "Paid").reduce((sum, d) => sum + d.totalValue, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs font-sans">
+                  <thead>
+                    <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                      <th className="p-3">Disbursement ID</th>
+                      <th className="p-3">Payout Date</th>
+                      <th className="p-3">Target Offtaker</th>
+                      <th className="p-3">Settlement Method</th>
+                      <th className="p-3 text-right">Amount (ZK)</th>
+                      <th className="p-3 text-right">Verification Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center italic text-slate-400 text-xs font-sans font-medium">
+                          No payment ledger notes found.
+                        </td>
+                      </tr>
+                    ) : (
+                      deliveryNotes.filter(d => d.farmerId === "farmer-z1" && d.status === "Confirmed").map((dn) => (
+                        <tr key={dn.id} className="hover:bg-slate-50/50 transition">
+                          <td className="p-3 font-mono text-[10px] text-slate-500">
+                            TXN-{(Math.floor(Math.random() * 90000 + 10000))}-{(dn.id).toUpperCase()}
+                          </td>
+                          <td className="p-3 text-slate-500 font-medium font-sans">
+                            {dn.paymentStatus === "Paid" ? new Date(dn.createdAt).toLocaleDateString() : "Pending Cycle Settlement"}
+                          </td>
+                          <td className="p-3 font-extrabold text-slate-950 font-sans">
+                            {allOfftakersList.find(o => o.id === dn.offtakerId || o.tenantId === dn.offtakerId)?.legalName || "Commercial Offtaker Partner"}
+                          </td>
+                          <td className="p-3 text-slate-600 font-sans">
+                            <span className="font-bold block uppercase text-[10px] text-slate-500">{farmerPrefMethod === "mobile_money" ? "Mobile Money Account" : "Bank Settlement"}</span>
+                            <span className="text-[10px] text-slate-400 font-mono font-medium">Target: {farmerPrefMethod === "mobile_money" ? `${farmerPrefMoMoProvider} (${farmerPrefPhone})` : `${farmerPrefBankName} (${farmerPrefAccNum})`}</span>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-slate-900">
+                            ZK {(dn.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                              dn.paymentStatus === "Paid" 
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                                : "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
+                            }`}>
+                              {dn.paymentStatus === "Paid" ? "Cleared / Dispatched" : "Processing Escrow"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 6. PRICE ALERTS */}
+          {farmerActiveTab === "price-alerts" && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight font-sans">📢 Live Price Board Adjustments & Notifications</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-normal font-sans">
+                  Real-time price modification adjustments, timeline records, and scale logs dispatched by linked aggregators across crop classifications.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {priceNotifications.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 border border-dashed rounded-2xl text-xs text-slate-400 italic font-sans font-medium">
+                    No recent price adjustments recorded on the network.
                   </div>
                 ) : (
-                  deliveryNotes.filter(d => d.farmerId === "farmer-z1").map(dn => {
-                    const isPending = dn.status === "Pending";
+                  priceNotifications.map((notif) => {
+                    const diff = notif.newPrice - notif.oldPrice;
+                    const isUp = diff >= 0;
                     return (
-                      <div key={dn.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-mono font-bold text-slate-400 block">{dn.dnNumber} • Recorded {new Date(dn.createdAt).toLocaleDateString()}</span>
-                          <span className="text-xs font-bold text-slate-900 block">{dn.product}</span>
-                          <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-600 font-medium">
-                            <span>Quantity: <strong className="text-slate-800">{dn.qty} {dn.unit}</strong></span>
-                            <span>Grade: <span className="bg-slate-200/60 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{dn.grade || dn.gradeTag || "Grade Class A"}</span></span>
-                            <span>Payout: <strong className="text-emerald-700">ZK {(dn.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+                      <div key={notif.id} className="p-5 bg-slate-50 border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-100/50 transition">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-8 h-8 rounded-full bg-slate-900 text-white font-black text-xs font-mono flex items-center justify-center font-sans">
+                              {notif.offtakerName.slice(0, 2).toUpperCase()}
+                            </span>
+                            <div>
+                              <h4 className="text-xs font-black text-slate-950 font-sans">{notif.offtakerName}</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono font-sans">Verified Aggregator</p>
+                            </div>
                           </div>
-                          {dn.autoConfirmed && (
-                            <span className="text-[10px] text-amber-600 font-bold block mt-1">🕒 Auto-confirmed via 48h elapsed deadline</span>
-                          )}
+                          <div className="space-y-1 pl-10 font-sans">
+                            <h5 className="text-xs font-bold text-slate-800">
+                              Commodity rate update: <strong className="text-slate-900">{notif.commodity}</strong> ({notif.grade})
+                            </h5>
+                            <span className="text-[10px] text-slate-400 font-semibold block">
+                              Effective Date: <strong>{notif.effectiveDate}</strong> • Broadcast ID: {notif.id}
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {isPending ? (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleFarmerConfirmDN(dn.id)}
-                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl cursor-pointer transition-all shadow-md"
-                              >
-                                Confirm Match
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleFarmerDisputeDN(dn.id)}
-                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-black rounded-xl cursor-pointer transition-all"
-                              >
-                                Dispute
-                              </button>
+                        <div className="flex items-center gap-4 pl-10 sm:pl-0">
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-400 block font-bold uppercase font-sans">Rate Adjusted</span>
+                            <div className="flex items-center gap-2 mt-0.5 justify-end">
+                              <span className="text-xs text-slate-400 line-through font-mono">ZK {notif.oldPrice}</span>
+                              <ChevronRight className="w-3 h-3 text-slate-400" />
+                              <span className="text-sm font-black text-slate-900 font-mono">ZK {notif.newPrice}</span>
                             </div>
-                          ) : (
-                            <div className="flex flex-col items-end gap-1.5">
-                              <span className={`px-2.5 py-1 text-[10px] uppercase font-black rounded-full border ${
-                                dn.status === "Confirmed" 
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-500/20" 
-                                  : "bg-rose-50 text-rose-600 border-rose-500/20"
-                              }`}>
-                                {dn.status}
-                              </span>
-                              {dn.status === "Confirmed" && (
-                                <button
-                                  type="button"
-                                  onClick={() => triggerReceiptPrintout(dn)}
-                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
-                                >
-                                  📄 Print itemized Receipt
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          </div>
+                          <div className={`p-2 rounded-xl text-center shrink-0 ${isUp ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                            <span className="text-[9px] font-black uppercase font-mono block">{isUp ? "Increased" : "Decreased"}</span>
+                            <span className="text-xs font-black font-mono block">{isUp ? "+" : ""}{diff.toFixed(2)} ZK</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -3264,11 +4587,9 @@ STATUS:       ${dn.status} (Verified)
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-        </>
+        </div>
       )}
 
       {/* -----------------------------
@@ -3656,6 +4977,9 @@ STATUS:       ${dn.status} (Verified)
             setShowRecordDeliveryModal(false);
           }}
         />
+      )}
+
+        </>
       )}
 
     </div>

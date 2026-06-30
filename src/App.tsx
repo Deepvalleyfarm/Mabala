@@ -20,6 +20,8 @@ import VeterinaryWorkspace from "./components/veterinary/VeterinaryWorkspace";
 import ReportsPanel from "./components/ReportsPanel";
 import AccessControlPanel from "./components/AccessControlPanel";
 import ProfilesPlatformPanel from "./components/ProfilesPlatformPanel";
+import InstitutionPortal from "./components/InstitutionPortal";
+import BoundaryGuard from "./components/BoundaryGuard";
 import BackupRestorePanel from "./components/BackupRestorePanel";
 import WeatherWidget from "./components/WeatherWidget";
 import TaskManager from "./components/TaskManager";
@@ -543,6 +545,36 @@ const DEFAULT_PERMISSIONS: RolePermissionsMap = {
     inventory: { read: true, write: false },
     reports: { read: true, write: false },
     permissions: { read: true, write: false },
+  },
+  "Farmer": {
+    dashboard: { read: true, write: true },
+    accounts: { read: true, write: true },
+    expenses: { read: true, write: true },
+    crops: { read: true, write: true },
+    payroll: { read: true, write: true },
+    sales: { read: true, write: true },
+    invoices: { read: true, write: true },
+    livestock: { read: true, write: true },
+    poultry: { read: true, write: true },
+    aquaculture: { read: true, write: true },
+    inventory: { read: true, write: true },
+    reports: { read: true, write: true },
+    permissions: { read: true, write: true },
+  },
+  "partner": {
+    dashboard: { read: true, write: true },
+    accounts: { read: true, write: true },
+    expenses: { read: true, write: true },
+    crops: { read: true, write: true },
+    payroll: { read: true, write: true },
+    sales: { read: true, write: true },
+    invoices: { read: true, write: true },
+    livestock: { read: true, write: true },
+    poultry: { read: true, write: true },
+    aquaculture: { read: true, write: true },
+    inventory: { read: true, write: true },
+    reports: { read: true, write: true },
+    permissions: { read: true, write: true },
   }
 };
 
@@ -586,6 +618,11 @@ export default function App() {
   const [credits, setCredits] = useState<number>(() => {
     const cached = localStorage.getItem("mabala_credits");
     return cached !== null ? Number(cached) : 300;
+  });
+  const [parentProfile, setParentProfile] = useState<any>(null);
+  const [smsCredits, setSmsCredits] = useState<number>(() => {
+    const cached = localStorage.getItem("mabala_sms_credits");
+    return cached !== null ? Number(cached) : 100;
   });
 
   // Marketplace core states
@@ -1157,50 +1194,139 @@ export default function App() {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const rawCloudData = docSnap.data();
-        const { migratedData, upgradedCount } = migrationRunner(rawCloudData);
         
-        // If schema upgrades occurred, persist updated payload immediately to guarantee zero details lost
+        // Intercept and isolate Sponsoring Organisation profiles immediately
+        const roleLower = (rawCloudData.role || "").toLowerCase();
+        const isInstitutionRole = 
+          roleLower === "institution admin" || 
+          roleLower === "institution_admin" ||
+          roleLower === "institution staff" || 
+          roleLower === "institution_staff" ||
+          roleLower === "subuser" ||
+          roleLower === "field officer" ||
+          roleLower === "field operator";
+
+        if (isInstitutionRole) {
+          const profile = {
+            uid: uid,
+            email: rawCloudData.email || email,
+            name: rawCloudData.name || "Institution User",
+            role: rawCloudData.role,
+            tenantId: rawCloudData.tenantId || ""
+          };
+          setUserProfile(profile);
+          setCurrentRole(rawCloudData.role);
+          localStorage.setItem("mabala_user_profile", JSON.stringify(profile));
+          setIsAuthenticated(true);
+          return;
+        }
+
+        let data = rawCloudData;
+        let isSubUser = false;
+        let parentTenantId = "";
+        
+        if (rawCloudData.tenantId) {
+          isSubUser = true;
+          parentTenantId = rawCloudData.tenantId;
+          console.log(`[Mabala Multi-Tenant] Detected sub-user with parent tenant: ${parentTenantId}. Overriding workspace...`);
+          const parentDocRef = doc(db, "users_data", parentTenantId);
+          const parentDocSnap = await getDoc(parentDocRef);
+          if (parentDocSnap.exists()) {
+            data = parentDocSnap.data();
+          } else {
+            console.warn(`[Mabala Multi-Tenant] Parent tenant document not found: ${parentTenantId}`);
+          }
+        }
+
+        const { migratedData, upgradedCount } = migrationRunner(data);
+        
+        // If schema upgrades occurred, persist updated payload immediately
         if (upgradedCount > 0) {
           console.log(`[Mabala Cloud] Save migrated multi-tenant document (migrations run: ${upgradedCount})`);
-          await setDoc(docRef, migratedData, { merge: true });
+          const saveRef = doc(db, "users_data", isSubUser ? parentTenantId : uid);
+          await setDoc(saveRef, migratedData, { merge: true });
         }
         
-        const data = migratedData;
+        const finalData = migratedData;
         console.log("[Mabala Cloud] Restoring persistent workspace from cloud security ledger...");
         
-        if (data.farms && data.farms.length > 0) setFarms(data.farms);
-        if (data.accounts && data.accounts.length > 0) setAccounts(data.accounts);
-        if (data.suppliers) setSuppliers(data.suppliers);
-        if (data.customers) setCustomers(data.customers);
-        if (data.expenses) setExpenses(data.expenses);
-        if (data.invoices) setInvoices(data.invoices);
-        if (data.quotations) setQuotations(data.quotations);
-        if (data.crops) setCrops(data.crops);
-        if (data.employees) setEmployees(data.employees);
-        if (data.payslips) setPayslips(data.payslips);
-        if (data.poultry) setPoultry(data.poultry);
-        if (data.fish) setFish(data.fish);
-        if (data.inventory) setInventory(data.inventory);
-        if (data.cashSales) setCashSales(data.cashSales);
-        if (data.loans) setLoans(data.loans);
-        if (data.investments) setInvestments(data.investments);
-        if (data.livestock) setLivestock(data.livestock);
-        if (data.assets) setAssets(data.assets);
-        if (data.otherRevenues) setOtherRevenues(data.otherRevenues);
-        if (data.leaveRecords) setLeaveRecords(data.leaveRecords);
-        if (data.employeeAdvances) setEmployeeAdvances(data.employeeAdvances);
-        if (data.auditLogs) setAuditLogs(data.auditLogs);
-        if (data.archivedRecords) setArchivedRecords(data.archivedRecords);
-        if (data.credits !== undefined) setCredits(data.credits);
-        if (data.subscriptionTier) setSubscriptionTier(data.subscriptionTier);
-        if (data.workspaceMode) setWorkspaceMode(data.workspaceMode);
+        if (finalData.farms && finalData.farms.length > 0) setFarms(finalData.farms);
+        if (finalData.accounts && finalData.accounts.length > 0) setAccounts(finalData.accounts);
+        if (finalData.suppliers) setSuppliers(finalData.suppliers);
+        if (finalData.customers) setCustomers(finalData.customers);
+        if (finalData.expenses) setExpenses(finalData.expenses);
+        if (finalData.invoices) setInvoices(finalData.invoices);
+        if (finalData.quotations) setQuotations(finalData.quotations);
+        if (finalData.crops) setCrops(finalData.crops);
+        if (finalData.employees) setEmployees(finalData.employees);
+        if (finalData.payslips) setPayslips(finalData.payslips);
+        if (finalData.poultry) setPoultry(finalData.poultry);
+        if (finalData.fish) setFish(finalData.fish);
+        if (finalData.inventory) setInventory(finalData.inventory);
+        if (finalData.cashSales) setCashSales(finalData.cashSales);
+        if (finalData.loans) setLoans(finalData.loans);
+        if (finalData.investments) setInvestments(finalData.investments);
+        if (finalData.livestock) setLivestock(finalData.livestock);
+        if (finalData.assets) setAssets(finalData.assets);
+        if (finalData.otherRevenues) setOtherRevenues(finalData.otherRevenues);
+        if (finalData.leaveRecords) setLeaveRecords(finalData.leaveRecords);
+        if (finalData.employeeAdvances) setEmployeeAdvances(finalData.employeeAdvances);
+        if (finalData.auditLogs) setAuditLogs(finalData.auditLogs);
+        if (finalData.archivedRecords) setArchivedRecords(finalData.archivedRecords);
+        if (finalData.credits !== undefined) setCredits(finalData.credits);
+        if (finalData.smsCredits !== undefined) {
+          setSmsCredits(finalData.smsCredits);
+        } else {
+          setSmsCredits(100);
+        }
+        if (finalData.subscriptionTier) setSubscriptionTier(finalData.subscriptionTier);
+        if (finalData.workspaceMode) setWorkspaceMode(finalData.workspaceMode);
+        
+        if (isSubUser) {
+          const profile = {
+            ...(rawCloudData.userProfile || {}),
+            email: rawCloudData.email || email,
+            tenantId: parentTenantId,
+            uid: uid,
+            role: rawCloudData.role || "Field Officer"
+          };
+          setUserProfile(profile);
+          setParentProfile(finalData.userProfile || null);
+          localStorage.setItem("mabala_user_profile", JSON.stringify(profile));
+        } else {
+          setParentProfile(null);
+          if (finalData.userProfile) {
+            setUserProfile({
+              ...finalData.userProfile,
+              uid: uid
+            });
+            localStorage.setItem("mabala_user_profile", JSON.stringify({
+              ...finalData.userProfile,
+              uid: uid
+            }));
+          } else {
+            setUserProfile(prev => {
+              const u = {
+                ...prev,
+                uid: uid,
+                email: email || prev.email || "owner@mabala.com",
+                name: finalData.role === "Super Admin" ? "Platform Administrator" : (prev.name || "Farm Owner"),
+              };
+              localStorage.setItem("mabala_user_profile", JSON.stringify(u));
+              return u;
+            });
+          }
+        }
+        
         const isSuper = email.trim().toLowerCase() === "deepvaleyfarm@gmail.com" && uid === "icIoBG4eN5VOw2BvhNiFUnUqmsX2";
         if (isSuper) {
           setCurrentRole("Super Admin");
-        } else if (data.role === "Super Admin") {
+        } else if (isSubUser) {
+          setCurrentRole(rawCloudData.role || "Field Officer");
+        } else if (finalData.role === "Super Admin") {
           setCurrentRole("Farm Owner");
-        } else if (data.role) {
-          setCurrentRole(data.role);
+        } else if (finalData.role) {
+          setCurrentRole(finalData.role);
         } else {
           setCurrentRole("Farm Owner");
         }
@@ -1218,7 +1344,13 @@ export default function App() {
   const handleSaveCloudWorkspace = async (uid: string) => {
     try {
       if (!isConfigured) return;
-      const targetUid = impersonation ? impersonation.targetUid : uid;
+      let targetUid = impersonation ? impersonation.targetUid : uid;
+      
+      // Multi-tenant redirect: sub-user writes back to parent institution document!
+      if (userProfile && userProfile.tenantId) {
+        targetUid = userProfile.tenantId;
+      }
+      
       console.log(`[Mabala Cloud] Committing persistent workspace state changes for ${targetUid} to Cloud Firestore securely...`);
       const docRef = doc(db, "users_data", targetUid);
       
@@ -1238,11 +1370,13 @@ export default function App() {
 
       await setDoc(docRef, {
         uid: targetUid,
-        email: impersonation ? impersonation.targetEmail : (auth.currentUser?.email || ""),
-        role: impersonation ? impersonation.originalRole : currentRole,
+        email: impersonation ? impersonation.targetEmail : (userProfile && userProfile.tenantId && parentProfile ? parentProfile.email : (auth.currentUser?.email || "")),
+        role: impersonation ? impersonation.originalRole : (userProfile && userProfile.tenantId ? "offtaker" : currentRole),
         credits,
+        smsCredits,
         subscriptionTier,
         workspaceMode,
+        userProfile: (userProfile && userProfile.tenantId && parentProfile) ? parentProfile : userProfile,
         farms,
         accounts,
         suppliers,
@@ -1277,6 +1411,11 @@ export default function App() {
   const handleAutoCreateProfileIfMissing = async (uid: string, email: string) => {
     if (!isConfigured || !email) return;
     try {
+      const emailLower = email.trim().toLowerCase();
+      if (localStorage.getItem("registrations_in_progress_" + emailLower) === "true") {
+        console.log("[Mabala Cloud] Auto profile creation skipped: registration in progress for", emailLower);
+        return;
+      }
       const docRef = doc(db, "users_data", uid);
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) {
@@ -1375,11 +1514,16 @@ export default function App() {
         // Proceed normally for verified users
         setIsAuthenticated(true);
         setIsUnverifiedUser(false);
-        setUserProfile(prev => ({
-          ...prev,
-          email: user.email || "owner@mabala.com",
-          name: user.displayName || user.email?.split("@")[0] || "Deep Valley Manager"
-        }));
+        setUserProfile(prev => {
+          const u = {
+            ...prev,
+            uid: user.uid,
+            email: user.email || "owner@mabala.com",
+            name: user.displayName || user.email?.split("@")[0] || "Deep Valley Manager"
+          };
+          localStorage.setItem("mabala_user_profile", JSON.stringify(u));
+          return u;
+        });
 
         // Load the persistent data from cloud
         await handleLoadCloudWorkspace(user.uid, user.email || "");
@@ -1644,14 +1788,20 @@ export default function App() {
       }
 
       setCredits(prev => prev + awardedCredits);
+      const awardedSmsCredits = Number(checkoutObj.smsCreditsToAward) || 0;
+      if (awardedSmsCredits > 0) {
+        setSmsCredits(prev => prev + awardedSmsCredits);
+      }
 
       const newCtx = {
         id: "CTX-" + Date.now(),
         date: new Date().toISOString().slice(0, 10),
         farmName: activeFarm?.name || "Sunrise Agro-Tech Farms",
         type: "Allotment",
-        amount: awardedCredits,
-        description: `Upgraded to subscription "${checkoutObj.name}" via Lipila Live Pay`,
+        amount: awardedCredits > 0 ? awardedCredits : awardedSmsCredits,
+        description: awardedSmsCredits > 0 
+          ? `Purchased ${awardedSmsCredits} dedicated SMS Credits top-up`
+          : `Upgraded to subscription "${checkoutObj.name}" via Lipila Live Pay`,
         adminUser: userProfile.name || "Tenant"
       };
       setCreditTransactions(prev => [newCtx, ...prev]);
@@ -2302,6 +2452,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("mabala_credits", String(credits));
   }, [credits]);
+
+  useEffect(() => {
+    localStorage.setItem("mabala_sms_credits", String(smsCredits));
+  }, [smsCredits]);
 
   useEffect(() => {
     localStorage.setItem("mabala_team_members", JSON.stringify(teamMembers));
@@ -3007,6 +3161,7 @@ export default function App() {
         const uid = userCred.user.uid;
         
         setUserProfile({
+          uid,
           name: data.fullName,
           email: data.email,
           phone: data.phone || "+26097100000"
@@ -3046,6 +3201,12 @@ export default function App() {
           credits: 100, // 100 Welcome Bonus Credits
           subscriptionTier: tierToSet,
           workspaceMode: tierToSet.toLowerCase().includes("vet") ? "Veterinary" : "Farmer",
+          userProfile: {
+            uid,
+            name: data.fullName,
+            email: emailLower,
+            phone: data.phone || "+26097100000"
+          },
           farms: initialFarms,
           accounts: initialAccounts,
           suppliers: [],
@@ -3066,6 +3227,25 @@ export default function App() {
         });
         
         localStorage.removeItem("registrations_in_progress_" + emailLower);
+        
+        // Dispatch Welcome Onboarding Email using Sendmator
+        try {
+          fetch("/api/auth/send-welcome", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: emailLower,
+              fullName: data.fullName,
+              password: data.password,
+              loginUrl: window.location.origin
+            })
+          }).then(res => res.json())
+            .then(resData => console.log("[Welcome Onboarding Email] Sent:", resData))
+            .catch(e => console.error("[Welcome Onboarding Email] Failed to dispatch:", e));
+        } catch (mailErr) {
+          console.error("[Welcome Onboarding Email] Error outside fetch hook:", mailErr);
+        }
+
         // Log referral signup if any
         try {
           await processReferralSignup(uid, emailLower, data.fullName, tierToSet, 0);
@@ -3239,6 +3419,7 @@ export default function App() {
         const uid = userCred.user.uid;
         
         setUserProfile({
+          uid,
           name: data.fullName,
           email: data.email,
           phone: data.phoneNumber
@@ -3271,6 +3452,12 @@ export default function App() {
           workspaceMode: "Partner",
           tenantType: "partner",
           role: "partner",
+          userProfile: {
+            uid,
+            name: data.fullName,
+            email: emailLower,
+            phone: data.phoneNumber
+          },
           farms: initialFarms,
           accounts: initialAccounts,
           suppliers: [],
@@ -3325,6 +3512,7 @@ export default function App() {
     } else {
       // Simulation/Offline Flow
       setUserProfile({
+        uid: "simulated-partner-id-123",
         name: data.fullName,
         email: data.email,
         phone: data.phoneNumber
@@ -3670,32 +3858,68 @@ export default function App() {
   };
 
   const handleClearDatabase = () => {
-    setSuppliers([]);
-    setCustomers([]);
-    setExpenses([]);
-    setInvoices([]);
-    setQuotations([]);
-    setCrops([]);
-    setEmployees([]);
-    setPayslips([]);
-    setPoultry([]);
-    setFish([]);
-    setInventory([]);
-    setCashSales([]);
-    setLoans([]);
-    setInvestments([]);
-    setLivestock([]);
-    
-    setAssets([]);
-    setOtherRevenues([]);
-    setLeaveRecords([]);
-    setEmployeeAdvances([]);
-    setAuditLogs([]);
-    setArchivedRecords([]);
+    if (!activeFarm?.id) {
+      setSuppliers([]);
+      setCustomers([]);
+      setExpenses([]);
+      setInvoices([]);
+      setQuotations([]);
+      setCrops([]);
+      setEmployees([]);
+      setPayslips([]);
+      setPoultry([]);
+      setFish([]);
+      setInventory([]);
+      setCashSales([]);
+      setLoans([]);
+      setInvestments([]);
+      setLivestock([]);
+      setAssets([]);
+      setOtherRevenues([]);
+      setLeaveRecords([]);
+      setEmployeeAdvances([]);
+      setAuditLogs([]);
+      setArchivedRecords([]);
+      const emptyAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
+      setAccounts(emptyAccounts);
+      setCredits(300);
+      return;
+    }
+
+    const currentFarmId = activeFarm.id;
+
+    // Filter out active farm's data so that OTHER farms' data remains isolated and completely untouched!
+    setSuppliers(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setCustomers(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setExpenses(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setInvoices(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setQuotations(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setCrops(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setEmployees(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setPayslips(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setPoultry(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setFish(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setInventory(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setCashSales(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setLoans(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setInvestments(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setLivestock(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setAssets(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setOtherRevenues(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setLeaveRecords(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setEmployeeAdvances(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setAuditLogs(prev => prev.filter(x => x.farmId !== currentFarmId));
+    setArchivedRecords(prev => prev.filter(x => x.farmId !== currentFarmId));
+
+    // Clear active farm accounts map specifically
+    setFarmAccountsMap(prev => {
+      const updated = { ...prev };
+      delete updated[currentFarmId];
+      return updated;
+    });
 
     const emptyAccounts = INITIAL_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
     setAccounts(emptyAccounts);
-    setCredits(300);
   };
 
   // State loggers
@@ -5281,6 +5505,28 @@ export default function App() {
     );
   }
 
+  // Render fully isolated Sponsoring Organisation portal if authenticated with matching roles
+  const currentRoleLower = (userProfile.role || "").toLowerCase();
+  const isInstitutionUser = 
+    currentRoleLower === "institution admin" || 
+    currentRoleLower === "institution_admin" ||
+    currentRoleLower === "institution staff" || 
+    currentRoleLower === "institution_staff" ||
+    currentRoleLower === "subuser" ||
+    currentRoleLower === "field officer" ||
+    currentRoleLower === "field operator";
+
+  if (isAuthenticated && isInstitutionUser) {
+    return (
+      <BoundaryGuard userProfile={userProfile}>
+        <InstitutionPortal 
+          userProfile={userProfile} 
+          onLogout={handleLogout} 
+        />
+      </BoundaryGuard>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 overflow-hidden font-sans">
       {isReadonly && (
@@ -5748,13 +5994,22 @@ export default function App() {
           onSave={handleAddLivestockRecord}
           currencySymbol={selectedCountry.symbol}
           existingCount={livestock.length}
+          activeFarmId={activeFarm?.id || "farm-1"}
         />
 
         {/* GLOBAL DYNAMIC QUICK ACTIONS HUB BANNER */}
         <div className="bg-slate-900 border-b border-slate-800 px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-lg select-none" id="global-quick-actions-hub">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 font-mono">Operations Hub</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 font-mono">Operations Hub</span>
+            </div>
+            {dailyBundleTimeLeft && (
+              <div className="flex items-center gap-2 bg-slate-800 border border-amber-500/35 px-3 py-1 rounded-xl text-amber-400 animate-pulse text-[10px] font-mono font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.15)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                <span>Daily Bundle Active • Countdown: <strong className="text-white font-black">{dailyBundleTimeLeft}</strong></span>
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             
@@ -6537,6 +6792,12 @@ export default function App() {
               addNotification={addNotification}
               isOnline={true}
               workspaceMode={workspaceMode}
+              smsCredits={smsCredits}
+              setSmsCredits={setSmsCredits}
+              credits={credits}
+              setCredits={setCredits}
+              setLipilaCheckout={setLipilaCheckout}
+              userProfile={userProfile}
             />
           )}
 

@@ -29,8 +29,23 @@ import {
   UserCheck,
   CreditCard,
   Layers,
-  Info
+  Info,
+  ExternalLink,
+  Activity
 } from "lucide-react";
+import { 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  CartesianGrid, 
+  BarChart, 
+  Bar, 
+  Cell,
+  Legend 
+} from "recharts";
 
 interface PartnerReferralPortalProps {
   userProfile: any;
@@ -123,6 +138,27 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
     return () => unsubscribe();
   }, []);
 
+  const [recentClicks, setRecentClicks] = useState<any[]>([]);
+
+  // 3b. Listen to referralClicks
+  useEffect(() => {
+    if (!partnerId) return;
+    const clicksRef = collection(db, "referralClicks");
+    const q = query(clicksRef, where("partnerId", "==", partnerId));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => {
+        const da = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const db = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return db - da;
+      });
+      setRecentClicks(list.slice(0, 10));
+    }, (error) => {
+      console.error("[Partner Portal] Error listening to clicks:", error);
+    });
+    return () => unsubscribe();
+  }, [partnerId]);
+
   // 4. Update Partner Payout Profile
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,8 +237,101 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
 
   const isApproved = displayPartner.status === "active";
   const isSuspended = displayPartner.status === "suspended";
+  const canAccessPromo = displayPartner.status !== "suspended";
   
   const unpaidCommission = Math.max(0, (displayPartner.totalCommissionEarned || 0) - (displayPartner.totalCommissionPaid || 0));
+
+  // Dynamic tiered commission structures based on cumulative conversions
+  const conversionsCount = displayPartner.totalPaidConversions || 0;
+  let currentTierName = "Bronze Partner";
+  let tierRate = 0.15;
+  let nextTierName = "Silver Partner";
+  let neededForNext = 5 - conversionsCount;
+  let progressPct = Math.min(100, (conversionsCount / 5) * 100);
+  let tierBadgeBg = "bg-amber-50 border-amber-200 text-amber-700";
+
+  if (conversionsCount >= 15) {
+    currentTierName = "Gold Partner";
+    tierRate = 0.25;
+    nextTierName = "Max Tier Reached";
+    neededForNext = 0;
+    progressPct = 100;
+    tierBadgeBg = "bg-yellow-100 border-yellow-300 text-yellow-800 font-extrabold";
+  } else if (conversionsCount >= 5) {
+    currentTierName = "Silver Partner";
+    tierRate = 0.20;
+    nextTierName = "Gold Partner";
+    neededForNext = 15 - conversionsCount;
+    progressPct = Math.min(100, ((conversionsCount - 5) / 10) * 100);
+    tierBadgeBg = "bg-slate-100 border-slate-300 text-slate-800 font-extrabold";
+  }
+
+  // Combined Live Chronological Activity Log (clicks, signups, payouts)
+  const activityFeed = [
+    ...recentClicks.map(c => ({
+      id: c.id,
+      type: "click",
+      title: "Link Click Detected",
+      desc: `A user from ${c.userAgent ? c.userAgent.split(" ")[0] : "Web Browser"} clicked your vanity referral link.`,
+      time: c.timestamp ? new Date(c.timestamp).toLocaleTimeString() : "Just now",
+      rawDate: c.timestamp ? new Date(c.timestamp) : new Date()
+    })),
+    ...conversions.map(conv => {
+      let title = "Commission Attributed";
+      let desc = `Earned pending commission of ZK ${conv.commissionAmount} from registration ${conv.tenantName || "Mabala Tenant"}.`;
+      let type = "signup";
+
+      if (conv.payoutStatus === "paid") {
+        title = "Disbursement Cleared";
+        desc = `Commission of ZK ${conv.commissionAmount} successfully settled to your mobile money wallet.`;
+        type = "payout";
+      } else if (conv.payoutStatus === "approved") {
+        title = "Commission Approved";
+        desc = `Commission of ZK ${conv.commissionAmount} approved for ${conv.tenantName || "Mabala Tenant"}. Payout scheduled.`;
+        type = "payout";
+      } else if (conv.payoutStatus === "processing") {
+        title = "Payout Initiated";
+        desc = `Payout of ZK ${conv.commissionAmount} is being processed via Lipila mobile money gateway.`;
+        type = "payout";
+      } else if (conv.payoutStatus === "declined") {
+        title = "Commission Declined";
+        desc = `Commission of ZK ${conv.commissionAmount} declined: Self-referral protection trigger or audit review flag.`;
+        type = "signup";
+      }
+
+      return {
+        id: conv.id + "-" + (conv.payoutStatus || "pending"),
+        type,
+        title,
+        desc,
+        time: conv.signupDate ? new Date(conv.signupDate).toLocaleTimeString() : "Just now",
+        rawDate: conv.signupDate ? new Date(conv.signupDate) : new Date()
+      };
+    })
+  ].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime()).slice(0, 8);
+
+  // Daily Performance mock/dynamic chart data for Recharts area chart
+  const performanceChartData = [
+    { name: "Mon", Clicks: Math.max(2, Math.round((displayPartner.totalClicks || 0) * 0.1)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.1) },
+    { name: "Tue", Clicks: Math.max(3, Math.round((displayPartner.totalClicks || 0) * 0.15)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.1) },
+    { name: "Wed", Clicks: Math.max(4, Math.round((displayPartner.totalClicks || 0) * 0.2)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.2) },
+    { name: "Thu", Clicks: Math.max(1, Math.round((displayPartner.totalClicks || 0) * 0.1)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.1) },
+    { name: "Fri", Clicks: Math.max(5, Math.round((displayPartner.totalClicks || 0) * 0.25)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.3) },
+    { name: "Sat", Clicks: Math.max(2, Math.round((displayPartner.totalClicks || 0) * 0.1)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.1) },
+    { name: "Sun", Clicks: Math.max(2, Math.round((displayPartner.totalClicks || 0) * 0.1)), Signups: Math.round((displayPartner.totalSignups || 0) * 0.1) }
+  ];
+
+  // Funnel data
+  const totalClicksVal = displayPartner.totalClicks || 0;
+  const totalSignupsVal = displayPartner.totalSignups || 0;
+  const totalConversionsVal = displayPartner.totalPaidConversions || 0;
+  const ctrVal = totalClicksVal > 0 ? ((totalSignupsVal / totalClicksVal) * 100).toFixed(1) : "0.0";
+
+  const funnelData = [
+    { name: "Clicks", value: totalClicksVal || 1, fill: "#3b82f6" },
+    { name: "Signups", value: totalSignupsVal || 1, fill: "#10b981" },
+    { name: "Paid Conversions", value: totalConversionsVal || 1, fill: "#6366f1" }
+  ];
 
   const filteredPromo = promoMessages.filter(p => {
     if (selectedChannel === "all") return true;
@@ -263,96 +392,115 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
       )}
 
       {/* 2. Key Metrics Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
         
         {/* Link Clicks */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Link Clicks</span>
-            <span className="text-xl md:text-2xl font-black text-slate-800 font-mono block mt-2">
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block">Link Clicks</span>
+            <span className="text-lg md:text-xl font-black text-slate-800 font-mono block mt-1">
               {(displayPartner.totalClicks || 0).toLocaleString()}
             </span>
           </div>
-          <div className="text-[10.5px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
+          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
             <TrendingUp className="w-3 h-3 text-emerald-500" />
-            <span>Click-through traffic</span>
+            <span>Click traffic</span>
           </div>
         </div>
 
         {/* Total Signups */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Free Signups</span>
-            <span className="text-xl md:text-2xl font-black text-slate-800 font-mono block mt-2">
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block">Free Signups</span>
+            <span className="text-lg md:text-xl font-black text-slate-800 font-mono block mt-1">
               {(displayPartner.totalSignups || 0).toLocaleString()}
             </span>
           </div>
-          <div className="text-[10.5px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
+          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
             <Users className="w-3 h-3 text-emerald-500" />
             <span>Farmers onboarded</span>
           </div>
         </div>
 
-        {/* Paid Conversions */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        {/* Paid Conversions & Tier */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Paid Upgrades</span>
-            <span className="text-xl md:text-2xl font-black text-slate-800 font-mono block mt-2">
-              {(displayPartner.totalPaidConversions || 0).toLocaleString()}
+            <div className="flex justify-between items-start">
+              <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block">Conversions</span>
+              <span className={`px-1 rounded text-[8px] font-bold ${tierBadgeBg}`}>
+                {currentTierName.split(" ")[0]}
+              </span>
+            </div>
+            <span className="text-lg md:text-xl font-black text-indigo-600 font-mono block mt-1">
+              {conversionsCount}
             </span>
           </div>
-          <div className="text-[10.5px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
-            <Layers className="w-3 h-3 text-indigo-500" />
-            <span>Paid conversions</span>
+          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50 truncate">
+            <Award className="w-3 h-3 text-indigo-500" />
+            <span>{currentTierName}</span>
           </div>
         </div>
 
         {/* Earned Commission */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Earned Commission</span>
-            <span className="text-xl md:text-2xl font-black text-emerald-600 font-mono block mt-2">
-              ZK {(displayPartner.totalCommissionEarned || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block">Earned Comm.</span>
+            <span className="text-lg font-black text-slate-800 font-mono block mt-1 truncate">
+              ZK {(displayPartner.totalCommissionEarned || 0).toLocaleString()}
             </span>
           </div>
-          <div className="text-[10.5px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
+          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
             <DollarSign className="w-3 h-3 text-emerald-500" />
-            <span>Cumulative earnings</span>
+            <span>Rate: {(tierRate * 100).toFixed(0)}%</span>
           </div>
         </div>
 
         {/* Paid Commission */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Total Paid Out</span>
-            <span className="text-xl md:text-2xl font-black text-slate-800 font-mono block mt-2">
-              ZK {(displayPartner.totalCommissionPaid || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block">Paid Out</span>
+            <span className="text-lg font-black text-slate-800 font-mono block mt-1 truncate">
+              ZK {(displayPartner.totalCommissionPaid || 0).toLocaleString()}
             </span>
           </div>
-          <div className="text-[10.5px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
+          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 pt-1 border-t border-slate-100/50">
             <CreditCard className="w-3 h-3 text-slate-400" />
-            <span>Disbursed payments</span>
+            <span>Disbursed wallet</span>
           </div>
         </div>
 
         {/* Available Balance */}
-        <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-emerald-800 block">Available Balance</span>
-            <span className="text-xl md:text-2xl font-black text-emerald-700 font-mono block mt-2">
-              ZK {unpaidCommission.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-emerald-800 block">Owed Balance</span>
+            <span className="text-lg font-black text-emerald-700 font-mono block mt-1 truncate">
+              ZK {unpaidCommission.toLocaleString()}
             </span>
           </div>
-          <div className="text-[10.5px] text-emerald-800 font-medium flex items-center gap-1 pt-1 border-t border-emerald-200/50">
+          <div className="text-[10px] text-emerald-800 font-medium flex items-center gap-1 pt-1 border-t border-emerald-200/50">
             <Coins className="w-3 h-3 text-emerald-600" />
-            <span>Owed commission</span>
+            <span>Pending sweeps</span>
+          </div>
+        </div>
+
+        {/* Mabala Credits */}
+        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-200 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+          <div>
+            <span className="text-[9px] uppercase font-extrabold tracking-wider text-indigo-800 block">Wallet Credits</span>
+            <span className="text-lg font-black text-indigo-700 font-mono block mt-1">
+              {userProfile?.credits || 100}
+            </span>
+          </div>
+          <div className="text-[10px] text-indigo-800 font-medium flex items-center gap-1 pt-1 border-t border-indigo-200/50">
+            <Coins className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Active Pool</span>
           </div>
         </div>
 
       </div>
 
       {/* 3. Primary Referral Code & Link copy tools */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         {/* Referral Code Card */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
@@ -375,7 +523,7 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
         </div>
 
         {/* Personalized Link Card */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm md:col-span-2 flex flex-col justify-between space-y-4">
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2 flex flex-col justify-between space-y-4">
           <div>
             <span className="text-[10px] uppercase tracking-widest font-extrabold text-emerald-600 block mb-1">Vanity Referral Link</span>
             <p className="text-xs text-slate-500">Farmers clicking this link will be tracked with a 30-day first-party cookie session.</p>
@@ -386,8 +534,8 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
             </div>
             <button
               onClick={() => handleCopyLink(getPersonalizedLink(), "main-link")}
-              disabled={isSuspended || !isApproved}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 ${(!isApproved || isSuspended) ? "bg-slate-100 text-slate-400 cursor-not-allowed" : copiedLinkId === "main-link" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"} cursor-pointer`}
+              disabled={isSuspended}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 ${isSuspended ? "bg-slate-100 text-slate-400 cursor-not-allowed" : copiedLinkId === "main-link" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"} cursor-pointer`}
             >
               {copiedLinkId === "main-link" ? (
                 <>
@@ -402,6 +550,31 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
               )}
             </button>
           </div>
+        </div>
+
+        {/* NEW: Dynamic QR Code Card */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-between text-center space-y-3">
+          <div className="w-full">
+            <span className="text-[10px] uppercase tracking-widest font-extrabold text-teal-600 block">Vanity QR Link</span>
+            <p className="text-[9.5px] text-slate-400 mt-0.5 leading-tight">One-tap scan for offline farmer marketing</p>
+          </div>
+          <div className="w-24 h-24 flex items-center justify-center bg-slate-50 border border-slate-150 rounded-2xl p-1.5 shadow-inner">
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(getPersonalizedLink() || "https://mabala.cloud/r/" + displayPartner.referralCode)}`} 
+              alt="Referral QR Code" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <a 
+            href={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(getPersonalizedLink() || "https://mabala.cloud/r/" + displayPartner.referralCode)}`} 
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer hover:underline"
+          >
+            <span>High-Res QR Download</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </a>
         </div>
 
       </div>
@@ -439,7 +612,7 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
         </div>
 
         <div className="p-6">
-          {!isApproved ? (
+          {!canAccessPromo ? (
             <div className="p-12 text-center">
               <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
               <h3 className="font-bold text-slate-800 text-xs mt-2">Promo Material Restricted</h3>
@@ -484,6 +657,138 @@ export default function PartnerReferralPortal({ userProfile, onLogout }: Partner
             </div>
           )}
         </div>
+      </div>
+
+      {/* Analytics & Activity Log Block */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Recharts Performance Analytics (8 cols) */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-8 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="font-extrabold text-slate-800 text-sm">Performance analytics dashboard</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Real-time engagement telemetry & conversion funnels.</p>
+            </div>
+            <div className="px-3 py-1 bg-slate-100 border rounded-xl text-[10px] font-bold text-slate-600">
+              CTR: <span className="text-emerald-600 font-black">{ctrVal}%</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Daily Traffic CTR */}
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">Engagement trends (weekly)</span>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={performanceChartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontStyle="bold" />
+                    <YAxis stroke="#94a3b8" fontSize={9} fontStyle="bold" />
+                    <Tooltip contentStyle={{ background: "#0f172a", borderRadius: "12px", border: "none", color: "#fff", fontSize: "10px" }} />
+                    <Area type="monotone" dataKey="Clicks" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorClicks)" />
+                    <Area type="monotone" dataKey="Signups" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorSignups)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-4 text-[9px] font-bold">
+                <span className="flex items-center gap-1 text-blue-600"><span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Link Clicks</span>
+                <span className="flex items-center gap-1 text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Free Signups</span>
+              </div>
+            </div>
+
+            {/* Conversion Funnel BarChart */}
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase font-extrabold text-slate-400 block tracking-wider">Lead conversion funnel</span>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={funnelData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontStyle="bold" />
+                    <YAxis stroke="#94a3b8" fontSize={9} fontStyle="bold" />
+                    <Tooltip contentStyle={{ background: "#0f172a", borderRadius: "12px", border: "none", color: "#fff", fontSize: "10px" }} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {funnelData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-3 text-[9px] font-bold">
+                <span className="text-blue-500">Clicks: {totalClicksVal}</span>
+                <span className="text-emerald-500">Signups: {totalSignupsVal}</span>
+                <span className="text-indigo-500">Paid: {totalConversionsVal}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Activity Log Chronological Feed (4 cols) */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-4 flex flex-col justify-between min-h-[300px]">
+          <div>
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="font-extrabold text-slate-800 text-sm">Live activity telemetry</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Real-time click & conversion alerts feed.</p>
+              </div>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-4 max-h-[220px] overflow-y-auto pr-1">
+              {activityFeed.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 italic text-[11px] font-normal">
+                  Idle. Share your link to trigger real-time logs...
+                </div>
+              ) : (
+                activityFeed.map((act) => (
+                  <div key={act.id} className="flex gap-3 text-[11px] font-medium leading-relaxed">
+                    <div className="mt-0.5">
+                      {act.type === "click" ? (
+                        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                        </div>
+                      ) : act.type === "payout" ? (
+                        <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                          <CreditCard className="w-3.5 h-3.5" />
+                        </div>
+                      ) : (
+                        <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                          <UserCheck className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="font-bold text-slate-800 truncate">{act.title}</span>
+                        <span className="text-[8px] font-semibold text-slate-400 font-mono shrink-0">{act.time}</span>
+                      </div>
+                      <p className="text-slate-500 text-[10.5px] leading-tight mt-0.5">{act.desc}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 mt-4 text-[10px] text-slate-400 font-bold flex items-center justify-between">
+            <span>Tracking session: ACTIVE</span>
+            <span>Refreshes dynamically</span>
+          </div>
+        </div>
+
       </div>
 
       {/* 5. Referred Signups & Commission Ledger */}

@@ -46,8 +46,15 @@ import {
   Upload,
   ShieldCheck,
   Trash,
-  Camera
+  Camera,
+  Download,
+  ChevronRight,
+  Search
 } from "lucide-react";
+
+import InstitutionsAdminPanel from "./InstitutionsAdminPanel";
+import SmsGatewaysPanel from "./SmsGatewaysPanel";
+import SmsCreditsPanel from "./SmsCreditsPanel";
 
 interface ProfilesPlatformPanelProps {
   // User profile
@@ -199,7 +206,7 @@ export default function ProfilesPlatformPanel({
   // Platform Admin controls state hooks
   // ==========================================
   const [platformAdminSubTab, setPlatformAdminSubTab] = useState<"tenants" | "admins" | "audit">("tenants");
-  const [superAdminSubTab, setSuperAdminSubTab] = useState<"users" | "activity" | "financials" | "nodes" | "settings">("users");
+  const [superAdminSubTab, setSuperAdminSubTab] = useState<"users" | "activity" | "financials" | "nodes" | "settings" | "institutions" | "sms-gateways" | "sms-credits">("users");
   const [allPlatformUsers, setAllPlatformUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
   const [allAuditLogs, setAllAuditLogs] = useState<any[]>([]);
@@ -228,6 +235,8 @@ export default function ProfilesPlatformPanel({
   const [newAdDestUrl, setNewAdDestUrl] = useState<string>("");
   const [newAdBase64, setNewAdBase64] = useState<string>("");
   const [newAdError, setNewAdError] = useState<string>("");
+  const [campaignFormImageBase64, setCampaignFormImageBase64] = useState<string>("");
+  const [campaignFormError, setCampaignFormError] = useState<string>("");
 
   // Load Super Admin central directories & system activity audits
   const loadSuperAdminData = async () => {
@@ -863,6 +872,151 @@ export default function ProfilesPlatformPanel({
 
   const [activeCameraFarmId, setActiveCameraFarmId] = useState<string | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  // Billing and Receipts states
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [loadingReceipts, setLoadingReceipts] = useState(false);
+
+  useEffect(() => {
+    const loadReceipts = async () => {
+      if (!auth.currentUser?.uid) return;
+      setLoadingReceipts(true);
+      try {
+        const q = query(collection(db, "receipts"), where("uid", "==", auth.currentUser.uid));
+        const snap = await getDocs(q);
+        const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setReceipts(items);
+      } catch (err) {
+        console.error("Error loading billing receipts:", err);
+      } finally {
+        setLoadingReceipts(false);
+      }
+    };
+    loadReceipts();
+  }, [auth.currentUser?.uid]);
+
+  // Sponsoring Organisation states
+  const [linkedSponsors, setLinkedSponsors] = useState<any[]>([]);
+  const [loadingSponsors, setLoadingSponsors] = useState(false);
+  const [availableSponsors, setAvailableSponsors] = useState<any[]>([]);
+  const [loadingAvailableSponsors, setLoadingAvailableSponsors] = useState(false);
+  const [showLinkSponsorModal, setShowLinkSponsorModal] = useState(false);
+  const [selectedSponsorToLink, setSelectedSponsorToLink] = useState<any | null>(null);
+  const [searchSponsorTerm, setSearchSponsorTerm] = useState("");
+  const [sponsorConsentChecked, setSponsorConsentChecked] = useState(false);
+  const [submittingSponsorLink, setSubmittingSponsorLink] = useState(false);
+
+  const fetchLinkedSponsors = async () => {
+    if (!auth.currentUser?.uid) return;
+    setLoadingSponsors(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = await currentUser.getIdToken();
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      };
+      const res = await fetch("/api/farmer/institution-links", { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.links) {
+          setLinkedSponsors(data.links);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching linked sponsors:", err);
+    } finally {
+      setLoadingSponsors(false);
+    }
+  };
+
+  const fetchAvailableSponsors = async () => {
+    setLoadingAvailableSponsors(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      };
+      const res = await fetch("/api/farmer/institutions", { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.institutions) {
+          setAvailableSponsors(data.institutions);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching available sponsors:", err);
+    } finally {
+      setLoadingAvailableSponsors(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLinkedSponsors();
+  }, [auth.currentUser?.uid]);
+
+  const handleRequestUnlink = async (sponsorId: string) => {
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      };
+      const res = await fetch("/api/farmer/institution-unlink-request", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ institutionId: sponsorId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert("Your request has been sent. An admin will process this shortly.");
+        fetchLinkedSponsors();
+      } else {
+        alert(data.error || "Failed to submit unlink request.");
+      }
+    } catch (err: any) {
+      alert("Error submitting unlink request: " + err.message);
+    }
+  };
+
+  const handleConfirmLink = async () => {
+    if (!selectedSponsorToLink) return;
+    if (!sponsorConsentChecked) {
+      alert("Please confirm the consent checkbox first.");
+      return;
+    }
+    setSubmittingSponsorLink(true);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : "";
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      };
+      const res = await fetch("/api/farmer/institution-link", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ institutionId: selectedSponsorToLink.id })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(data.message || "Successfully linked Sponsoring Organisation!");
+        setShowLinkSponsorModal(false);
+        setSelectedSponsorToLink(null);
+        setSponsorConsentChecked(false);
+        fetchLinkedSponsors();
+      } else {
+        alert(data.error || "Failed to link organisation.");
+      }
+    } catch (err: any) {
+      alert("Error linking sponsoring organisation: " + err.message);
+    } finally {
+      setSubmittingSponsorLink(false);
+    }
+  };
 
   const startCamera = async (farmId: string) => {
     try {
@@ -1742,14 +1896,14 @@ export default function ProfilesPlatformPanel({
                         <button
                           type="button"
                           onClick={() => {
-                            setFarms(prev => prev.map(farm => farm.id === f.id ? { ...farm, logo: "leaf" } : farm));
+                            setFarms(prev => prev.map(farm => farm.id === f.id ? { ...farm, logo: "" } : farm));
                             if (f.id === activeFarm.id) {
-                              setTempFarmLogo("leaf");
+                              setTempFarmLogo("");
                             }
                           }}
                           className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold rounded-lg text-[9.5px] cursor-pointer"
                         >
-                          Clear to Leaf
+                          Remove Logo
                         </button>
                       </div>
                     </div>
@@ -1964,6 +2118,353 @@ export default function ProfilesPlatformPanel({
             </div>
           </div>
 
+          {/* Billing & Receipts section requested by the user */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 lg:col-span-2">
+            <div className="flex justify-between items-center border-b pb-3.5 flex-wrap gap-2">
+              <div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                  <FileLock2 className="w-4 h-4 text-emerald-600" />
+                  <span>Corporate Billing, Receipts & Statements</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium font-sans">Access your secure, system-generated PDF transaction receipts and regulatory invoices.</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={async () => {
+                  if (!auth.currentUser?.uid) return;
+                  setLoadingReceipts(true);
+                  try {
+                    const q = query(collection(db, "receipts"), where("uid", "==", auth.currentUser.uid));
+                    const snap = await getDocs(q);
+                    const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setReceipts(items);
+                  } catch (err) {
+                    console.error("Error reloading billing receipts:", err);
+                  } finally {
+                    setLoadingReceipts(false);
+                  }
+                }}
+                className="px-2.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 border rounded-lg text-slate-600 transition flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <RefreshCcw className={`w-3 h-3 ${loadingReceipts ? "animate-spin" : ""}`} />
+                <span>Sync History</span>
+              </button>
+            </div>
+
+            {loadingReceipts ? (
+              <div className="py-8 text-center text-slate-400 italic text-xs animate-pulse">
+                Fetching authenticated billing statements and receipts from secure Firestore database...
+              </div>
+            ) : receipts.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-dashed rounded-xl space-y-2">
+                <p className="text-xs text-slate-400 font-medium">No verified billing receipt documents found under account <strong>{userProfile.email}</strong>.</p>
+                <p className="text-[10px] text-slate-400 leading-normal">Receipts are automatically compiled and stored securely upon completing Lipila Wallet credit allocations, platform packages, or off-taker payment clearances.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                      <th className="p-2.5 font-semibold">Reference ID</th>
+                      <th className="p-2.5 font-semibold">Date Issued</th>
+                      <th className="p-2.5 font-semibold">Description</th>
+                      <th className="p-2.5 font-semibold">Amount Paid</th>
+                      <th className="p-2.5 font-semibold">Verification Status</th>
+                      <th className="p-2.5 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {receipts.map((r: any) => (
+                      <tr key={r.id} className="hover:bg-slate-50/50 transition">
+                        <td className="p-2.5 font-mono text-[10.5px] font-bold text-slate-900">{r.id}</td>
+                        <td className="p-2.5 font-medium">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "June 2026"}</td>
+                        <td className="p-2.5 text-slate-500 font-medium">{r.packageName || "Mabala Operational Credits Bundle"}</td>
+                        <td className="p-2.5 text-emerald-700 font-bold">ZMW {Number(r.amount || 0).toFixed(2)}</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/50 rounded-full text-[9px] font-bold uppercase">
+                            ✓ Success
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-right">
+                          <a 
+                            href={`/api/receipts/${r.id}.pdf`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-extrabold shadow-sm transition-all cursor-pointer"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download PDF</span>
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Sponsoring Organisation card in the profiles grid */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 lg:col-span-2">
+            <div className="flex justify-between items-center border-b pb-3.5 flex-wrap gap-2">
+              <div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 animate-fade-in">
+                  <Building2 className="w-4 h-4 text-emerald-600" />
+                  <span>Sponsoring Organisation</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">Manage and review your institutional linkages and sponsor affiliations.</p>
+              </div>
+              {linkedSponsors.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchAvailableSponsors();
+                    setShowLinkSponsorModal(true);
+                  }}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Link to a Sponsoring Organisation</span>
+                </button>
+              )}
+            </div>
+
+            {loadingSponsors ? (
+              <div className="py-8 text-center text-slate-400 italic text-xs animate-pulse">
+                Fetching sponsoring affiliations...
+              </div>
+            ) : linkedSponsors.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-dashed rounded-xl space-y-3">
+                <p className="text-xs text-slate-400 font-medium">You are not currently linked to any sponsoring organization.</p>
+                <p className="text-[10px] text-slate-400 leading-normal max-w-md mx-auto">
+                  Linking with a verified sponsoring institution lets them view your farm records and summaries for support and monitoring.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchAvailableSponsors();
+                    setShowLinkSponsorModal(true);
+                  }}
+                  className="px-4 py-2 text-[10px] font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-all cursor-pointer inline-flex items-center gap-1 mx-auto"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Link to a Sponsoring Organisation</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {linkedSponsors.map((link) => (
+                  <div key={link.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 bg-white rounded-xl border flex items-center justify-center overflow-hidden shrink-0 text-slate-500 text-lg font-bold shadow-sm">
+                        {link.institutionLogo && link.institutionLogo.length < 15 ? (
+                          <span>🏢</span>
+                        ) : link.institutionLogo ? (
+                          <img src={link.institutionLogo} alt={link.institutionName} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span>🏢</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-800 truncate">{link.institutionName}</h4>
+                        <div className="space-y-0.5 mt-1">
+                          <p className="text-[10px] text-slate-400 font-semibold">
+                            Linked: <span className="font-mono text-slate-600 font-bold">{new Date(link.linkedAt).toLocaleDateString()}</span>
+                          </p>
+                          {link.consentGivenAt && (
+                            <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                              ✓ Consent: <span className="font-mono font-bold text-emerald-700">{new Date(link.consentGivenAt).toLocaleDateString()}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      {link.isUnlinkPending ? (
+                        <span className="px-2.5 py-1 text-[9px] font-black uppercase text-amber-700 bg-amber-50 border border-amber-200 rounded-lg animate-pulse select-none">
+                          Unlink Pending
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleRequestUnlink(link.institutionId)}
+                          className="px-2.5 py-1 text-[9px] font-extrabold uppercase bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-100 rounded-lg transition-all cursor-pointer shadow-sm"
+                        >
+                          Request Unlink
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Search and Link Sponsor Modal / Drawer */}
+          {showLinkSponsorModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
+                
+                {/* Modal Header */}
+                <div className="p-5 border-b flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <span>Link Sponsoring Organisation</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium font-sans mt-0.5">Select a sponsoring partner and approve compliance sharing.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLinkSponsorModal(false);
+                      setSelectedSponsorToLink(null);
+                      setSponsorConsentChecked(false);
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                  {!selectedSponsorToLink ? (
+                    // Step 1: Searchable list of available sponsors
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          placeholder="Search verified organizations..."
+                          value={searchSponsorTerm}
+                          onChange={(e) => setSearchSponsorTerm(e.target.value)}
+                          className="w-full text-xs pl-9 pr-4 py-2 border rounded-xl outline-none focus:border-emerald-500 bg-slate-50 focus:bg-white font-semibold text-slate-800 shadow-inner"
+                        />
+                      </div>
+
+                      {loadingAvailableSponsors ? (
+                        <div className="py-12 text-center text-slate-400 text-xs italic animate-pulse">
+                          Loading active sponsors...
+                        </div>
+                      ) : availableSponsors.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 font-semibold text-xs border border-dashed rounded-xl">
+                          No self-attach sponsoring organizations available.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {availableSponsors
+                            .filter(s => s.name && s.name.toLowerCase().includes(searchSponsorTerm.toLowerCase()))
+                            .map((sponsor) => (
+                              <button
+                                key={sponsor.id}
+                                type="button"
+                                onClick={() => setSelectedSponsorToLink(sponsor)}
+                                className="w-full text-left p-3 border border-slate-200 hover:border-emerald-400 rounded-xl hover:bg-emerald-50/10 transition-all flex items-center justify-between group cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-500 text-sm border group-hover:bg-white shrink-0 shadow-inner">
+                                    🏢
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-slate-800 truncate">{sponsor.name}</p>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{sponsor.type || "NGO"}</p>
+                                  </div>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Step 2: Consent and Confirmation
+                    <div className="space-y-4">
+                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm text-lg">🏢</span>
+                          <div>
+                            <p className="text-xs font-bold text-emerald-950">{selectedSponsorToLink.name}</p>
+                            <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">{selectedSponsorToLink.type}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSponsorToLink(null);
+                            setSponsorConsentChecked(false);
+                          }}
+                          className="text-[9.5px] font-black uppercase text-slate-500 hover:text-slate-800 bg-white px-2 py-1 rounded border shadow-sm cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </div>
+
+                      {/* Explicit Consent notice requested verbatim */}
+                      <div className="p-4 bg-slate-900 text-slate-200 rounded-xl leading-relaxed text-[11px] font-medium font-mono space-y-2 border shadow-lg">
+                        <span className="text-[10px] font-extrabold uppercase text-amber-400 tracking-wider block">🛡️ Compliance Data Consent notice</span>
+                        <p className="leading-relaxed text-slate-300">
+                          "By linking your account to {selectedSponsorToLink.name}, you agree that they will be able to view your farm records, financial summaries, and personal contact details for monitoring and reporting purposes. You can view what is shared at any time in Settings."
+                        </p>
+                      </div>
+
+                      {/* Explicit Checkbox Verification */}
+                      <label className="flex items-start gap-2.5 p-3 border border-slate-200 hover:border-slate-300 rounded-xl bg-slate-50/50 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={sponsorConsentChecked}
+                          onChange={(e) => setSponsorConsentChecked(e.target.checked)}
+                          className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                        />
+                        <div className="text-[10.5px] font-semibold text-slate-700 leading-tight">
+                          I understand and agree to sharing my farm records with {selectedSponsorToLink.name}.
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                {selectedSponsorToLink && (
+                  <div className="p-4 bg-slate-50 border-t flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSponsorToLink(null);
+                        setSponsorConsentChecked(false);
+                      }}
+                      className="px-3.5 py-1.5 text-[10.5px] font-bold text-slate-600 hover:text-slate-800 bg-white border rounded-xl hover:bg-slate-50 cursor-pointer"
+                    >
+                      Back to Search
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmLink}
+                      disabled={!sponsorConsentChecked || submittingSponsorLink}
+                      className={`px-4 py-2 text-[10.5px] font-black uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                        sponsorConsentChecked && !submittingSponsorLink
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                          : "bg-slate-200 text-slate-400 border border-slate-100 cursor-not-allowed"
+                      }`}
+                    >
+                      {submittingSponsorLink ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Authorizing Link...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Confirm Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -2057,6 +2558,30 @@ export default function ProfilesPlatformPanel({
                   }`}
                 >
                   <Tractor className="w-4 h-4" /> 🚜 Active Farm Nodes
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("institutions")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "institutions" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" /> 🏢 Institutions & Sponsors
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("sms-gateways")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "sms-gateways" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" /> 🔌 SMS Gateways & Rates
+                </button>
+                <button
+                  onClick={() => setSuperAdminSubTab("sms-credits")}
+                  className={`px-4.5 py-3 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    superAdminSubTab === "sms-credits" ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                  }`}
+                >
+                  <Coins className="w-4 h-4" /> 🪙 Credit Top-Up & Ledger
                 </button>
                 <button
                   onClick={() => setSuperAdminSubTab("settings")}
@@ -2599,6 +3124,18 @@ export default function ProfilesPlatformPanel({
               )}
 
               {/* TAB CONTENTS: ⚙️ IMMUTABLE SYSTEM SETTINGS & ADS ADVERT CONFIG */}
+              {superAdminSubTab === "institutions" && (
+                <InstitutionsAdminPanel />
+              )}
+
+              {superAdminSubTab === "sms-gateways" && (
+                <SmsGatewaysPanel />
+              )}
+
+              {superAdminSubTab === "sms-credits" && (
+                <SmsCreditsPanel />
+              )}
+
               {superAdminSubTab === "settings" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in font-sans">
                   
@@ -4306,30 +4843,41 @@ export default function ProfilesPlatformPanel({
                         const formData = new FormData(e.currentTarget);
                         const title = formData.get("title") as string;
                         const desc = formData.get("desc") as string;
-                        const img = formData.get("img") as string;
                         const ext = formData.get("ext") as string;
                         const placement = formData.get("placement") as "banner" | "sidebar" | "interstitial";
                         const active = formData.get("active") === "on";
 
                         if (!title || !ext) return;
+                        if (!campaignFormImageBase64) {
+                          setCampaignFormError("Please upload a campaign image file.");
+                          return;
+                        }
 
                         const newAd = {
                           id: "ad-" + Date.now(),
                           title,
                           description: desc || "",
-                          imageUrl: img || "https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?auto=format&fit=crop&q=80&w=400",
+                          imageUrl: campaignFormImageBase64,
                           externalUrl: ext,
                           placement,
                           active
                         };
 
                         setActiveAds(prev => [...prev, newAd]);
+                        setCampaignFormImageBase64("");
+                        setCampaignFormError("");
                         e.currentTarget.reset();
                       }}
                       className="md:col-span-5 bg-slate-50 border rounded-xl p-4 space-y-3 font-semibold text-xs text-slate-800"
                     >
                       <h4 className="font-extrabold text-slate-900 pb-1.5 border-b uppercase text-[10px] tracking-wider">Deploy Campaign</h4>
                       
+                      {campaignFormError && (
+                        <div className="p-2 bg-red-50 text-red-600 rounded text-[10px] font-bold">
+                          ⚠️ {campaignFormError}
+                        </div>
+                      )}
+
                       <div>
                         <label className="text-[9px] uppercase font-bold text-slate-400">Sponsor/Ad Title</label>
                         <input 
@@ -4363,13 +4911,53 @@ export default function ProfilesPlatformPanel({
                       </div>
 
                       <div>
-                        <label className="text-[9px] uppercase font-bold text-slate-400">Sponsor Image URL</label>
-                        <input 
-                          type="text" 
-                          name="img" 
-                          placeholder="e.g. https://images.unsplash.com/..." 
-                          className="w-full text-xs mt-0.5 p-2 border bg-white rounded outline-none focus:border-emerald-550 font-mono" 
-                        />
+                        <label className="text-[9px] uppercase font-bold text-slate-400 block pb-1">Sponsor Campaign Banner Image</label>
+                        {campaignFormImageBase64 ? (
+                          <div className="border border-emerald-100 rounded-lg p-2 bg-emerald-50/25 flex items-center justify-between gap-2">
+                            <img src={campaignFormImageBase64} alt="Preview" className="w-12 h-12 object-cover rounded border border-emerald-200" referrerPolicy="no-referrer" />
+                            <button
+                              type="button"
+                              onClick={() => setCampaignFormImageBase64("")}
+                              className="text-[10px] text-red-500 font-bold hover:underline cursor-pointer"
+                            >
+                              Clear File
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center w-full">
+                            <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-white hover:bg-slate-50 transition-colors">
+                              <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                                <svg className="w-6 h-6 mb-1 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <p className="text-[10px] text-slate-500 font-bold">Upload banner image file</p>
+                                <p className="text-[8px] text-slate-400 font-mono">PNG, JPG, WebP up to 2MB</p>
+                              </div>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={e => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    if (file.size > 2 * 1024 * 1024) {
+                                      setCampaignFormError("File size exceeds 2MB limit.");
+                                      return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = event => {
+                                      if (event.target?.result) {
+                                        setCampaignFormImageBase64(event.target.result as string);
+                                        setCampaignFormError("");
+                                      }
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">

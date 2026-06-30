@@ -108,6 +108,7 @@ export default function InvoicesPanel({
     { description: "", quantity: 1, unitPrice: 0, amount: 0 }
   ]);
   const [dueDate, setDueDate] = useState("2026-06-15");
+  const [taxRate, setTaxRate] = useState<number>(16);
 
   // Part Payment state modal
   const [paymentInvoiceId, setPaymentInvoiceId] = useState<string | null>(null);
@@ -150,7 +151,10 @@ export default function InvoicesPanel({
     const logoWidth = 10;
     const logoHeight = 10;
 
-    if (activeFarm?.logo) {
+    const isDeepValley = activeFarm?.name?.toLowerCase().includes("deep valley");
+    const hasValidLogo = activeFarm?.logo && (activeFarm.logo !== "leaf" || isDeepValley);
+
+    if (hasValidLogo) {
       if (activeFarm.logo === "leaf") {
         doc.setFillColor(16, 185, 129); // Emerald-500
         doc.ellipse(logoX + 5, logoY + 5, 4, 5, "F");
@@ -185,7 +189,7 @@ export default function InvoicesPanel({
 
     // --- FARM ISSUER BLOCK ---
     let y = 25;
-    const txtOffset = activeFarm?.logo ? 29 : 15;
+    const txtOffset = hasValidLogo ? 29 : 15;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.setTextColor(15, 23, 42); // slate-900
@@ -328,9 +332,10 @@ export default function InvoicesPanel({
     y += 3;
 
     // --- ACCUMULATED LEDGER TOTALS ---
-    const subtotal = docItem.subtotal || docItem.total * 0.84;
-    const taxAmount = docItem.taxAmount || docItem.total * 0.16;
+    const subtotal = docItem.subtotal || docItem.total * (1 - ((docItem.taxRate !== undefined ? docItem.taxRate : 16) / 100));
+    const taxAmount = docItem.taxAmount !== undefined ? docItem.taxAmount : (docItem.total - subtotal);
     const total = docItem.total;
+    const itemTaxRate = docItem.taxRate !== undefined ? docItem.taxRate : 16;
 
     // Draw little box for totals
     doc.setFillColor(248, 250, 252);
@@ -344,7 +349,7 @@ export default function InvoicesPanel({
     doc.text("SUBTOTAL EXCLUDING TAXES:", xMargin + 104, y + 5.5);
     doc.text(`${currencySymbol} ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 192, y + 5.5, { align: "right" });
 
-    doc.text("ZRA 16% STANDARD VAT RATE:", xMargin + 104, y + 11.5);
+    doc.text(`ESTIMATED VAT / TAX (${itemTaxRate}%):`, xMargin + 104, y + 11.5);
     doc.text(`${currencySymbol} ${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 192, y + 11.5, { align: "right" });
 
     doc.setFont("helvetica", "bold");
@@ -429,7 +434,7 @@ export default function InvoicesPanel({
   };
 
   const subtotal = lines.reduce((acc, r) => acc + (r.quantity * r.unitPrice), 0);
-  const taxAmount = subtotal * 0.15; // default 15% local standard VAT representation
+  const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
   // Add customer handler
@@ -480,6 +485,7 @@ export default function InvoicesPanel({
       };
       // Keep state tracking variables
       (inv as any).paidAmount = 0;
+      (inv as any).taxRate = taxRate;
       onAddInvoice(inv);
       setSelectedCropId("");
     } else {
@@ -496,6 +502,7 @@ export default function InvoicesPanel({
         status: "Draft",
         farmId: "farm-1"
       };
+      (qt as any).taxRate = taxRate;
       onAddQuotation(qt);
     }
 
@@ -672,16 +679,30 @@ export default function InvoicesPanel({
 
           {/* Sum details */}
           <div className="p-4 bg-slate-50 border rounded-2xl flex justify-between items-center text-xs font-mono">
-            <div>
+            <div className="space-y-2">
               {activeSegment === "invoices" && (
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-slate-500 font-sans">
                   Accounts mapping preview: <strong className="text-slate-900">Dr 1100 (Receivables) / Cr 4000 (Revenue)</strong>
                 </p>
               )}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-sans font-bold uppercase tracking-wider">Custom Tax Rate:</span>
+                <div className="flex items-center gap-1 bg-white border rounded px-1 py-0.5">
+                  <input
+                    type="number"
+                    value={taxRate === 0 ? "" : taxRate}
+                    onChange={(e) => setTaxRate(e.target.value === "" ? 0 : Number(e.target.value))}
+                    className="w-12 text-slate-800 text-xs font-bold font-mono outline-none text-center"
+                    min="0"
+                    max="100"
+                  />
+                  <span className="text-slate-400 font-bold text-[10px] pr-0.5">%</span>
+                </div>
+              </div>
             </div>
             <div className="text-right font-semibold space-y-1">
               <div>Subtotal: {currencySymbol} {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-              <div>Estimated VAT (15%): {currencySymbol} {taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              <div>Estimated VAT ({taxRate}%): {currencySymbol} {taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
               <div className="text-sm font-black text-emerald-700 bg-emerald-500/5 px-2.5 py-1.5 rounded-lg border border-emerald-100 mt-2 block">
                 Total Due Weight: {currencySymbol} {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
